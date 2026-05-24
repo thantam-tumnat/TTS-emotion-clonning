@@ -1,0 +1,76 @@
+# LoRA fine-tuning recipe for VajaCPM on a single RTX 3090 24 GB.
+# See RESEARCH.md §8.1–§8.2 for the reasoning behind each value.
+
+base_model: openbmb/VoxCPM2-2B
+sample_rate: 48000
+
+manifests:
+  train:
+    - path: data/vaja/train.jsonl
+      weight: 1.0
+    - path: data/libritts/train.jsonl
+      weight: 0.25      # ~20% of effective batch is EN
+  val:
+    - path: data/vaja/val.jsonl
+    - path: data/libritts/val.jsonl
+
+lora:
+  r: 64
+  alpha: 128
+  dropout: 0.05
+  target_modules: tslm_ralm   # apply across TSLM + RALM transformer layers
+  freeze:
+    - locdit
+    - audiovae
+
+optim:
+  optimizer: adamw_8bit
+  lr: 1.0e-4
+  weight_decay: 0.0
+  warmup_steps: 100
+  scheduler: cosine
+
+train:
+  precision: bf16
+  gradient_checkpointing: true
+  batch_size: 4
+  gradient_accumulation_steps: 4   # effective batch 16
+  max_batch_tokens: 4096
+  num_epochs: 3
+  cfg_drop_prob: 0.1
+  save_every_steps: 1000
+  eval_every_steps: 1000
+  log_every_steps: 50
+
+monitor:
+  tensorboard:
+    enabled: true
+    log_dir: runs/vajacpm-lora-v0
+    flush_every_steps: 100
+  audio_sampler:
+    enabled: true
+    every_steps: 1000               # synth a few prompts and write to TB Audio tab
+    prompts: eval/prompts_listen.tsv
+    sample_rate: 48000
+    max_prompts: 6                   # cap per snapshot to stay light
+    cfg_value: 2.5
+    inference_timesteps: 10
+  timing:
+    enabled: true
+    summary_path: runs/vajacpm-lora-v0/training_summary.json
+    log_gpu_stats: true              # records GPU name + VRAM peak per checkpoint
+
+augment:
+  thai_digit:
+    p_full: 0.4
+    p_partial: 0.1
+  en_text_original_vs_normalized:
+    p_normalized: 0.3              # 70% raw text_original, 30% text_normalized
+  whitespace_jitter:
+    p: 0.15
+  case_jitter:
+    p: 0.1
+
+paths:
+  checkpoint_dir: checkpoints/vajacpm-lora-v0
+  log_dir: runs/vajacpm-lora-v0
