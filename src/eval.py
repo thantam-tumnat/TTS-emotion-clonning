@@ -1,8 +1,16 @@
 """Evaluation: Thai CER (Typhoon-Whisper-Large-v3) + speaker SIM (WavLM) + digit-eval.
 
-Mirrors JaiTTS's `cal_wer.sh` / `cal_sim.sh` pipeline (RESEARCH.md §8.7 step 8).
-This is a stub — wire up the actual ASR + SV pipelines once the trained adapter is
-ready. Kept thin so the project layout is complete, not so the eval is feature-full.
+Mirrors JaiTTS's `cal_wer.sh` / `cal_sim.sh` pipeline (RESEARCH.md §8.7 step 8):
+
+- **CER** — transcribe synthesized audio with a Thai-capable Whisper
+  (default `typhoon-ai/typhoon-whisper-large-v3`, the ASR JaiTTS evaluated
+  with) and compute character error rate vs the prompt text. Whitespace and
+  punctuation are stripped from both sides first, the usual Thai CER protocol.
+- **SIM** — cosine similarity between WavLM x-vectors
+  (`microsoft/wavlm-base-plus-sv`) of the synthesized audio and the reference
+  clip, per prompt with a `ref_audio` column.
+
+Requires the `eval` extra: `uv sync --extra eval`.
 
 Prompt TSV format (eval/prompts_*.tsv):
     id<TAB>text<TAB>ref_audio_path
@@ -12,9 +20,16 @@ from __future__ import annotations
 
 import argparse
 import csv
+import re
 from pathlib import Path
 
-from .inference import synthesize
+DEFAULT_ASR_MODEL = "typhoon-ai/typhoon-whisper-large-v3"
+DEFAULT_SV_MODEL = "microsoft/wavlm-base-plus-sv"
+SV_SAMPLE_RATE = 16_000
+
+# Strip whitespace + punctuation before CER (Thai has no word spaces; spacing
+# and punctuation variation would otherwise dominate the error count).
+_CER_STRIP = re.compile(r"[\s\.,!\?;:\"'“”‘’\(\)\[\]…\-—_/\\]+")
 
 
 def load_prompts(path: str | Path) -> list[dict[str, str]]:
@@ -26,34 +41,121 @@ def load_prompts(path: str | Path) -> list[dict[str, str]]:
     return rows
 
 
-def synthesize_all(prompts: list[dict[str, str]], out_dir: Path, **synth_kwargs) -> None:
+def synthesize_all(
+    prompts: list[dict[str, str]],
+    out_dir: Path,
+    *,
+    base_model: str,
+    adapter_path: str | None = None,
+    **synth_kwargs,
+) -> None:
+    from .inference import Synthesizer
+
     out_dir.mkdir(parents=True, exist_ok=True)
+    synth = Synthesizer(base_model=base_model, adapter_path=adapter_path)
     for row in prompts:
-        synthesize(
-            text=row["text"],
-            output_path=out_dir / f"{row['id']}.wav",
+        synth.synth_to_file(
+            row["text"],
+            out_dir / f"{row['id']}.wav",
             ref_audio=row.get("ref_audio") or None,
             **synth_kwargs,
         )
 
 
-def compute_cer(audio_dir: Path, prompts: list[dict[str, str]]) -> float:
-    """Stub: transcribe with Typhoon-Whisper-Large-v3 and compute CER vs prompts.
-
-    Implementation outline:
-      from transformers import pipeline
-      asr = pipeline("automatic-speech-recognition", "scb10x/typhoon-asr-realtime")
-      hyp = [asr(str(audio_dir / f"{r['id']}.wav"))["text"] for r in prompts]
-      ref = [r["text"] for r in prompts]
-      from jiwer import cer
-      return cer(ref, hyp)
-    """
-    raise NotImplementedError("CER pipeline not yet wired — see docstring.")
+def _cer_normalize(text: str) -> str:
+    return _CER_STRIP.sub("", text)
 
 
-def compute_sim(audio_dir: Path, prompts: list[dict[str, str]]) -> float:
-    """Stub: WavLM speaker-verification cosine similarity vs ref_audio."""
-    raise NotImplementedError("SIM pipeline not yet wired — see docstring.")
+def compute_cer(
+    audio_dir: Path,
+    prompts: list[dict[str, str]],
+    asr_model: str = DEFAULT_ASR_MODEL,
+    device: str | None = None,
+) -> float:
+    """Transcribe synthesized audio and return corpus-level CER vs prompt text."""
+    import torch
+    from jiwer import cer
+    from transformers import pipeline
+
+    if device is None:
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    asr = pipeline(
+        "automatic-speech-recognition",
+        model=asr_model,
+        device=device,
+        torch_dtype=torch.float16 if "cuda" in str(device) else torch.float32,
+        chunk_length_s=30,
+    )
+
+    refs: list[str] = []
+    hyps: list[str] = []
+    for row in prompts:
+        wav_path = audio_dir / f"{row['id']}.wav"
+        if not wav_path.exists():
+            print(f"[cer] missing {wav_path}, skipping")
+            continue
+        out = asr(str(wav_path), generate_kwargs={"language": "th", "task": "transcribe"})
+        refs.append(_cer_normalize(row["text"]))
+        hyps.append(_cer_normalize(out["text"]))
+
+    if not refs:
+        raise ValueError(f"No synthesized audio found in {audio_dir}")
+    return float(cer(refs, hyps))
+
+
+def _load_16k(path: Path):
+    import soundfile as sf
+    import torch
+    import torchaudio
+
+    wav, sr = sf.read(str(path), dtype="float32", always_2d=False)
+    t = torch.from_numpy(wav)
+    if t.dim() > 1:
+        t = t.mean(dim=1)
+    if sr != SV_SAMPLE_RATE:
+        t = torchaudio.functional.resample(t, sr, SV_SAMPLE_RATE)
+    return t
+
+
+def compute_sim(
+    audio_dir: Path,
+    prompts: list[dict[str, str]],
+    sv_model: str = DEFAULT_SV_MODEL,
+    device: str | None = None,
+) -> float:
+    """Mean speaker cosine similarity (gen vs ref) over prompts with ref_audio."""
+    import torch
+    from transformers import AutoFeatureExtractor, WavLMForXVector
+
+    if device is None:
+        device = "cuda:0" if torch.cuda.is_available() else "cpu"
+    extractor = AutoFeatureExtractor.from_pretrained(sv_model)
+    model = WavLMForXVector.from_pretrained(sv_model).to(device).eval()
+
+    def embed(path: Path):
+        wav = _load_16k(path)
+        inputs = extractor(wav.numpy(), sampling_rate=SV_SAMPLE_RATE, return_tensors="pt")
+        inputs = {k: v.to(device) for k, v in inputs.items()}
+        with torch.no_grad():
+            return model(**inputs).embeddings.squeeze(0)
+
+    sims: list[float] = []
+    for row in prompts:
+        ref = row.get("ref_audio")
+        if not ref:
+            continue
+        gen_path = audio_dir / f"{row['id']}.wav"
+        ref_path = Path(ref)
+        if not gen_path.exists() or not ref_path.exists():
+            print(f"[sim] missing {gen_path if not gen_path.exists() else ref_path}, skipping")
+            continue
+        sims.append(
+            float(torch.nn.functional.cosine_similarity(embed(gen_path), embed(ref_path), dim=0))
+        )
+
+    if not sims:
+        raise ValueError("No (generated, reference) pairs found — do prompts have ref_audio?")
+    return sum(sims) / len(sims)
 
 
 def main() -> None:
@@ -61,22 +163,26 @@ def main() -> None:
     p.add_argument("--prompts", required=True, help="TSV file with id/text/ref_audio columns")
     p.add_argument("--out-dir", default="eval/out", help="Where to write synthesized audio")
     p.add_argument("--adapter", default=None, help="LoRA adapter path; omit for base-only")
-    p.add_argument("--base-model", default="openbmb/VoxCPM2-2B")
+    p.add_argument("--base-model", default="openbmb/VoxCPM2")
+    p.add_argument("--asr-model", default=DEFAULT_ASR_MODEL)
+    p.add_argument("--skip-synth", action="store_true",
+                   help="Reuse already-synthesized audio in --out-dir")
     p.add_argument("--cer", action="store_true", help="Compute Thai CER after synthesis")
     p.add_argument("--sim", action="store_true", help="Compute speaker SIM after synthesis")
     args = p.parse_args()
 
     prompts = load_prompts(args.prompts)
     out_dir = Path(args.out_dir)
-    synthesize_all(
-        prompts,
-        out_dir,
-        base_model=args.base_model,
-        adapter_path=args.adapter,
-    )
+    if not args.skip_synth:
+        synthesize_all(
+            prompts,
+            out_dir,
+            base_model=args.base_model,
+            adapter_path=args.adapter,
+        )
 
     if args.cer:
-        print(f"CER: {compute_cer(out_dir, prompts):.4f}")
+        print(f"CER: {compute_cer(out_dir, prompts, asr_model=args.asr_model):.4f}")
     if args.sim:
         print(f"SIM: {compute_sim(out_dir, prompts):.4f}")
 
