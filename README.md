@@ -12,11 +12,24 @@ The reference architecture / training recipe is adapted from the
 
 ## Status
 
-Scaffold + monitoring + tests are production-ready and validated end-to-end via
-`--dry-run`. The actual VoxCPM trainer hookup in `train/train_lora.py` is the only
-remaining stub — it raises `NotImplementedError` with a clear integration sketch in
-its docstring; everything else (data prep, augmentation, dataset weighting,
-TensorBoard, in-training audio eval, timing tracker) runs on a CPU-only machine.
+Fully implemented against **voxcpm 2.0.3**. `train/train_lora.py` mirrors the
+mechanics of VoxCPM's official `scripts/train_voxcpm_finetune.py` (packer, bf16
+autocast, grad accumulation, LoRA-only checkpoints, resume, save-on-signal) and
+adds per-source weighted sampling, DataLoader-time text augmentation with
+tokenize-after-augment, and the MonitorBundle (TensorBoard + audio snapshots +
+timing JSON). Checkpoints use VoxCPM's loadable LoRA layout
+(`lora_weights.safetensors` + `lora_config.json`), so they work directly with
+`voxcpm clone --lora-path ...` and `src/inference.py --adapter ...`.
+
+Key facts learned from the installed API (these differ from early RESEARCH.md
+assumptions): VoxCPM2's AudioVAE **encodes at 16 kHz** and decodes at 48 kHz, so
+manifests are stored at 16 kHz; the LoRA config keys are
+`enable_lm/enable_dit/enable_proj/r/alpha/dropout`; the base HF id is
+`openbmb/VoxCPM2`. Torch is pinned to cu128 wheels (driver 575.x = CUDA 12.9
+cannot run cu130).
+
+Everything except the actual GPU run is validated: 45 unit tests pass, and
+`--dry-run` exercises datasets + monitoring on a CPU-only machine.
 
 ## Layout
 
