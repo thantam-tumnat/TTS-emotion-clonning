@@ -1,4 +1,4 @@
-"""Encoding-only Thai text hygiene for VajaCPM.
+"""Encoding-only Thai text hygiene for SiangTTS.
 
 Intentionally minimal compared to IndexTTS2-Thai's normalizer. VoxCPM 2 is
 tokenizer-free on the audio side and uses MiniCPM-4 BPE on the text side, so we do

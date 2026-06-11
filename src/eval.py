@@ -159,7 +159,7 @@ def compute_sim(
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Evaluate VajaCPM checkpoints.")
+    p = argparse.ArgumentParser(description="Evaluate SiangTTS checkpoints.")
     p.add_argument("--prompts", required=True, help="TSV file with id/text/ref_audio columns")
     p.add_argument("--out-dir", default="eval/out", help="Where to write synthesized audio")
     p.add_argument("--adapter", default=None, help="LoRA adapter path; omit for base-only")

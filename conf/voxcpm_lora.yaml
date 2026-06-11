@@ -1,4 +1,4 @@
-# LoRA fine-tuning recipe for VajaCPM on a single RTX 3090 24 GB.
+# LoRA fine-tuning recipe for SiangTTS on a single RTX 3090 24 GB.
 # See RESEARCH.md §8.1–§8.2 for the reasoning behind each value.
 #
 # Keys under `lora:` map 1:1 to voxcpm.model.voxcpm2.LoRAConfig.
@@ -52,7 +52,7 @@ train:
 monitor:
   tensorboard:
     enabled: true
-    log_dir: runs/vajacpm-lora-v0
+    log_dir: runs/siangtts-lora-v0
     flush_every_steps: 100
   audio_sampler:
     enabled: true
@@ -64,7 +64,7 @@ monitor:
     inference_timesteps: 10
   timing:
     enabled: true
-    summary_path: runs/vajacpm-lora-v0/training_summary.json
+    summary_path: runs/siangtts-lora-v0/training_summary.json
     log_gpu_stats: true              # records GPU name + VRAM peak per checkpoint
 
 augment:
@@ -79,5 +79,5 @@ augment:
     p: 0.1
 
 paths:
-  checkpoint_dir: checkpoints/vajacpm-lora-v0
-  log_dir: runs/vajacpm-lora-v0
+  checkpoint_dir: checkpoints/siangtts-lora-v0
+  log_dir: runs/siangtts-lora-v0

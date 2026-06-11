@@ -29,7 +29,7 @@ def push(
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--repo-id", required=True, help="e.g. username/vajacpm-lora-v0")
+    p.add_argument("--repo-id", required=True, help="e.g. username/siangtts-lora-v0")
     p.add_argument("--adapter-dir", type=Path, required=True)
     p.add_argument("--samples-dir", type=Path, default=None)
     p.add_argument("--config", type=Path, default=Path("conf/voxcpm_lora.yaml"))

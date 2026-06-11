@@ -1,7 +1,7 @@
-"""Entry point: LoRA fine-tune VoxCPM 2 on the VajaCPM mix.
+"""Entry point: LoRA fine-tune VoxCPM 2 on the SiangTTS mix.
 
 Mirrors the mechanics of VoxCPM's official `scripts/train_voxcpm_finetune.py`
-(v2.0.3) with three VajaCPM-specific changes:
+(v2.0.3) with three SiangTTS-specific changes:
 
 1. **Per-source weighted sampling** — `manifests.train[].weight` controls each
    source's share of the effective batch (e.g. ~20% LibriTTS-R EN).
@@ -35,7 +35,7 @@ import yaml
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from train.callbacks import MonitorBundle  # noqa: E402
-from train.dataset import VajaCPMDataset  # noqa: E402
+from train.dataset import SiangTTSDataset  # noqa: E402
 
 os.environ.setdefault("TOKENIZERS_PARALLELISM", "false")
 
@@ -45,14 +45,14 @@ def load_config(path: Path) -> dict:
         return yaml.safe_load(f)
 
 
-def build_datasets(cfg: dict) -> tuple[VajaCPMDataset, VajaCPMDataset]:
+def build_datasets(cfg: dict) -> tuple[SiangTTSDataset, SiangTTSDataset]:
     """Train uses per-source weights from YAML. Val ignores weights (uniform)."""
     train_sources = cfg["manifests"]["train"]
     val_sources = [{"path": m["path"], "weight": 1.0} for m in cfg["manifests"]["val"]]
-    train_ds = VajaCPMDataset.from_sources(
+    train_ds = SiangTTSDataset.from_sources(
         train_sources, is_train=True, augment_cfg=cfg.get("augment")
     )
-    val_ds = VajaCPMDataset.from_sources(
+    val_ds = SiangTTSDataset.from_sources(
         val_sources, is_train=False, augment_cfg=cfg.get("augment")
     )
     return train_ds, val_ds
@@ -189,7 +189,7 @@ def run_training(cfg: dict, monitor: MonitorBundle, train_ds, val_ds) -> None:
     accelerator = Accelerator(amp=True)
     if accelerator.world_size > 1:
         raise NotImplementedError(
-            "VajaCPM's weighted sampler is single-GPU; use VoxCPM's official "
+            "SiangTTS's weighted sampler is single-GPU; use VoxCPM's official "
             "script for multi-GPU runs."
         )
 

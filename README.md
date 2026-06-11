@@ -1,4 +1,4 @@
-# VajaCPM
+# SiangTTS
 
 Thai voice-cloning TTS built by LoRA fine-tuning **VoxCPM 2 (2B)** on the
 [`dubbing-ai/vaja-thai`](https://huggingface.co/datasets/dubbing-ai/vaja-thai) corpus,
@@ -7,7 +7,7 @@ reading and code-switching.
 
 This repo is the practical implementation of the plan in [`RESEARCH.md`](RESEARCH.md).
 The reference architecture / training recipe is adapted from the
-[JaiTTS paper](https://arxiv.org/abs/2604.27607), but VajaCPM trains within a single
+[JaiTTS paper](https://arxiv.org/abs/2604.27607), but SiangTTS trains within a single
 **RTX 3090 24 GB** budget using LoRA rather than full SFT.
 
 ## Status
@@ -34,7 +34,7 @@ Everything except the actual GPU run is validated: 45 unit tests pass, and
 ## Layout
 
 ```
-VajaCPM/
+SiangTTS/
 ├── conf/
 │   └── voxcpm_lora.yaml       # LoRA training recipe (§8.2 of RESEARCH.md)
 ├── src/
@@ -43,8 +43,8 @@ VajaCPM/
 │   ├── inference.py           # thin wrapper around voxcpm.VoxCPM
 │   └── eval.py                # CER (Typhoon-Whisper) + SIM (WavLM) + digit-eval
 ├── train/
-│   ├── prepare_vaja_thai.py   # vaja-thai → JSONL @ 48 kHz, ref_audio pairing
-│   ├── prepare_libritts.py    # LibriTTS-R text_original → JSONL @ 48 kHz
+│   ├── prepare_vaja_thai.py   # vaja-thai → JSONL @ 16 kHz, ref_audio pairing
+│   ├── prepare_libritts.py    # LibriTTS-R text_original → JSONL @ 16 kHz
 │   ├── dataset.py             # JSONL → VoxCPM dataset; hooks src/augment.py
 │   ├── train_lora.py          # invokes VoxCPM trainer with conf/voxcpm_lora.yaml
 │   └── publish_to_hf.py       # push LoRA adapter + config + samples to HF
@@ -84,7 +84,7 @@ uv run python train/train_lora.py --config conf/voxcpm_lora.yaml --dry-run
 uv run python train/train_lora.py --config conf/voxcpm_lora.yaml
 
 # 4. Evaluate
-uv run python -m src.eval --adapter checkpoints/last --prompts eval/prompts_short.tsv
+uv run python -m src.eval --adapter checkpoints/siangtts-lora-v0/latest --prompts eval/prompts_short.tsv
 ```
 
 ## Tests

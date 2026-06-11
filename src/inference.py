@@ -97,7 +97,7 @@ def synthesize(
 
 
 def main() -> None:
-    p = argparse.ArgumentParser(description="Synthesize Thai speech with VoxCPM 2 / VajaCPM.")
+    p = argparse.ArgumentParser(description="Synthesize Thai speech with VoxCPM 2 / SiangTTS.")
     p.add_argument("--text", required=True, help="Thai text to synthesize")
     p.add_argument("--out", default="out.wav", help="Output WAV path")
     p.add_argument("--base-model", default=DEFAULT_BASE_MODEL)

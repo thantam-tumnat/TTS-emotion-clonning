@@ -1,4 +1,4 @@
-"""Prepare LibriTTS-R → JSONL manifest @ 16 kHz for VajaCPM.
+"""Prepare LibriTTS-R → JSONL manifest @ 16 kHz for SiangTTS.
 
 Two key choices (RESEARCH.md §8.3):
 

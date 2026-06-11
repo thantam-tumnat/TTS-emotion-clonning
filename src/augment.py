@@ -1,4 +1,4 @@
-"""DataLoader-time text augmentations for VajaCPM.
+"""DataLoader-time text augmentations for SiangTTS.
 
 Implements the augmentation menu from RESEARCH.md §8.6:
 

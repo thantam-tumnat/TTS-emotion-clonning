@@ -43,12 +43,12 @@ from src.augment import (
 log = logging.getLogger(__name__)
 
 
-class VajaCPMDataset(Dataset):
+class SiangTTSDataset(Dataset):
     """Multi-source JSONL dataset with per-source weights for the sampler.
 
     Construct via either:
-        - `VajaCPMDataset(manifest_paths=[...])` — equal weighting (back-compat).
-        - `VajaCPMDataset.from_sources([{"path": "...", "weight": 1.0}, ...])` —
+        - `SiangTTSDataset(manifest_paths=[...])` — equal weighting (back-compat).
+        - `SiangTTSDataset.from_sources([{"path": "...", "weight": 1.0}, ...])` —
           per-source weights honored by `make_weighted_sampler()`.
 
     The weights are *normalized*: `weight: 0.25` for one source out of two with
@@ -133,7 +133,7 @@ class VajaCPMDataset(Dataset):
         cls,
         sources: list[dict[str, Any]],
         **kwargs: Any,
-    ) -> "VajaCPMDataset":
+    ) -> "SiangTTSDataset":
         return cls(sources=sources, **kwargs)
 
     # ------------------------------------------------------------------
@@ -328,4 +328,4 @@ class VajaCPMDataset(Dataset):
         )
 
 
-__all__ = ["VajaCPMDataset"]
+__all__ = ["SiangTTSDataset"]

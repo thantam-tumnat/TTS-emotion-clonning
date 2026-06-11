@@ -1,4 +1,4 @@
-"""Prepare dubbing-ai/vaja-thai → JSONL manifest @ 16 kHz for VajaCPM.
+"""Prepare dubbing-ai/vaja-thai → JSONL manifest @ 16 kHz for SiangTTS.
 
 Adapted from dubbing-ai/indextts2-thai's prepare_vaja_thai.py, with three changes:
 

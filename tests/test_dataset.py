@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from train.dataset import VajaCPMDataset
+from train.dataset import SiangTTSDataset
 
 
 def _write_manifest(path: Path, rows: list[dict]) -> None:
@@ -37,7 +37,7 @@ def two_source_manifests(tmp_path: Path) -> tuple[Path, Path]:
 
 def test_loads_multi_source_with_correct_counts(two_source_manifests):
     a, b = two_source_manifests
-    ds = VajaCPMDataset.from_sources([
+    ds = SiangTTSDataset.from_sources([
         {"path": str(a), "weight": 1.0},
         {"path": str(b), "weight": 0.25},
     ])
@@ -48,7 +48,7 @@ def test_loads_multi_source_with_correct_counts(two_source_manifests):
 
 def test_per_row_weights_normalize_for_smaller_source(two_source_manifests):
     a, b = two_source_manifests
-    ds = VajaCPMDataset.from_sources([
+    ds = SiangTTSDataset.from_sources([
         {"path": str(a), "weight": 1.0},   # 2 rows × 0.5 = 1.0 cumulative
         {"path": str(b), "weight": 0.25},  # 1 row × 0.25 = 0.25 cumulative
     ])
@@ -64,7 +64,7 @@ def test_weighted_sampler_respects_weights(two_source_manifests):
     """With weight 1:0.25 (i.e. 80:20), sampling should prefer source 0."""
     import torch
     a, b = two_source_manifests
-    ds = VajaCPMDataset.from_sources([
+    ds = SiangTTSDataset.from_sources([
         {"path": str(a), "weight": 1.0},
         {"path": str(b), "weight": 0.25},
     ])
@@ -79,20 +79,20 @@ def test_weighted_sampler_respects_weights(two_source_manifests):
 
 def test_missing_manifest_raises(tmp_path: Path):
     with pytest.raises(FileNotFoundError):
-        VajaCPMDataset.from_sources([{"path": str(tmp_path / "nope.jsonl")}])
+        SiangTTSDataset.from_sources([{"path": str(tmp_path / "nope.jsonl")}])
 
 
 def test_bad_json_line_raises(tmp_path: Path):
     p = tmp_path / "bad.jsonl"
     p.write_text("{not json}\n", encoding="utf-8")
     with pytest.raises(ValueError, match="bad JSONL"):
-        VajaCPMDataset.from_sources([{"path": str(p)}])
+        SiangTTSDataset.from_sources([{"path": str(p)}])
 
 
 def test_set_epoch_changes_augmentation(two_source_manifests):
     """Different epochs should produce different augmented text for the same idx."""
     a, _b = two_source_manifests
-    ds = VajaCPMDataset.from_sources(
+    ds = SiangTTSDataset.from_sources(
         [{"path": str(a), "weight": 1.0}],
         is_train=True,
         augment_cfg={
