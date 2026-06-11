@@ -6,6 +6,8 @@ plus a small **LibriTTS-R** slice with raw `text_original` to retain English dig
 reading and code-switching.
 
 This repo is the practical implementation of the plan in [`RESEARCH.md`](RESEARCH.md).
+**[`PLAN.md`](PLAN.md) is the live execution roadmap** — next steps and the
+decision tree for each evaluation outcome.
 The reference architecture / training recipe is adapted from the
 [JaiTTS paper](https://arxiv.org/abs/2604.27607), but SiangTTS trains within a single
 **RTX 3090 24 GB** budget using LoRA rather than full SFT.
