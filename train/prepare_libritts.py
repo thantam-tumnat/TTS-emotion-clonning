@@ -1,11 +1,12 @@
-"""Prepare LibriTTS-R → JSONL manifest @ 48 kHz for VajaCPM.
+"""Prepare LibriTTS-R → JSONL manifest @ 16 kHz for VajaCPM.
 
 Two key choices (RESEARCH.md §8.3):
 
 1. Carry BOTH `text_original` and `text_normalized` in the manifest. The DataLoader
    samples between them via `src.augment.pick_libritts_text` so the model sees raw
    digits ("1923") most of the time and spelled-out form some of the time.
-2. Resample 24 kHz → 48 kHz at manifest write time so the train loop doesn't need to.
+2. Resample 24 kHz → 16 kHz at manifest write time (VoxCPM2's AudioVAE encoder
+   rate) so the train loop doesn't need to.
 
 Usage:
     uv run python train/prepare_libritts.py --output-dir data/libritts --subset train-clean-100
@@ -25,7 +26,7 @@ from tqdm import tqdm
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from train.audio_prep import resample_trim_save  # noqa: E402
 
-TARGET_SR = 48000
+TARGET_SR = 16000  # AudioVAE encoder input rate (VoxCPM2 decodes at 48 kHz)
 REF_AUDIO_PROBABILITY = 0.4
 DATASET_ID = "libritts_r"
 

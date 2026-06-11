@@ -1,8 +1,10 @@
-"""Prepare dubbing-ai/vaja-thai → JSONL manifest @ 48 kHz for VajaCPM.
+"""Prepare dubbing-ai/vaja-thai → JSONL manifest @ 16 kHz for VajaCPM.
 
 Adapted from dubbing-ai/indextts2-thai's prepare_vaja_thai.py, with three changes:
 
-1. TARGET_SR 22050 → 48000 (VoxCPM 2 native).
+1. TARGET_SR 22050 → 16000. VoxCPM2's AudioVAE *encodes* at 16 kHz (it decodes
+   at 48 kHz — that's the output side, irrelevant for training data). Storing at
+   the encoder rate avoids a per-epoch resample in the DataLoader.
 2. Output JSONL (audio / text / ref_audio / duration / dataset_id / no_digit_aug)
    instead of CSV.
 3. Per-speaker `ref_audio` pairing on 30–50% of rows (RESEARCH.md §8.3).
@@ -32,7 +34,7 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 from src.thai_normalizer import normalize_thai_text  # noqa: E402
 from train.audio_prep import resample_trim_save  # noqa: E402
 
-TARGET_SR = 48000
+TARGET_SR = 16000  # AudioVAE encoder input rate (VoxCPM2 decodes at 48 kHz)
 DEFAULT_TIER_WEIGHTS = {1: 2, 2: 1, 3: 1, 4: 0}
 REF_AUDIO_PROBABILITY = 0.4   # 30–50% per VoxCPM docs
 DATASET_ID = "vaja_thai"
