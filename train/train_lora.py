@@ -62,6 +62,18 @@ def build_datasets(cfg: dict) -> tuple[SiangTTSDataset, SiangTTSDataset]:
 # Checkpointing (VoxCPM-compatible LoRA layout)
 # ---------------------------------------------------------------------------
 
+# Pretrained-dir files copied into full-SFT checkpoints so each one is a
+# standalone model dir loadable by `VoxCPM(voxcpm_model_path=...)`.
+_PRETRAINED_FILES = (
+    "config.json",
+    "audiovae.pth",
+    "audiovae.safetensors",
+    "tokenizer.json",
+    "special_tokens_map.json",
+    "tokenizer_config.json",
+)
+
+
 def save_checkpoint(
     model,
     optimizer,
@@ -79,16 +91,28 @@ def save_checkpoint(
     folder.mkdir(parents=True, exist_ok=True)
 
     unwrapped = model.module if hasattr(model, "module") else model
-    lora_state = {k: v for k, v in unwrapped.state_dict().items() if "lora_" in k}
-    save_file(lora_state, folder / "lora_weights.safetensors")
-
     lora_cfg = unwrapped.lora_config
-    lora_info = {
-        "base_model": str(pretrained_path),
-        "lora_config": lora_cfg.model_dump() if hasattr(lora_cfg, "model_dump") else vars(lora_cfg),
-    }
-    with open(folder / "lora_config.json", "w", encoding="utf-8") as f:
-        json.dump(lora_info, f, indent=2, ensure_ascii=False)
+
+    if lora_cfg is not None:
+        lora_state = {k: v for k, v in unwrapped.state_dict().items() if "lora_" in k}
+        save_file(lora_state, folder / "lora_weights.safetensors")
+        lora_info = {
+            "base_model": str(pretrained_path),
+            "lora_config": lora_cfg.model_dump() if hasattr(lora_cfg, "model_dump") else vars(lora_cfg),
+        }
+        with open(folder / "lora_config.json", "w", encoding="utf-8") as f:
+            json.dump(lora_info, f, indent=2, ensure_ascii=False)
+    else:
+        # Full SFT: non-VAE weights + the config/tokenizer/VAE files from the
+        # base snapshot, so the folder loads as a complete model.
+        state = {
+            k: v for k, v in unwrapped.state_dict().items() if not k.startswith("audio_vae.")
+        }
+        save_file(state, folder / "model.safetensors")
+        for fname in _PRETRAINED_FILES:
+            src = Path(pretrained_path) / fname
+            if src.exists():
+                shutil.copy2(src, folder / fname)
 
     torch.save(optimizer.state_dict(), folder / "optimizer.pth")
     torch.save(scheduler.state_dict(), folder / "scheduler.pth")
@@ -107,14 +131,16 @@ def load_checkpoint(model, optimizer, scheduler, save_dir: Path) -> int:
     import torch
     from safetensors.torch import load_file
 
+    unwrapped = model.module if hasattr(model, "module") else model
     latest = save_dir / "latest"
-    weights = latest / "lora_weights.safetensors"
+    weights = latest / (
+        "lora_weights.safetensors" if unwrapped.lora_config is not None else "model.safetensors"
+    )
     if not weights.exists():
         return 0
 
-    unwrapped = model.module if hasattr(model, "module") else model
     unwrapped.load_state_dict(load_file(str(weights)), strict=False)
-    print(f"Loaded LoRA weights from {weights}", file=sys.stderr)
+    print(f"Loaded weights from {weights}", file=sys.stderr)
 
     opt_path = latest / "optimizer.pth"
     if opt_path.exists():
@@ -193,12 +219,20 @@ def run_training(cfg: dict, monitor: MonitorBundle, train_ds, val_ds) -> None:
             "script for multi-GPU runs."
         )
 
+    # `lora:` present → adapter training; absent/null → full SFT of everything
+    # except the AudioVAE (from_local freezes the VAE in training mode either
+    # way). Full SFT of VoxCPM2-2B needs ~40 GB VRAM — not a 3090 recipe; see
+    # conf/voxcpm_sft.yaml.
+    lora_section = cfg.get("lora") or None
+    lora_config = LoRAConfig(**lora_section) if lora_section else None
+    print(f"mode: {'LoRA' if lora_config else 'full SFT'}", file=sys.stderr)
+
     pretrained_path = resolve_pretrained_path(str(cfg["pretrained_path"]))
     model = VoxCPM2Model.from_local(
         pretrained_path,
         optimize=False,
         training=True,
-        lora_config=LoRAConfig(**cfg["lora"]),
+        lora_config=lora_config,
     )
 
     expected_sr = model.audio_vae.sample_rate

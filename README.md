@@ -36,7 +36,8 @@ Everything except the actual GPU run is validated: 45 unit tests pass, and
 ```
 SiangTTS/
 ├── conf/
-│   └── voxcpm_lora.yaml       # LoRA training recipe (§8.2 of RESEARCH.md)
+│   ├── voxcpm_lora.yaml       # LoRA training recipe (§8.2 of RESEARCH.md) — 3090-sized
+│   └── voxcpm_sft.yaml        # full-SFT recipe — A100-80G sized (escalation path)
 ├── src/
 │   ├── thai_normalizer.py     # encoding hygiene only (no number-to-word, no segmentation)
 │   ├── augment.py             # DataLoader-time text augmentations
@@ -82,6 +83,9 @@ uv run python train/prepare_libritts.py  --output-dir data/libritts --subset tra
 # 3. Train LoRA (the dry-run validates the dataset + monitor pipeline without GPU)
 uv run python train/train_lora.py --config conf/voxcpm_lora.yaml --dry-run
 uv run python train/train_lora.py --config conf/voxcpm_lora.yaml
+
+# 3b. Full SFT (rented A100-80G — does NOT fit the 3090; same script, no `lora:`)
+uv run python train/train_lora.py --config conf/voxcpm_sft.yaml
 
 # 4. Evaluate
 uv run python -m src.eval --adapter checkpoints/siangtts-lora-v0/latest --prompts eval/prompts_short.tsv
