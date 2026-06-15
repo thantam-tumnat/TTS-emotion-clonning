@@ -13,17 +13,21 @@ out_sample_rate: 48000    # AudioVAE decoder output rate
 
 manifests:
   # Thai sources prepped separately (not interleaved) so tiny corpora aren't
-  # oversampled into single-speaker dominance. Weights set the batch mix.
+  # oversampled into single-speaker dominance. Weights set the batch mix:
+  # cv 1.0 / libritts 0.25 → ~80% Thai / 20% EN effective batch.
+  # Common Voice has real speaker IDs (4,245) so ref_audio pairing is correct.
+  # porjai_central (studio-clean, but no speaker labels) is a v1 addition —
+  # needs ref-pairing disabled to avoid teaching wrong-voice cloning.
   train:
-    - path: data/vaja-porjai/train.jsonl
-      weight: 1.0       # studio-clean, large — primary acoustic target
     - path: data/vaja-cv/train.jsonl
-      weight: 0.6       # Common Voice — many speakers, diversity for cloning
+      weight: 1.0       # Common Voice — many speakers + real IDs → cloning signal
+    - path: data/vaja-porjai/train.jsonl
+      weight: 0.7       # porjai studio-clean (no ref_audio: unlabeled speakers)
     - path: data/libritts/train.jsonl
-      weight: 0.25      # ~13% EN — retains English + code-switching
+      weight: 0.42      # ~20% EN — retains English + code-switching
   val:
-    - path: data/vaja-porjai/val.jsonl
     - path: data/vaja-cv/val.jsonl
+    - path: data/vaja-porjai/val.jsonl
     - path: data/libritts/val.jsonl
 
 lora:                     # → voxcpm LoRAConfig
@@ -48,7 +52,8 @@ train:
   batch_size: 1
   gradient_accumulation_steps: 16  # effective batch 16
   max_batch_tokens: 4096           # drop samples longer than this / batch_size
-  num_epochs: 2                    # 3 epochs over-trains; watch gen-length collapse
+  num_epochs: 1                    # v0: 1 epoch (~8h) first; extend if undertrained.
+                                   # 3+ over-trains → gen-length collapse (smoke §)
   num_workers: 4
   max_grad_norm: 1.0
   save_every_steps: 1000
