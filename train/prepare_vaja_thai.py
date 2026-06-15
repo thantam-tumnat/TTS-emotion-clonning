@@ -147,15 +147,27 @@ def main() -> None:
     p.add_argument("--config", default="all", choices=["all", "tsync2", "porjai_central", "commonvoice", "gigaspeech2"])
     p.add_argument("--max-samples", type=int, default=0, help="0 = no limit")
     p.add_argument("--min-tier", type=int, default=1)
+    p.add_argument(
+        "--tiers",
+        type=int,
+        nargs="+",
+        default=None,
+        help="Restrict to these tiers, each at weight 1 (no oversampling). "
+        "E.g. `--tiers 1` for a tier-1-only smoke set. Omit to use the default "
+        "oversampling weights {1:2, 2:1, 3:1, 4:0}.",
+    )
     p.add_argument("--val-ratio", type=float, default=0.02)
     p.add_argument("--seed", type=int, default=42)
     args = p.parse_args()
+
+    tier_weights = {t: 1 for t in args.tiers} if args.tiers else None
 
     prepare(
         output_dir=args.output_dir,
         config=args.config,
         max_samples=args.max_samples,
         min_quality_tier=args.min_tier,
+        tier_weights=tier_weights,
         val_ratio=args.val_ratio,
         seed=args.seed,
     )
@@ -163,3 +175,12 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    # `datasets` streaming + torchaudio spawn background threads that can crash
+    # the interpreter during finalization (PyGILState_Release) AFTER all output
+    # is written and flushed. Bypass the buggy teardown with a hard exit so the
+    # process returns 0 (important for background-job monitoring).
+    import os
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)

@@ -134,3 +134,10 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
+    # See prepare_vaja_thai.py: hard-exit to dodge a finalization-time crash in
+    # datasets/torchaudio background threads after output is written.
+    import os
+
+    sys.stdout.flush()
+    sys.stderr.flush()
+    os._exit(0)
