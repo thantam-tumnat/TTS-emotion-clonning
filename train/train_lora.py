@@ -81,6 +81,7 @@ def save_checkpoint(
     save_dir: Path,
     step: int,
     pretrained_path: str,
+    keep_last_n: int = 3,
 ) -> Path:
     import shutil
 
@@ -123,6 +124,16 @@ def save_checkpoint(
     if latest.exists():
         shutil.rmtree(latest)
     shutil.copytree(folder, latest)
+
+    # Prune old numbered checkpoints (keep the newest `keep_last_n`) so a long
+    # run can't fill the disk. `latest` is always a separate full copy.
+    if keep_last_n and keep_last_n > 0:
+        numbered = sorted(
+            (d for d in save_dir.glob("step_*") if d.is_dir()),
+            key=lambda d: int(d.name.split("_")[1]),
+        )
+        for old in numbered[:-keep_last_n]:
+            shutil.rmtree(old, ignore_errors=True)
     return folder
 
 
