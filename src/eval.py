@@ -72,19 +72,26 @@ def compute_cer(
     asr_model: str = DEFAULT_ASR_MODEL,
     device: str | None = None,
 ) -> float:
-    """Transcribe synthesized audio and return corpus-level CER vs prompt text."""
+    """Transcribe synthesized audio and return corpus-level CER vs prompt text.
+
+    Drives Whisper via processor + model directly (not transformers'
+    `pipeline`), feeding soundfile-decoded 16 kHz arrays. This avoids the
+    pipeline's mandatory torchcodec audio backend, whose binary links against a
+    CUDA-13 lib (libnvrtc.so.13) absent in our cu128 build. Each eval prompt is
+    <30 s, so a single Whisper window suffices (no chunking).
+    """
     import torch
     from jiwer import cer
-    from transformers import pipeline
+    from transformers import AutoModelForSpeechSeq2Seq, AutoProcessor
 
     if device is None:
         device = "cuda:0" if torch.cuda.is_available() else "cpu"
-    asr = pipeline(
-        "automatic-speech-recognition",
-        model=asr_model,
-        device=device,
-        torch_dtype=torch.float16 if "cuda" in str(device) else torch.float32,
-        chunk_length_s=30,
+    dtype = torch.float16 if "cuda" in str(device) else torch.float32
+    processor = AutoProcessor.from_pretrained(asr_model)
+    model = (
+        AutoModelForSpeechSeq2Seq.from_pretrained(asr_model, torch_dtype=dtype)
+        .to(device)
+        .eval()
     )
 
     refs: list[str] = []
@@ -94,9 +101,17 @@ def compute_cer(
         if not wav_path.exists():
             print(f"[cer] missing {wav_path}, skipping")
             continue
-        out = asr(str(wav_path), generate_kwargs={"language": "th", "task": "transcribe"})
+        wav = _load_16k(wav_path).numpy()
+        feats = processor(
+            wav, sampling_rate=SV_SAMPLE_RATE, return_tensors="pt"
+        ).input_features.to(device, dtype)
+        with torch.no_grad():
+            ids = model.generate(
+                feats, language="th", task="transcribe", max_new_tokens=256
+            )
+        text = processor.batch_decode(ids, skip_special_tokens=True)[0]
         refs.append(_cer_normalize(row["text"]))
-        hyps.append(_cer_normalize(out["text"]))
+        hyps.append(_cer_normalize(text))
 
     if not refs:
         raise ValueError(f"No synthesized audio found in {audio_dir}")
