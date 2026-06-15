@@ -79,8 +79,8 @@ uv sync
 uv run python -m src.inference --base-only --text "สวัสดีครับ"
 
 # 2. Prepare manifests
-uv run python train/prepare_vaja_thai.py --output-dir data/vaja --max-samples 0
-uv run python train/prepare_libritts.py  --output-dir data/libritts --subset train-clean-100
+uv run python train/prepare_vaja_thai.py --output-dir data/vaja-main --tiers 1 2 3 --max-samples 80000
+uv run python train/prepare_libritts.py  --output-dir data/libritts --config clean --split train.clean.100
 
 # 3. Train LoRA (the dry-run validates the dataset + monitor pipeline without GPU)
 uv run python train/train_lora.py --config conf/voxcpm_lora.yaml --dry-run

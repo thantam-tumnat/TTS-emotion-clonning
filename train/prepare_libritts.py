@@ -33,7 +33,8 @@ DATASET_ID = "libritts_r"
 
 def prepare(
     output_dir: Path,
-    subset: str = "train-clean-100",
+    config: str = "clean",
+    split: str = "train.clean.100",
     max_samples: int = 0,
     val_ratio: float = 0.02,
     seed: int = 42,
@@ -44,14 +45,16 @@ def prepare(
     wav_dir = output_dir / "wavs"
     wav_dir.mkdir(exist_ok=True)
 
-    ds = load_dataset("mythicinfinity/libritts_r", subset, split="train", streaming=True)
+    # mythicinfinity/libritts_r configs: dev/clean/other/all; clean splits are
+    # train.clean.100, train.clean.360, dev.clean, test.clean.
+    ds = load_dataset("mythicinfinity/libritts_r", config, split=split, streaming=True)
 
     rng = random.Random(seed)
     rows: list[dict] = []
     speaker_to_clips: dict[str, list[str]] = defaultdict(list)
     seen = 0
 
-    for sample in tqdm(ds, desc=f"streaming libritts-r/{subset}"):
+    for sample in tqdm(ds, desc=f"streaming libritts-r/{split}"):
         if max_samples and seen >= max_samples:
             break
 
@@ -117,7 +120,9 @@ def _write_jsonl(path: Path, rows: list[dict]) -> None:
 def main() -> None:
     p = argparse.ArgumentParser()
     p.add_argument("--output-dir", type=Path, default=Path("data/libritts"))
-    p.add_argument("--subset", default="train-clean-100")
+    p.add_argument("--config", default="clean", help="HF config: dev/clean/other/all")
+    p.add_argument("--split", default="train.clean.100",
+                   help="e.g. train.clean.100, train.clean.360")
     p.add_argument("--max-samples", type=int, default=0)
     p.add_argument("--val-ratio", type=float, default=0.02)
     p.add_argument("--seed", type=int, default=42)
@@ -125,7 +130,8 @@ def main() -> None:
 
     prepare(
         output_dir=args.output_dir,
-        subset=args.subset,
+        config=args.config,
+        split=args.split,
         max_samples=args.max_samples,
         val_ratio=args.val_ratio,
         seed=args.seed,

@@ -12,13 +12,18 @@ sample_rate: 16000        # AudioVAE encoder input rate (must match audio_vae_co
 out_sample_rate: 48000    # AudioVAE decoder output rate
 
 manifests:
+  # Thai sources prepped separately (not interleaved) so tiny corpora aren't
+  # oversampled into single-speaker dominance. Weights set the batch mix.
   train:
-    - path: data/vaja/train.jsonl
-      weight: 1.0
+    - path: data/vaja-porjai/train.jsonl
+      weight: 1.0       # studio-clean, large — primary acoustic target
+    - path: data/vaja-cv/train.jsonl
+      weight: 0.6       # Common Voice — many speakers, diversity for cloning
     - path: data/libritts/train.jsonl
-      weight: 0.25      # ~20% of effective batch is EN
+      weight: 0.25      # ~13% EN — retains English + code-switching
   val:
-    - path: data/vaja/val.jsonl
+    - path: data/vaja-porjai/val.jsonl
+    - path: data/vaja-cv/val.jsonl
     - path: data/libritts/val.jsonl
 
 lora:                     # → voxcpm LoRAConfig
