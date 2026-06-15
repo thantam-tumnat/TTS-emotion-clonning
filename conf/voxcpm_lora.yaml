@@ -51,7 +51,11 @@ train:
   # Launch with PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True.
   batch_size: 1
   gradient_accumulation_steps: 16  # effective batch 16
-  max_batch_tokens: 4096           # drop samples longer than this / batch_size
+  # Backstop guard. fps=25/patch=4 ≈ 6 tokens/s, so a 14 s target + 8 s ref ≈
+  # 180 packed tokens; 512 won't drop our filtered data but catches pathological
+  # samples. NOTE: DiT memory scales with audio *frames*, not LM tokens — the
+  # real OOM guard is the ≤14 s target / ≤8 s ref manifest filter (see RESULTS).
+  max_batch_tokens: 512
   num_epochs: 1                    # v0: 1 epoch (~8h) first; extend if undertrained.
                                    # 3+ over-trains → gen-length collapse (smoke §)
   num_workers: 4
