@@ -48,6 +48,7 @@ def prepare(
     tier_weights: dict[int, int] | None = None,
     val_ratio: float = 0.02,
     seed: int = 42,
+    ref_audio_probability: float = REF_AUDIO_PROBABILITY,
 ) -> None:
     from datasets import interleave_datasets, load_dataset
 
@@ -73,50 +74,69 @@ def prepare(
     speaker_to_clips: dict[str, list[str]] = defaultdict(list)
     seen = 0
 
-    for sample in tqdm(ds, desc="streaming vaja-thai"):
-        if max_samples and seen >= max_samples:
-            break
-        tier = int(sample.get("quality_tier", 4))
-        if tier < min_quality_tier:
-            continue
-        weight = tier_weights.get(tier, 0)
-        if weight == 0:
-            continue
+    # Streaming from the Hub can drop the connection (httpx.RemoteProtocolError)
+    # mid-shard on a long run. Catch it (and any per-sample failure) and fall
+    # through to the write step so partial progress is salvaged rather than lost.
+    try:
+        for sample in tqdm(ds, desc="streaming vaja-thai"):
+            if max_samples and seen >= max_samples:
+                break
+            try:
+                tier = int(sample.get("quality_tier", 4))
+                if tier < min_quality_tier:
+                    continue
+                weight = tier_weights.get(tier, 0)
+                if weight == 0:
+                    continue
 
-        text = normalize_thai_text(sample["text"])
-        if not text:
-            continue
+                text = normalize_thai_text(sample["text"])
+                if not text:
+                    continue
 
-        audio = sample["audio"]
-        wav_id = f"vaja_{seen:08d}"
-        wav_rel = f"wavs/{wav_id}.wav"
-        duration = resample_trim_save(
-            audio["array"], audio["sampling_rate"],
-            wav_dir / f"{wav_id}.wav", target_sr=TARGET_SR,
+                audio = sample["audio"]
+                wav_id = f"vaja_{seen:08d}"
+                wav_rel = f"wavs/{wav_id}.wav"
+                duration = resample_trim_save(
+                    audio["array"], audio["sampling_rate"],
+                    wav_dir / f"{wav_id}.wav", target_sr=TARGET_SR,
+                )
+                if duration is None:
+                    continue   # outside [1, 30] s window after silence trim
+
+                speaker = str(sample.get("speaker_id") or sample.get("source") or "unknown")
+                speaker_to_clips[speaker].append(wav_rel)
+
+                for _ in range(weight):
+                    rows.append(
+                        {
+                            "audio": wav_rel,
+                            "text": text,
+                            "duration": round(duration, 3),
+                            "speaker": speaker,
+                            "dataset_id": DATASET_ID,
+                            "tier": tier,
+                        }
+                    )
+                seen += 1
+            except Exception as e:  # noqa: BLE001 — one bad sample shouldn't abort
+                print(f"\n[warn] skipping sample {seen}: {e}", file=sys.stderr)
+                continue
+    except Exception as e:  # noqa: BLE001 — network drop etc.: salvage what we have
+        print(
+            f"\n[warn] streaming stopped early after {seen} clips ({type(e).__name__}: {e}); "
+            "writing partial manifest.",
+            file=sys.stderr,
         )
-        if duration is None:
-            continue   # outside [1, 30] s window after silence trim
 
-        speaker = str(sample.get("speaker_id") or sample.get("source") or "unknown")
-        speaker_to_clips[speaker].append(wav_rel)
+    if not rows:
+        raise RuntimeError("No clips collected — nothing to write.")
 
-        for _ in range(weight):
-            rows.append(
-                {
-                    "audio": wav_rel,
-                    "text": text,
-                    "duration": round(duration, 3),
-                    "speaker": speaker,
-                    "dataset_id": DATASET_ID,
-                    "tier": tier,
-                }
-            )
-        seen += 1
-
-    # Attach ref_audio for ~REF_AUDIO_PROBABILITY of rows, using a different clip
-    # from the same speaker. Rows whose speaker has only one clip get no ref.
+    # Attach ref_audio for ~ref_audio_probability of rows, using a different clip
+    # from the same speaker. Skipped entirely when ref_audio_probability == 0
+    # (e.g. porjai_central, which has no real speaker labels — pairing different
+    # speakers as "same voice" would corrupt the cloning objective).
     for r in rows:
-        if rng.random() >= REF_AUDIO_PROBABILITY:
+        if ref_audio_probability <= 0 or rng.random() >= ref_audio_probability:
             continue
         candidates = [c for c in speaker_to_clips[r["speaker"]] if c != r["audio"]]
         if candidates:
@@ -158,6 +178,12 @@ def main() -> None:
     )
     p.add_argument("--val-ratio", type=float, default=0.02)
     p.add_argument("--seed", type=int, default=42)
+    p.add_argument(
+        "--no-ref-audio",
+        action="store_true",
+        help="Disable ref_audio pairing. Use for sources without real speaker "
+        "labels (e.g. porjai_central) where pairing would link different voices.",
+    )
     args = p.parse_args()
 
     tier_weights = {t: 1 for t in args.tiers} if args.tiers else None
@@ -170,6 +196,7 @@ def main() -> None:
         tier_weights=tier_weights,
         val_ratio=args.val_ratio,
         seed=args.seed,
+        ref_audio_probability=0.0 if args.no_ref_audio else REF_AUDIO_PROBABILITY,
     )
 
 
