@@ -386,14 +386,19 @@ def run_training(cfg: dict, monitor: MonitorBundle, train_ds, val_ds) -> None:
         monitor.timing.on_eval()
         return metrics
 
-    # ---- save-on-signal -----------------------------------------------------
-    resume = {"step": start_step}
+    # ---- graceful stop on signal --------------------------------------------
+    # Set a flag and let the loop finish the current step, then break to the
+    # normal save + DataLoader teardown path. (Saving + os._exit from inside the
+    # handler orphans the worker processes, which keep GPU memory reserved.)
+    stop_requested = {"flag": False}
 
     def _signal_handler(signum, frame):
-        print(f"Signal {signum} — saving checkpoint at step {resume['step']}", file=sys.stderr)
-        with contextlib.suppress(Exception):
-            save_checkpoint(model, optimizer, scheduler, save_dir, resume["step"], pretrained_path)
-        os._exit(0)
+        if not stop_requested["flag"]:
+            print(
+                f"Signal {signum} — finishing current step, then saving and exiting",
+                file=sys.stderr,
+            )
+        stop_requested["flag"] = True
 
     signal.signal(signal.SIGTERM, _signal_handler)
     signal.signal(signal.SIGINT, _signal_handler)
@@ -421,8 +426,11 @@ def run_training(cfg: dict, monitor: MonitorBundle, train_ds, val_ds) -> None:
     eval_every = int(tcfg.get("eval_every_steps", 1000))
     save_every = int(tcfg.get("save_every_steps", 1000))
 
+    steps_done = start_step
     for step in range(start_step, total_steps):
-        resume["step"] = step
+        if stop_requested["flag"]:
+            print(f"Stopping at step {step} (signal received).", file=sys.stderr)
+            break
         optimizer.zero_grad(set_to_none=True)
 
         loss_log: dict[str, float] = {}
@@ -456,6 +464,7 @@ def run_training(cfg: dict, monitor: MonitorBundle, train_ds, val_ds) -> None:
         accelerator.step(optimizer)
         accelerator.update()
         scheduler.step()
+        steps_done = step + 1
 
         scalars = monitor.timing.on_step_end(step) or {}
         if step % log_every == 0 or step == total_steps - 1:
@@ -475,11 +484,17 @@ def run_training(cfg: dict, monitor: MonitorBundle, train_ds, val_ds) -> None:
             ckpt = save_checkpoint(model, optimizer, scheduler, save_dir, step, pretrained_path)
             monitor.timing.on_checkpoint(step, ckpt, val_metrics=val_metrics)
 
-    ckpt = save_checkpoint(model, optimizer, scheduler, save_dir, total_steps, pretrained_path)
-    monitor.timing.on_checkpoint(total_steps, ckpt, val_metrics=val_metrics)
+    # Final save covers both normal completion and a graceful stop.
+    ckpt = save_checkpoint(model, optimizer, scheduler, save_dir, steps_done, pretrained_path)
+    monitor.timing.on_checkpoint(steps_done, ckpt, val_metrics=val_metrics)
     monitor.timing.on_train_end(final_metrics=val_metrics)
     monitor.tb.close()
-    print(f"done — final checkpoint at {ckpt}", file=sys.stderr)
+
+    # Deterministically reap DataLoader worker processes so they don't orphan
+    # and keep GPU/RAM reserved after we return.
+    with contextlib.suppress(Exception):
+        del train_iter
+    print(f"done — final checkpoint at {ckpt} (step {steps_done})", file=sys.stderr)
 
 
 # ---------------------------------------------------------------------------

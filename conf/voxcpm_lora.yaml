@@ -36,10 +36,14 @@ optim:
   warmup_steps: 100
 
 train:
-  batch_size: 2
-  gradient_accumulation_steps: 8   # effective batch 16
+  # batch_size 2 OOMs on a 24 GB 3090 (peak ~22.9 GB) — VoxCPM2 runs base_lm +
+  # residual_lm + encoder + DiT in one forward and has no gradient-checkpoint
+  # hook. batch_size 1 peaks at ~20.4 GB (measured, smoke run 2026-06-15).
+  # Launch with PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True.
+  batch_size: 1
+  gradient_accumulation_steps: 16  # effective batch 16
   max_batch_tokens: 4096           # drop samples longer than this / batch_size
-  num_epochs: 3
+  num_epochs: 2                    # 3 epochs over-trains; watch gen-length collapse
   num_workers: 4
   max_grad_norm: 1.0
   save_every_steps: 1000

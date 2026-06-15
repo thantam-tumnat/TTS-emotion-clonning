@@ -33,8 +33,8 @@ optim:
   warmup_steps: 100
 
 train:
-  batch_size: 2
-  gradient_accumulation_steps: 8   # effective batch 16
+  batch_size: 1                    # batch 2 OOMs on 24 GB (no grad-checkpoint in VoxCPM)
+  gradient_accumulation_steps: 16  # effective batch 16
   max_batch_tokens: 4096
   num_epochs: 8                    # ~183 steps/epoch × 8 ≈ 1.5k steps
   num_workers: 4
