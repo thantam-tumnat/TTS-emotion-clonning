@@ -9,6 +9,23 @@ See [`PLAN.md`](PLAN.md) for what each outcome means and what to do next.
 | 2026-06-15 | vanilla VoxCPM2 (base, no LoRA) | prompts_short (5) | **5.70%** | — | Phase-0 baseline. No ref audio. Small sample (5 prompts) — high variance, treat as ballpark. Already < OmniVoice 7.71%; confirms VoxCPM2 has usable Thai priors. |
 | 2026-06-15 | smoke LoRA, step 500 (tier-1 porjai only, ~2.7 ep) | prompts_short (5) | **3.80%** | — | Validates adapter-eval path (384 LoRA params loaded). Beats baseline (5.70%→3.80%) from a tiny single-speaker smoke. Directional only. |
 
+## Phase-1 run v0 (2026-06-16) — in progress
+
+3-source mix: commonvoice (40 h, 4,245 spk, ref-paired) + porjai (clean, no ref) +
+LibriTTS (EN), weights 1.0 / 0.7 / 0.42 → ~80/20 Thai/EN. 1 epoch, ~6,600 steps.
+
+- **Step 1000:** peak VRAM **18.9 GB**, val/loss_total 0.947, snapshot durations
+  2.7–5.1 s (healthy, no collapse — diverse data avoids the smoke's stop-overfit).
+
+### OOM lesson (cost two failed launches)
+
+VoxCPM2's flow-matching **DiT memory scales with audio frames, not LM tokens**.
+At fps=25/patch=4 a 30 s clip is only ~187 packed tokens, so `max_batch_tokens`
+(an LM-token budget) never filters long clips — but 30 s = 750 frames OOMs the
+DiT (~23 GB). The smoke only fit because tier-1 porjai was short. **Fix:** cap
+clip duration in the manifest — target ≤14 s, ref ≤8 s (drops 6.8%; short refs
+are also better cloning practice). Peak fell 22.9 GB→18.9 GB.
+
 ## Smoke run findings (2026-06-15)
 
 Tier-1-only LoRA (porjai, ~2,940 clips), `conf/voxcpm_smoke.yaml`. Purpose was
