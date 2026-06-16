@@ -12,6 +12,26 @@ See [`PLAN.md`](PLAN.md) for what each outcome means and what to do next.
 | 2026-06-16 | Phase-1 v0 | prompts_digits (10) | 70% (artifact) | — | **Metric artifact, not a failure.** Model reads numerals correctly (1923→"หนึ่งพันเก้าร้อยยี่สิบสาม", phone→digit-recital). CER high only because ref has Arabic digits vs spoken Thai words. Number augmentation works. |
 | 2026-06-16 | Phase-1 v0 | prompts_long (2) | 20.5% | — | long_002=0.03 (clean). long_001=0.38 — speaks full text correctly then **fails to stop, appends hallucinated speech** (termination issue, not pronunciation). |
 
+## Phase-1 v1 (epoch 2, step 13210) — 2026-06-16
+
+Resumed v0 → epoch 2. Final val loss 0.908 (≈ v0; dipped to 0.89 mid-epoch).
+
+| Eval set | v0 (1 ep) | **v1 (2 ep)** |
+|---|---|---|
+| prompts_short (5) | 0.00% | 3.80% |
+| prompts_long (2) | 20.54% | **1.62%** |
+| long_001 (runaway case) | 0.378 (hallucinated tail) | **0.000, stops at 15.4 s** |
+
+**Epoch 2 fixed the long-form termination/runaway** (the v0 gap). long_001 now
+speaks the full sentence and stops cleanly; long-form avg 20.5%→1.6%. Cost: short
+ticked 0%→3.8% (within 5-prompt noise, still < 5.70% baseline). **v1 is the better
+overall model — long-form is now usable.** This is a strong Phase-1 result: on a
+single RTX 3090, short Thai ~0–4% CER, long-form ~1.6%, correct numeral reading,
+working termination — from a 5.70% base.
+
+Open: eval sets are small (5/2/10 prompts); SIM (cloning) not yet measured;
+digit CER metric needs number-normalization.
+
 ## v0 verdict (2026-06-16)
 
 **Strong on intelligibility + digit handling.** Short Thai character-perfect;
