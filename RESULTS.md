@@ -21,6 +21,12 @@ Resumed v0 → epoch 2. Final val loss 0.908 (≈ v0; dipped to 0.89 mid-epoch).
 | prompts_short (5) | 0.00% | 3.80% |
 | prompts_long (2) | 20.54% | **1.62%** |
 | long_001 (runaway case) | 0.378 (hallucinated tail) | **0.000, stops at 15.4 s** |
+| **cloning (20 prompts, SIM / CER)** | — | **0.882 / 2.49%** |
+
+**Voice cloning (v1):** zero-shot from a same-speaker Common Voice ref clip,
+SIM (WavLM x-vector cosine) = **0.882**, CER = 2.49%. Strong voice match without
+sacrificing intelligibility (cf. OmniVoice Thai SIM-o 0.841). Eval set:
+`eval/prompts_clone.tsv` (20 cv val ref-pairs). Samples in `eval/out/v1_clone/`.
 
 **Epoch 2 fixed the long-form termination/runaway** (the v0 gap). long_001 now
 speaks the full sentence and stops cleanly; long-form avg 20.5%→1.6%. Cost: short
