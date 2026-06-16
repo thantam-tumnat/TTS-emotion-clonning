@@ -38,6 +38,13 @@ working termination — from a 5.70% base.
 Open: eval sets are small (5/2/10 prompts); SIM (cloning) not yet measured;
 digit CER metric needs number-normalization.
 
+**ASR-judge ceiling (confirmed 2026-06-17 by listening):** clone_08's archaic
+Pali phrase "ไหว้พระอาจารีย์…" was pronounced *correctly* by the model, but
+Typhoon-Whisper mis-transcribed "อาจารีย์"→"อัจฉริ", inflating that clip's CER to
+16.7%. So reported CER is an **upper bound on error** — true TTS quality is at
+least as good, better on rare/archaic vocabulary the ASR itself can't recognize.
+Trust human listening over CER for edge-case words.
+
 ## v0 verdict (2026-06-16)
 
 **Strong on intelligibility + digit handling.** Short Thai character-perfect;
