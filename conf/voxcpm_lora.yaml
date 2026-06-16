@@ -56,8 +56,10 @@ train:
   # samples. NOTE: DiT memory scales with audio *frames*, not LM tokens — the
   # real OOM guard is the ≤14 s target / ≤8 s ref manifest filter (see RESULTS).
   max_batch_tokens: 512
-  num_epochs: 1                    # v0: 1 epoch (~8h) first; extend if undertrained.
-                                   # 3+ over-trains → gen-length collapse (smoke §)
+  num_epochs: 2                    # v1: epoch 2 — resumes from latest (step 6605).
+                                   # v0 (1 ep) gave short-Thai 0% CER; epoch 2 to
+                                   # improve long-form stop reliability (val loss
+                                   # was still falling). 3+ risks over-train collapse.
   num_workers: 4
   max_grad_norm: 1.0
   save_every_steps: 1000
