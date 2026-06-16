@@ -1,4 +1,4 @@
-id	text	ref_audio	expected_form
+id	text	expected_form
 digit_year_01	เขาเกิดเมื่อปี 1923	cardinal
 digit_year_02	เหตุการณ์นี้เกิดขึ้นในปี ค.ศ. 2024	cardinal_or_digit_recital
 digit_price_01	ราคา 1,250 บาท	cardinal

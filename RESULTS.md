@@ -8,6 +8,7 @@ See [`PLAN.md`](PLAN.md) for what each outcome means and what to do next.
 |---|---|---|---|---|---|
 | 2026-06-15 | vanilla VoxCPM2 (base, no LoRA) | prompts_short (5) | **5.70%** | — | Phase-0 baseline. No ref audio. Small sample (5 prompts) — high variance, treat as ballpark. Already < OmniVoice 7.71%; confirms VoxCPM2 has usable Thai priors. |
 | 2026-06-15 | smoke LoRA, step 500 (tier-1 porjai only, ~2.7 ep) | prompts_short (5) | **3.80%** | — | Validates adapter-eval path (384 LoRA params loaded). Beats baseline (5.70%→3.80%) from a tiny single-speaker smoke. Directional only. |
+| 2026-06-16 | **Phase-1 v0, 1 epoch (step 6605)** | prompts_short (5) | **0.00%** | — | All 5 short prompts transcribe character-perfect (verified ref==hyp). 5.70%→0.00%. 5 prompts + Whisper error = not literally perfect TTS, but clearly intelligible. |
 
 ## Phase-1 run v0 (2026-06-16) — in progress
 
