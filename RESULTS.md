@@ -9,6 +9,21 @@ See [`PLAN.md`](PLAN.md) for what each outcome means and what to do next.
 | 2026-06-15 | vanilla VoxCPM2 (base, no LoRA) | prompts_short (5) | **5.70%** | — | Phase-0 baseline. No ref audio. Small sample (5 prompts) — high variance, treat as ballpark. Already < OmniVoice 7.71%; confirms VoxCPM2 has usable Thai priors. |
 | 2026-06-15 | smoke LoRA, step 500 (tier-1 porjai only, ~2.7 ep) | prompts_short (5) | **3.80%** | — | Validates adapter-eval path (384 LoRA params loaded). Beats baseline (5.70%→3.80%) from a tiny single-speaker smoke. Directional only. |
 | 2026-06-16 | **Phase-1 v0, 1 epoch (step 6605)** | prompts_short (5) | **0.00%** | — | All 5 short prompts transcribe character-perfect (verified ref==hyp). 5.70%→0.00%. 5 prompts + Whisper error = not literally perfect TTS, but clearly intelligible. |
+| 2026-06-16 | Phase-1 v0 | prompts_digits (10) | 70% (artifact) | — | **Metric artifact, not a failure.** Model reads numerals correctly (1923→"หนึ่งพันเก้าร้อยยี่สิบสาม", phone→digit-recital). CER high only because ref has Arabic digits vs spoken Thai words. Number augmentation works. |
+| 2026-06-16 | Phase-1 v0 | prompts_long (2) | 20.5% | — | long_002=0.03 (clean). long_001=0.38 — speaks full text correctly then **fails to stop, appends hallucinated speech** (termination issue, not pronunciation). |
+
+## v0 verdict (2026-06-16)
+
+**Strong on intelligibility + digit handling.** Short Thai character-perfect;
+numerals read correctly (cardinals + phone digit-recital — the JaiTTS behavior
+the augmentation targeted). **One real gap: long-form generation sometimes does
+not terminate** — speaks the sentence correctly, then hallucinates extra audio
+(1 of 2 long prompts). This is a stop-token / runaway issue (RESEARCH §4.D), not
+pronunciation. val loss was still falling at epoch end → epoch 2 may help.
+
+Eval-method note: digit CER needs ref↔hyp number normalization to be meaningful
+(convert Arabic→Thai words, or vice-versa, before CER). Current digit CER is
+not a valid quality signal.
 
 ## Phase-1 run v0 (2026-06-16) — in progress
 
