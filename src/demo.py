@@ -35,9 +35,13 @@ DOCS_DIR = Path("docs")
 DEFAULT_BASE = "openbmb/VoxCPM2"
 DEFAULT_ADAPTER = "checkpoints/siangtts-lora-v0/latest"
 
-_THAI_NUMWORDS = ["ศูนย์", "หนึ่ง", "สอง", "สาม", "สี่", "ห้า", "หก", "เจ็ด",
-                  "แปด", "เก้า", "สิบ", "ร้อย", "พัน", "หมื่น", "แสน", "ล้าน"]
 F0_GENDER_HZ = 165.0   # median-F0 split for male/female estimate
+
+# Note on "numeric" examples: Common Voice Thai transcripts contain no Arabic
+# digits, and detecting spoken numbers from Thai number-WORDS is unreliable
+# (no word spaces → "สาม"/three is a substring of "สามารถ"/able-to). So the
+# comparison table covers gender × length only; number reading is showcased
+# separately via the DIGIT_PROMPTS section (real Arabic numerals).
 
 # Digit-reading showcase prompts (Arabic numerals → spoken Thai). No ground
 # truth exists for these (dataset transcripts have no Arabic digits), so they
@@ -65,7 +69,7 @@ def _median_f0(path: str) -> float:
 
 
 def curate(val_manifest: str, n_per_bucket: int = 1) -> list[dict]:
-    """Select a diverse set: {male,female} × {short,long} + numeric examples."""
+    """Select a diverse set across {male,female} × {short,mid,long}."""
     root = Path(val_manifest).parent
     rows = [json.loads(line) for line in open(val_manifest, encoding="utf-8")]
     cand = [r for r in rows if r.get("ref_audio")]
@@ -81,7 +85,6 @@ def curate(val_manifest: str, n_per_bucket: int = 1) -> list[dict]:
             "gender_est": "male" if hz < F0_GENDER_HZ else "female",
             "length": ("short" if r["duration"] <= 4.5
                        else "long" if r["duration"] >= 8.0 else "mid"),
-            "has_numeric": any(w in r["text"] for w in _THAI_NUMWORDS),
         })
 
     picked: list[dict] = []
@@ -97,12 +100,10 @@ def curate(val_manifest: str, n_per_bucket: int = 1) -> list[dict]:
             seen_audio.add(f["audio"])
             k -= 1
 
-    # gender × length grid, then ensure numeric coverage
+    # gender × length grid (short/mid/long for each)
     for g in ("male", "female"):
-        for ln in ("short", "long"):
+        for ln in ("short", "mid", "long"):
             take(lambda f, g=g, ln=ln: f["gender_est"] == g and f["length"] == ln, n_per_bucket)
-    take(lambda f: f["has_numeric"] and f["gender_est"] == "male", 1)
-    take(lambda f: f["has_numeric"] and f["gender_est"] == "female", 1)
     return picked
 
 
@@ -133,10 +134,9 @@ def prep(
             "ref_rel": f"{eid}_ref.wav", "ground_truth_rel": f"{eid}_ground_truth.wav",
             "gender_est": r["gender_est"], "pitch_hz": r["pitch_hz"],
             "length": r["length"], "duration": round(r["duration"], 1),
-            "has_numeric": r["has_numeric"],
         })
     print(f"[demo] curated {len(entries)} comparison examples: "
-          f"{[(e['gender_est'], e['length'], 'num' if e['has_numeric'] else '') for e in entries]}")
+          f"{[(e['gender_est'], e['length']) for e in entries]}")
 
     digit_entries = [{"id": did, "kind": "digit", "text": txt} for did, txt in DIGIT_PROMPTS]
 
@@ -209,8 +209,6 @@ def build_html() -> None:
         g = e["gender_est"]
         badges = (f'<span class="badge {g}">{"♂" if g=="male" else "♀"} {g} (est.)</span>'
                   f'<span class="badge">{e["length"]} · {e["duration"]}s</span>')
-        if e.get("has_numeric"):
-            badges += '<span class="badge num">🔢 numeric</span>'
         rows.append(
             f"<tr><td class='txt'>{e['text']}<br>{badges}</td>"
             f"<td>{aud(e['ref_rel'])}</td><td>{aud(e['ground_truth_rel'])}</td>"
@@ -241,8 +239,8 @@ def build_html() -> None:
 <h2>Voice-cloning comparison</h2>
 <p class="note">Each row: the <b>reference voice</b> (a different utterance from the
 same speaker), the real <b>ground-truth</b> recording, the <b>base</b> VoxCPM2, and
-<b>SiangTTS</b>. Examples span gender, text length, and numeric content. Gender is
-<i>estimated from pitch</i>.</p>
+<b>SiangTTS</b>. Examples span gender and text length. Gender is
+<i>estimated from pitch</i>. Number reading is shown in the section below.</p>
 {compare_table}
 <h2>Number &amp; digit reading</h2>
 <p class="note">Arabic numerals spoken as Thai (no ground truth — the training
