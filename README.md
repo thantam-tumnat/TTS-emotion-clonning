@@ -93,23 +93,35 @@ uv run python train/train_lora.py --config conf/voxcpm_sft.yaml
 uv run python -m src.eval --adapter checkpoints/siangtts-lora-v0/latest --prompts eval/prompts_short.tsv
 ```
 
-## Serving & demo
+## Serving & demos
+
+Three separate surfaces, all sharing the curated samples from `src.demo prep`:
 
 ```bash
-# FastAPI inference server (loads base + adapter once)
-uv run uvicorn src.serve:app --host 0.0.0.0 --port 8000
-#   POST /tts    (text)              → wav
-#   POST /clone  (text + reference)  → wav   |   GET /health, GET / (form)
+# 0. Generate the curated comparison set (GPU): diverse gender / length / numeric,
+#    each with ref + ground-truth + base + LoRA. Feeds the static page and Gradio.
+uv run python -m src.demo prep
 
-# Comparison demo (ref / ground-truth / base VoxCPM2 / SiangTTS-LoRA)
-uv run python -m src.demo prep --n 8        # GPU: build the comparison set
-uv run python -m src.demo app               # Gradio page (+ interactive tab)
+# 1. Static demo page → GitHub Pages (no server; renders to docs/)
+uv run python -m src.demo html              # build docs/index.html + docs/samples/
+#    Serve /docs via GitHub Pages → viewable in the browser & on GitHub.
+
+# 2. Live demo (Gradio UI: type text + optional reference → base vs LoRA)
+uv run python -m src.live                   # http://localhost:7860  (--share for public)
+
+# 3. Inference API (FastAPI; loads base + adapter once)
+uv run uvicorn src.serve:app --host 0.0.0.0 --port 8000
+#    POST /tts (text) → wav   |   POST /clone (text + reference) → wav   |   GET /health
 
 # Publish the adapter to the Hub (clean release: weights + config + card + LICENSE)
 uv run python train/publish_to_hf.py \
     --repo-id dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA \
     --samples-dir demo/samples --public
 ```
+
+- **Static demo** → `src/demo.py` (offline page, GitHub Pages)
+- **Live demo** → `src/live.py` (Gradio)
+- **Inference API** → `src/serve.py` (FastAPI)
 
 Published model: <https://huggingface.co/dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA>
 (CC-BY-SA-4.0). Always launch GPU commands with

@@ -1,0 +1,41 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>SiangTTS — Thai Voice-Cloning TTS Demo</title><style>
+body{font-family:system-ui,'Segoe UI',sans-serif;max-width:1100px;margin:2rem auto;
+  padding:0 1rem;color:#1b1f24;line-height:1.5}
+h1{margin-bottom:.2rem} .sub{color:#57606a;margin-top:0}
+table{border-collapse:collapse;width:100%;margin:1rem 0}
+th,td{border:1px solid #d0d7de;padding:.5rem;text-align:left;vertical-align:top}
+th{background:#f6f8fa} audio{width:200px}
+.badge{display:inline-block;font-size:.75rem;padding:.1rem .45rem;border-radius:1rem;
+  margin-right:.3rem;background:#eaeef2}
+.male{background:#ddf4ff} .female{background:#ffeff7} .num{background:#fff8c5}
+.txt{font-size:.95rem} .results td,.results th{text-align:center}
+.note{color:#57606a;font-size:.85rem}
+</style></head><body>
+<h1>SiangTTS — Thai Voice-Cloning TTS</h1>
+<p class="sub">LoRA fine-tune of VoxCPM2 on Thai · trained on a single RTX 3090 ·
+<a href="https://huggingface.co/dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA">model on HuggingFace</a></p>
+
+<table class="results">
+<tr><th>Metric</th><th>Base VoxCPM2</th><th>SiangTTS (LoRA)</th></tr>
+<tr><td>Short-form Thai CER</td><td>5.70%</td><td><b>~3.8%</b></td></tr>
+<tr><td>Long-form Thai CER</td><td>runaway</td><td><b>1.6%</b></td></tr>
+<tr><td>Voice cloning SIM / CER</td><td>—</td><td><b>0.882 / 2.5%</b></td></tr>
+<tr><td>Numerals (year/price/phone)</td><td>weak</td><td><b>reads correctly</b></td></tr>
+</table>
+
+<h2>Voice-cloning comparison</h2>
+<p class="note">Each row: the <b>reference voice</b> (a different utterance from the
+same speaker), the real <b>ground-truth</b> recording, the <b>base</b> VoxCPM2, and
+<b>SiangTTS</b>. Examples span gender, text length, and numeric content. Gender is
+<i>estimated from pitch</i>.</p>
+<table><tr><th>Text</th><th>Reference voice</th><th>Ground truth</th><th>Base VoxCPM2</th><th>SiangTTS (LoRA)</th></tr><tr><td class='txt'>นักศึกษาทุกคนเป็นประชาชน<br><span class="badge male">♂ male (est.)</span><span class="badge">short · 3.3s</span></td><td><audio controls preload="none" src="samples/ex_00_ref.wav"></audio></td><td><audio controls preload="none" src="samples/ex_00_ground_truth.wav"></audio></td><td><audio controls preload="none" src="samples/ex_00_base.wav"></audio></td><td><audio controls preload="none" src="samples/ex_00_lora.wav"></audio></td></tr><tr><td class='txt'>ฉันคิดว่าเราเห็นด้วยแล้วว่าเราไม่สามารถเสี่ยงข้อมูลที่ตกอยู่ในมือของเขา<br><span class="badge male">♂ male (est.)</span><span class="badge">long · 8.1s</span><span class="badge num">🔢 numeric</span></td><td><audio controls preload="none" src="samples/ex_01_ref.wav"></audio></td><td><audio controls preload="none" src="samples/ex_01_ground_truth.wav"></audio></td><td><audio controls preload="none" src="samples/ex_01_base.wav"></audio></td><td><audio controls preload="none" src="samples/ex_01_lora.wav"></audio></td></tr><tr><td class='txt'>ฉันจะบอกคุณ บรรณารักษ์พูดด้วยสีหน้าผ่องใส<br><span class="badge female">♀ female (est.)</span><span class="badge">short · 4.2s</span></td><td><audio controls preload="none" src="samples/ex_02_ref.wav"></audio></td><td><audio controls preload="none" src="samples/ex_02_ground_truth.wav"></audio></td><td><audio controls preload="none" src="samples/ex_02_base.wav"></audio></td><td><audio controls preload="none" src="samples/ex_02_lora.wav"></audio></td></tr><tr><td class='txt'>อะไรคือคอนเซปต์ของ "หยุดชดเชย" ล่ะ แบบนี้ หรือว่าตัววันหยุดชดเชย ก็เป็นวันหยุดในตัวมันเอง ?<br><span class="badge female">♀ female (est.)</span><span class="badge">long · 8.5s</span></td><td><audio controls preload="none" src="samples/ex_03_ref.wav"></audio></td><td><audio controls preload="none" src="samples/ex_03_ground_truth.wav"></audio></td><td><audio controls preload="none" src="samples/ex_03_base.wav"></audio></td><td><audio controls preload="none" src="samples/ex_03_lora.wav"></audio></td></tr><tr><td class='txt'>ทั้งสองฝ่ายมีอาวุธครับ และเป็นอาวุธคนละประสิทธิภาพกัน แต่มันนำไปสู่ข้อสรุปนั้นได้ยังไงครับ<br><span class="badge male">♂ male (est.)</span><span class="badge">mid · 7.5s</span><span class="badge num">🔢 numeric</span></td><td><audio controls preload="none" src="samples/ex_04_ref.wav"></audio></td><td><audio controls preload="none" src="samples/ex_04_ground_truth.wav"></audio></td><td><audio controls preload="none" src="samples/ex_04_base.wav"></audio></td><td><audio controls preload="none" src="samples/ex_04_lora.wav"></audio></td></tr><tr><td class='txt'>อีกหนึ่งกฎหมายที่ถูกดันเข้าสภานิติบัญญัติแห่งชาติ<br><span class="badge female">♀ female (est.)</span><span class="badge">mid · 5.5s</span><span class="badge num">🔢 numeric</span></td><td><audio controls preload="none" src="samples/ex_05_ref.wav"></audio></td><td><audio controls preload="none" src="samples/ex_05_ground_truth.wav"></audio></td><td><audio controls preload="none" src="samples/ex_05_base.wav"></audio></td><td><audio controls preload="none" src="samples/ex_05_lora.wav"></audio></td></tr></table>
+<h2>Number &amp; digit reading</h2>
+<p class="note">Arabic numerals spoken as Thai (no ground truth — the training
+transcripts contain no Arabic digits, so this shows the augmentation effect).</p>
+<table><tr><th>Text (Arabic numerals)</th><th>Base VoxCPM2</th><th>SiangTTS (LoRA)</th></tr><tr><td class='txt'>เขาเกิดเมื่อปี 1990 ที่จังหวัดเชียงใหม่</td><td><audio controls preload="none" src="samples/digit_year_base.wav"></audio></td><td><audio controls preload="none" src="samples/digit_year_lora.wav"></audio></td></tr><tr><td class='txt'>สินค้าชิ้นนี้ราคา 1,250 บาท</td><td><audio controls preload="none" src="samples/digit_price_base.wav"></audio></td><td><audio controls preload="none" src="samples/digit_price_lora.wav"></audio></td></tr><tr><td class='txt'>ติดต่อได้ที่เบอร์ 081-234-5678</td><td><audio controls preload="none" src="samples/digit_phone_base.wav"></audio></td><td><audio controls preload="none" src="samples/digit_phone_lora.wav"></audio></td></tr><tr><td class='txt'>ร้านเปิด 9 โมงเช้า ถึง 5 ทุ่ม ทุกวัน</td><td><audio controls preload="none" src="samples/digit_mix_base.wav"></audio></td><td><audio controls preload="none" src="samples/digit_mix_lora.wav"></audio></td></tr></table>
+<p class="note">CER is measured with Typhoon-Whisper-Large-v3 and is an upper bound
+on error — the ASR judge itself mis-recognises some rare Thai words the model
+pronounces correctly. License: CC-BY-SA-4.0.</p>
+</body></html>

@@ -59,6 +59,10 @@ target-version = "py310"
 [tool.ruff.lint]
 select = ["E", "F", "I", "B", "UP"]
 
+[tool.ruff.lint.flake8-bugbear]
+# FastAPI puts these call results in argument defaults by design (src/serve.py).
+extend-immutable-calls = ["fastapi.Form", "fastapi.File", "fastapi.Depends", "fastapi.Query"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts = "-q --strict-markers"
