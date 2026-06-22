@@ -48,7 +48,9 @@ with zero-shot **voice cloning**, trained on a single RTX 3090 (24 GB).
 
 It's a parameter-efficient (LoRA) fine-tune of VoxCPM2 — small enough to train on
 one consumer GPU while keeping the base model's voice-design and cloning abilities.
-Code: <https://github.com/dubbing-ai/VoxCPM-thai>.
+The Thai-adaptation approach is inspired by **JaiTTS** (a separate, closed-source
+Thai VoxCPM model by others); SiangTTS is an independent open reproduction at LoRA
+scale and is not affiliated with it. Code: <https://github.com/dubbing-ai/VoxCPM-thai>.
 
 ## Results
 
