@@ -50,7 +50,10 @@ It's a parameter-efficient (LoRA) fine-tune of VoxCPM2 — small enough to train
 one consumer GPU while keeping the base model's voice-design and cloning abilities.
 The Thai-adaptation approach is inspired by **JaiTTS** (a separate, closed-source
 Thai VoxCPM model by others); SiangTTS is an independent open reproduction at LoRA
-scale and is not affiliated with it. Code: <https://github.com/dubbing-ai/VoxCPM-thai>.
+scale and is not affiliated with it.
+
+🔊 **Listen / compare (ref vs ground-truth vs base vs SiangTTS):**
+<https://dubbing-ai.github.io/VoxCPM-thai/> · Code: <https://github.com/dubbing-ai/VoxCPM-thai>
 
 ## Results
 

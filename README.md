@@ -115,11 +115,15 @@ uv run python -m src.app                   # http://localhost:7860  (--share for
 uv run uvicorn src.serve:app --host 0.0.0.0 --port 8000
 #    POST /tts (text) → wav   |   POST /clone (text + reference) → wav   |   GET /health
 
-# Publish the adapter to the Hub (clean release: weights + config + card + LICENSE)
+# Publish the adapter to the Hub (clean release: weights + config + card + LICENSE).
+# The card links to the GitHub Pages demo — samples are NOT bundled (single source).
 uv run python train/publish_to_hf.py \
-    --repo-id dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA \
-    --samples-dir demo/samples --public
+    --repo-id dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA --public
 ```
+
+**One demo, linked everywhere:** the comparison page is served from `docs/` via
+GitHub Pages (<https://dubbing-ai.github.io/VoxCPM-thai/>) and the HF model card
+links to it — no duplicated sample hosting.
 
 - **Static demo** → `src/demo.py` (offline page, GitHub Pages)
 - **Live demo** → `src/app.py` (Gradio)
