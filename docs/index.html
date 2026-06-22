@@ -21,14 +21,15 @@ th{background:#f6f8fa} audio{width:200px}
 <tr><th>Metric (small eval set)</th><th>Base VoxCPM2</th><th>SiangTTS (LoRA)</th></tr>
 <tr><td>Short-form Thai CER (5)</td><td>5.7%</td><td><b>3.8%</b></td></tr>
 <tr><td>Long-form Thai CER (2)</td><td>2.7%</td><td><b>1.6%</b></td></tr>
-<tr><td>Voice-cloning CER (20)</td><td>5.3%</td><td><b>2.5%</b></td></tr>
-<tr><td>Voice-cloning SIM (20)</td><td><b>0.905</b></td><td>0.88</td></tr>
+<tr><td>Voice-cloning CER (80)</td><td>3.0%</td><td><b>0.9%</b></td></tr>
+<tr><td>Voice-cloning SIM (80)</td><td>0.906</td><td><b>0.909</b></td></tr>
 <tr><td>Reads numerals</td><td>yes</td><td>yes</td></tr>
 </table>
-<p class="note">VoxCPM2 already does Thai reasonably well. SiangTTS mainly
-<b>improves intelligibility</b> (CER roughly halved on cloning) while matching the
-base's speaker similarity. Listen below and judge for yourself. Eval sets are
-small (5 / 2 / 20 prompts); CER via Typhoon-Whisper.</p>
+<p class="note">VoxCPM2 already does Thai reasonably well. SiangTTS <b>matches the
+base's speaker similarity</b> (SIM tied) and <b>substantially improves
+intelligibility</b> (cloning CER ~3× lower). Listen below and judge for yourself.
+Short/long sets are small (5 / 2 prompts); cloning is 80 prompts; CER via
+Typhoon-Whisper.</p>
 
 <h2>Voice-cloning comparison</h2>
 <p class="note">Each row: the <b>reference voice</b> (a different utterance from the

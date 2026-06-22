@@ -63,15 +63,15 @@ bound on error* — the ASR judge itself mis-recognises some rare/archaic Thai
 words the model pronounces correctly.
 
 VoxCPM2's base is already a capable Thai speaker (it reads numerals and handles
-long-form). **SiangTTS's consistent, measured win is intelligibility — CER is
-roughly halved on voice cloning — while speaker similarity stays on par.**
+long-form). **SiangTTS matches the base's speaker similarity and substantially
+improves intelligibility — voice-cloning CER is ~3× lower.**
 
 | Metric (n prompts) | Base VoxCPM2 | **SiangTTS** |
 |---|---|---|
 | Short-form Thai CER (5) | 5.7% | **3.8%** |
 | Long-form Thai CER (2) | 2.7% | **1.6%** |
-| Voice-cloning CER (20) | 5.3% | **2.5%** |
-| Voice-cloning SIM (20) | **0.905** | 0.88 (on par) |
+| Voice-cloning CER (80) | 3.0% | **0.9%** |
+| Voice-cloning SIM (80) | 0.906 | **0.909** (tied) |
 | Reads written numerals | yes | yes |
 
 Trained 2 epochs over ~205 h: Common Voice Thai (diverse speakers) +

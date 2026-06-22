@@ -12,6 +12,22 @@ See [`PLAN.md`](PLAN.md) for what each outcome means and what to do next.
 | 2026-06-16 | Phase-1 v0 | prompts_digits (10) | 70% (artifact) | — | **Metric artifact, not a failure.** Model reads numerals correctly (1923→"หนึ่งพันเก้าร้อยยี่สิบสาม", phone→digit-recital). CER high only because ref has Arabic digits vs spoken Thai words. Number augmentation works. |
 | 2026-06-16 | Phase-1 v0 | prompts_long (2) | 20.5% | — | long_002=0.03 (clean). long_001=0.38 — speaks full text correctly then **fails to stop, appends hallucinated speech** (termination issue, not pronunciation). |
 
+## SIM gap confirmation — it was noise (2026-06-17)
+
+The 20-prompt SIM (base 0.905 > LoRA 0.882) suggested a cloning regression. Re-ran
+on **80 prompts** (`eval/prompts_clone_large.tsv`), paired per-prompt:
+
+| Cloning (80 prompts) | Base | SiangTTS v1 |
+|---|---|---|
+| SIM | 0.906 | 0.909 |
+| CER | 2.96% | **0.92%** |
+
+Paired SIM diff (LoRA − base) = **+0.0036**, 95% CI **[−0.015, +0.022]** → straddles
+zero, **statistically tied**. The earlier deficit was small-sample noise. CER is
+clearly better for the LoRA (~3× lower). **Conclusion: no SIM gap to fix** — the
+LM-only and speaker-consistency-loss experiments are unnecessary. SiangTTS matches
+base speaker similarity and substantially improves intelligibility.
+
 ## Honest base-vs-LoRA reassessment (2026-06-17)
 
 While building the demo I measured the **base** VoxCPM2 on long-form, numerals,
