@@ -28,6 +28,12 @@ eval = [
     "transformers>=4.45",
     "jiwer>=3.0",
 ]
+serve = [
+    "fastapi>=0.110",
+    "uvicorn[standard]>=0.29",
+    "python-multipart>=0.0.9",   # FastAPI form/file uploads
+    "gradio>=5",                 # demo page (also pulled in by voxcpm)
+]
 dev = [
     "ruff>=0.6",
     "pytest>=8",

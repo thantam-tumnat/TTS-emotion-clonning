@@ -1,46 +1,193 @@
-"""Push a trained LoRA adapter (weights + config + sample audio) to the HF Hub.
+"""Publish a trained SiangTTS LoRA adapter to the HuggingFace Hub.
 
-Stub. Adapt to the user's HF account / repo naming convention before first run.
+Stages a *clean* release (no optimizer/scheduler state), rewrites the LoRA
+config's `base_model` to the public HF id so others can load it, writes a model
+card (README.md) + LICENSE, optionally bundles sample audio, then pushes.
+
+Usage:
+    uv run python train/publish_to_hf.py \
+        --repo-id dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA \
+        --checkpoint checkpoints/siangtts-lora-v0/latest \
+        --samples-dir demo/samples \
+        --public
 """
 
 from __future__ import annotations
 
 import argparse
+import json
+import shutil
 from pathlib import Path
 
 from huggingface_hub import HfApi
 
+BASE_MODEL_ID = "openbmb/VoxCPM2"
+LICENSE_ID = "cc-by-sa-4.0"   # most-restrictive training-data license (porjai CC-BY-SA-4.0)
+
+MODEL_CARD = """---
+license: {license_id}
+base_model: {base_model}
+library_name: voxcpm
+pipeline_tag: text-to-speech
+language:
+- th
+- en
+tags:
+- text-to-speech
+- voice-cloning
+- thai
+- voxcpm
+- lora
+---
+
+# SiangTTS — Thai Voice-Cloning TTS (VoxCPM2 LoRA)
+
+**SiangTTS** (เสียง = *voice*) is a LoRA adapter for
+[`{base_model}`]({base_model_url}) that gives it clear, natural **Thai** speech
+with zero-shot **voice cloning**, trained on a single RTX 3090 (24 GB).
+
+The architecture/approach follows the [JaiTTS paper](https://arxiv.org/abs/2604.27607)
+(a Thai adaptation of VoxCPM), but trains a LoRA rather than full fine-tuning so it
+fits a single consumer GPU. Code: <https://github.com/dubbing-ai> (SiangTTS).
+
+## Results
+
+Measured with **Typhoon-Whisper-Large-v3** (Thai ASR; CER) and **WavLM** x-vectors
+(speaker SIM). CER is an *upper bound on error* — the ASR judge itself mis-recognises
+some rare/archaic Thai words the model actually pronounces correctly.
+
+| Metric | Base VoxCPM2 | **SiangTTS (this adapter)** |
+|---|---|---|
+| Short-form Thai CER | 5.70% | **~3.8%** |
+| Long-form Thai CER | (runaway) | **1.6%** |
+| Voice cloning — SIM / CER | — | **0.882 / 2.5%** |
+| Numerals (years/prices/phones) | weak | reads correctly |
+
+Trained 2 epochs over ~205 h: Common Voice Thai (diverse speakers) +
+porjai_central (studio-clean) + a LibriTTS-R English slice (retains English &
+code-switching). Audio encoded at 16 kHz, generated at 48 kHz (VoxCPM2 design).
+
+## Usage
+
+```python
+from voxcpm import VoxCPM
+from voxcpm.model.voxcpm2 import LoRAConfig
+import json
+
+cfg = json.load(open("lora_config.json"))["lora_config"]
+model = VoxCPM.from_pretrained(
+    "{base_model}",
+    lora_config=LoRAConfig(**cfg),
+    lora_weights_path=".",        # dir holding lora_weights.safetensors
+)
+
+# Plain TTS
+wav = model.generate(text="สวัสดีครับ ยินดีที่ได้รู้จัก", cfg_value=2.5, inference_timesteps=10)
+
+# Voice cloning from a 3-10 s reference clip
+wav = model.generate(text="ทดสอบการโคลนเสียง", reference_wav_path="ref.wav",
+                     cfg_value=2.5, inference_timesteps=10)
+```
+
+Or via the CLI: `voxcpm clone --text "..." --reference-audio ref.wav --lora-path . -o out.wav`
+
+## Limitations
+
+- Rare archaic / liturgical Pali-Sanskrit vocabulary may occasionally be
+  mispronounced (no phonetic-respelling dict is used — raw-text approach).
+- Eval prompt sets are small; numbers are directional.
+- Best for everyday/conversational Thai; not tuned for specific domains.
+
+## License
+
+**{license_id}** - inherited from the most restrictive training-data license
+(porjai_central is CC-BY-SA-4.0; Common Voice is CC0; LibriTTS-R is CC-BY-4.0).
+Commercial use is permitted under share-alike. The base model
+[`{base_model}`]({base_model_url}) is Apache-2.0; SiangTTS code is Apache-2.0.
+"""
+
+LICENSE_TEXT = """SiangTTS LoRA adapter weights - Creative Commons Attribution-ShareAlike 4.0
+International (CC-BY-SA-4.0).
+
+This license is inherited as the most restrictive term among the training data:
+  - porjai_central (via dubbing-ai/vaja-thai) ... CC-BY-SA-4.0  (share-alike)
+  - Common Voice Thai ........................... CC0
+  - LibriTTS-R .................................. CC-BY-4.0
+
+Full text: https://creativecommons.org/licenses/by-sa/4.0/legalcode
+
+The base model openbmb/VoxCPM2 is licensed Apache-2.0; the SiangTTS training and
+inference code is Apache-2.0. Those terms are separate from these adapter weights.
+"""
+
+
+def build_release(checkpoint: Path, staging: Path) -> Path:
+    """Assemble a clean release dir from a training checkpoint."""
+    if staging.exists():
+        shutil.rmtree(staging)
+    staging.mkdir(parents=True)
+
+    weights = checkpoint / "lora_weights.safetensors"
+    cfg_path = checkpoint / "lora_config.json"
+    if not weights.exists() or not cfg_path.exists():
+        raise FileNotFoundError(
+            f"Expected lora_weights.safetensors + lora_config.json in {checkpoint}"
+        )
+
+    shutil.copy2(weights, staging / "lora_weights.safetensors")
+
+    # Rewrite base_model from the local cache path to the public HF id.
+    cfg = json.loads(cfg_path.read_text(encoding="utf-8"))
+    cfg["base_model"] = BASE_MODEL_ID
+    (staging / "lora_config.json").write_text(
+        json.dumps(cfg, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
+
+    base_url = f"https://huggingface.co/{BASE_MODEL_ID}"
+    (staging / "README.md").write_text(
+        MODEL_CARD.format(license_id=LICENSE_ID, base_model=BASE_MODEL_ID, base_model_url=base_url),
+        encoding="utf-8",
+    )
+    (staging / "LICENSE").write_text(LICENSE_TEXT, encoding="utf-8")
+    return staging
+
 
 def push(
     repo_id: str,
-    adapter_dir: Path,
+    checkpoint: Path,
     samples_dir: Path | None = None,
-    config_path: Path | None = None,
     private: bool = True,
 ) -> None:
+    staging = Path("dist/hf_release")
+    build_release(checkpoint, staging)
+
+    if samples_dir and samples_dir.exists():
+        dst = staging / "samples"
+        dst.mkdir(exist_ok=True)
+        for wav in sorted(samples_dir.glob("*.wav")):
+            shutil.copy2(wav, dst / wav.name)
+        for j in samples_dir.glob("manifest.json"):
+            shutil.copy2(j, dst / j.name)
+
     api = HfApi()
     api.create_repo(repo_id=repo_id, private=private, exist_ok=True, repo_type="model")
-    api.upload_folder(repo_id=repo_id, folder_path=str(adapter_dir), path_in_repo=".")
-    if samples_dir is not None and samples_dir.exists():
-        api.upload_folder(repo_id=repo_id, folder_path=str(samples_dir), path_in_repo="samples")
-    if config_path is not None and config_path.exists():
-        api.upload_file(repo_id=repo_id, path_or_fileobj=str(config_path), path_in_repo=config_path.name)
+    api.upload_folder(repo_id=repo_id, folder_path=str(staging), path_in_repo=".")
+    vis = "private" if private else "public"
+    print(f"pushed {repo_id} ({vis}) - https://huggingface.co/{repo_id}")
 
 
 def main() -> None:
     p = argparse.ArgumentParser()
-    p.add_argument("--repo-id", required=True, help="e.g. username/siangtts-lora-v0")
-    p.add_argument("--adapter-dir", type=Path, required=True)
+    p.add_argument("--repo-id", required=True, help="e.g. dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA")
+    p.add_argument("--checkpoint", type=Path, default=Path("checkpoints/siangtts-lora-v0/latest"))
     p.add_argument("--samples-dir", type=Path, default=None)
-    p.add_argument("--config", type=Path, default=Path("conf/voxcpm_lora.yaml"))
     p.add_argument("--public", action="store_true", help="Push as public; default is private")
     args = p.parse_args()
 
     push(
         repo_id=args.repo_id,
-        adapter_dir=args.adapter_dir,
+        checkpoint=args.checkpoint,
         samples_dir=args.samples_dir,
-        config_path=args.config,
         private=not args.public,
     )
 
