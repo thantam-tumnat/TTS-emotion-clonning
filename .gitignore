@@ -36,3 +36,7 @@ secrets.json
 # demo artifacts (regenerable)
 demo/samples/
 dist/
+
+# but DO track the static demo page's audio (served by GitHub Pages)
+!docs/samples/
+!docs/samples/*.wav
