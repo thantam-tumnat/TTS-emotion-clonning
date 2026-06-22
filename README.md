@@ -30,8 +30,10 @@ manifests are stored at 16 kHz; the LoRA config keys are
 `openbmb/VoxCPM2`. Torch is pinned to cu128 wheels (driver 575.x = CUDA 12.9
 cannot run cu130).
 
-Everything except the actual GPU run is validated: 45 unit tests pass, and
-`--dry-run` exercises datasets + monitoring on a CPU-only machine.
+**Trained & published** (v1): short Thai CER ~3.8%, long-form 1.6%, voice cloning
+SIM 0.882 — see [`RESULTS.md`](RESULTS.md). Model:
+[dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA](https://huggingface.co/dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA).
+45 unit tests pass; `--dry-run` exercises the pipeline CPU-only.
 
 ## Layout
 
@@ -107,7 +109,7 @@ uv run python -m src.demo html              # build docs/index.html + docs/sampl
 #    Serve /docs via GitHub Pages → viewable in the browser & on GitHub.
 
 # 2. Live demo (Gradio UI: type text + optional reference → base vs LoRA)
-uv run python -m src.live                   # http://localhost:7860  (--share for public)
+uv run python -m src.app                   # http://localhost:7860  (--share for public)
 
 # 3. Inference API (FastAPI; loads base + adapter once)
 uv run uvicorn src.serve:app --host 0.0.0.0 --port 8000
@@ -120,7 +122,7 @@ uv run python train/publish_to_hf.py \
 ```
 
 - **Static demo** → `src/demo.py` (offline page, GitHub Pages)
-- **Live demo** → `src/live.py` (Gradio)
+- **Live demo** → `src/app.py` (Gradio)
 - **Inference API** → `src/serve.py` (FastAPI)
 
 Published model: <https://huggingface.co/dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA>
@@ -170,6 +172,8 @@ See `RESEARCH.md` §8 for the full execution plan.
 ## License
 
 Code: Apache-2.0. Trained checkpoints inherit the most restrictive license of their
-training data — with the default Vaja-Thai mix (including `tsync2`), that is
-**CC-BY-NC-SA** (non-commercial). Drop `tsync2` + `gigaspeech2` slices to release under
-CC-BY-SA-4.0.
+training data. The published **v1** used Common Voice Thai (CC0), porjai_central
+(CC-BY-SA-4.0), and LibriTTS-R (CC-BY-4.0) — **no non-commercial sources** — so it
+is released **CC-BY-SA-4.0** (commercial use OK, share-alike). Adding the `tsync2`
+or `gigaspeech2` Vaja-Thai slices would make a future checkpoint non-commercial
+(CC-BY-NC-SA).

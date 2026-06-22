@@ -1,7 +1,7 @@
 """SiangTTS **static demo page** — curated samples + GitHub Pages HTML.
 
 This module owns the offline comparison artifact. The interactive Gradio UI lives
-in `src/live.py`; the inference API lives in `src/serve.py`. All three share the
+in `src/app.py`; the inference API lives in `src/serve.py`. All three share the
 samples generated here (demo/samples/manifest.json).
 
 1. `prep` — curate a *diverse* set of Common Voice val prompts (each with a
