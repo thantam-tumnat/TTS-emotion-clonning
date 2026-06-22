@@ -93,6 +93,28 @@ uv run python train/train_lora.py --config conf/voxcpm_sft.yaml
 uv run python -m src.eval --adapter checkpoints/siangtts-lora-v0/latest --prompts eval/prompts_short.tsv
 ```
 
+## Serving & demo
+
+```bash
+# FastAPI inference server (loads base + adapter once)
+uv run uvicorn src.serve:app --host 0.0.0.0 --port 8000
+#   POST /tts    (text)              → wav
+#   POST /clone  (text + reference)  → wav   |   GET /health, GET / (form)
+
+# Comparison demo (ref / ground-truth / base VoxCPM2 / SiangTTS-LoRA)
+uv run python -m src.demo prep --n 8        # GPU: build the comparison set
+uv run python -m src.demo app               # Gradio page (+ interactive tab)
+
+# Publish the adapter to the Hub (clean release: weights + config + card + LICENSE)
+uv run python train/publish_to_hf.py \
+    --repo-id dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA \
+    --samples-dir demo/samples --public
+```
+
+Published model: <https://huggingface.co/dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA>
+(CC-BY-SA-4.0). Always launch GPU commands with
+`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`.
+
 ## Tests
 
 ```bash
