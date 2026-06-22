@@ -46,9 +46,9 @@ tags:
 [`{base_model}`]({base_model_url}) that gives it clear, natural **Thai** speech
 with zero-shot **voice cloning**, trained on a single RTX 3090 (24 GB).
 
-The architecture/approach follows the [JaiTTS paper](https://arxiv.org/abs/2604.27607)
-(a Thai adaptation of VoxCPM), but trains a LoRA rather than full fine-tuning so it
-fits a single consumer GPU. Code: <https://github.com/dubbing-ai> (SiangTTS).
+It's a parameter-efficient (LoRA) fine-tune of VoxCPM2 — small enough to train on
+one consumer GPU while keeping the base model's voice-design and cloning abilities.
+Code: <https://github.com/dubbing-ai/VoxCPM-thai>.
 
 ## Results
 
