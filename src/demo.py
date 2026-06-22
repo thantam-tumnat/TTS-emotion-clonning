@@ -37,11 +37,25 @@ DEFAULT_ADAPTER = "checkpoints/siangtts-lora-v0/latest"
 
 F0_GENDER_HZ = 165.0   # median-F0 split for male/female estimate
 
-# Note on "numeric" examples: Common Voice Thai transcripts contain no Arabic
-# digits, and detecting spoken numbers from Thai number-WORDS is unreliable
-# (no word spaces → "สาม"/three is a substring of "สามารถ"/able-to). So the
-# comparison table covers gender × length only; number reading is showcased
-# separately via the DIGIT_PROMPTS section (real Arabic numerals).
+# Detecting spoken numbers from Thai number-WORDS needs tokenization, not
+# substring search (no word spaces → "สาม"/three is a substring of "สามารถ"/
+# able-to). A span is a real number when a number token is adjacent to another
+# number token (compound, e.g. สิบสี่) or to a unit/classifier (e.g. ห้าปี).
+_NUM_WORDS = {"ศูนย์", "หนึ่ง", "สอง", "สาม", "สี่", "ห้า", "หก", "เจ็ด", "แปด",
+              "เก้า", "สิบ", "ยี่สิบ", "ร้อย", "พัน", "หมื่น", "แสน", "ล้าน", "เอ็ด"}
+_NUM_UNITS = {"บาท", "ปี", "คน", "โมง", "ชั่วโมง", "นาที", "วัน", "เดือน", "ครั้ง",
+              "เท่า", "เมตร", "ชิ้น", "ตัว", "องศา", "เปอร์เซ็นต์"}
+
+
+def _has_real_number(text: str) -> bool:
+    from pythainlp.tokenize import word_tokenize
+
+    toks = word_tokenize(text)
+    return any(
+        toks[i] in _NUM_WORDS and i + 1 < len(toks)
+        and (toks[i + 1] in _NUM_WORDS or toks[i + 1] in _NUM_UNITS)
+        for i in range(len(toks))
+    )
 
 # Digit-reading showcase prompts (Arabic numerals → spoken Thai). No ground
 # truth exists for these (dataset transcripts have no Arabic digits), so they
@@ -51,6 +65,21 @@ DIGIT_PROMPTS = [
     ("digit_price", "สินค้าชิ้นนี้ราคา 1,250 บาท"),
     ("digit_phone", "ติดต่อได้ที่เบอร์ 081-234-5678"),
     ("digit_mix", "ร้านเปิด 9 โมงเช้า ถึง 5 ทุ่ม ทุกวัน"),
+]
+
+# Long-form showcase (base vs LoRA, default voice, no ground truth). Common
+# Voice clips top out ~10 s, so genuinely long text can't come from the cloning
+# set — these long sentences also demonstrate the epoch-2 termination fix (base
+# VoxCPM2 tends to run away / not stop on long Thai input).
+LONG_PROMPTS = [
+    ("long_learn",
+     "การเรียนรู้ภาษาที่สองนั้นต้องอาศัยทั้งความตั้งใจและความอดทน "
+     "เพราะการสื่อสารที่มีประสิทธิภาพไม่ได้ขึ้นอยู่กับคำศัพท์เพียงอย่างเดียว "
+     "แต่ยังรวมถึงการออกเสียงและการเข้าใจวัฒนธรรมของผู้พูดด้วย"),
+    ("long_ai",
+     "ในโลกปัจจุบันที่เทคโนโลยีก้าวหน้าอย่างรวดเร็ว "
+     "ปัญญาประดิษฐ์เข้ามามีบทบาทในชีวิตประจำวันของเรามากขึ้นเรื่อย ๆ "
+     "ตั้งแต่การช่วยแปลภาษาจนถึงการสร้างเสียงสังเคราะห์ที่ใกล้เคียงกับเสียงมนุษย์จริง"),
 ]
 
 
@@ -85,7 +114,12 @@ def curate(val_manifest: str, n_per_bucket: int = 1) -> list[dict]:
             "gender_est": "male" if hz < F0_GENDER_HZ else "female",
             "length": ("short" if r["duration"] <= 4.5
                        else "long" if r["duration"] >= 8.0 else "mid"),
+            "has_numeric": _has_real_number(r["text"]),
         })
+
+    # Longest first, so each bucket grabs its longest representative — the
+    # "long" example then uses the genuine duration ceiling (~10 s for CV).
+    feats.sort(key=lambda f: f["duration"], reverse=True)
 
     picked: list[dict] = []
     seen_audio: set[str] = set()
@@ -100,10 +134,14 @@ def curate(val_manifest: str, n_per_bucket: int = 1) -> list[dict]:
             seen_audio.add(f["audio"])
             k -= 1
 
-    # gender × length grid (short/mid/long for each)
+    # gender × length grid (short/mid/long for each), then one numeric per gender
     for g in ("male", "female"):
         for ln in ("short", "mid", "long"):
             take(lambda f, g=g, ln=ln: f["gender_est"] == g and f["length"] == ln, n_per_bucket)
+    for g in ("male", "female"):
+        # prefer short/mid numeric clips so the number is easy to hear
+        take(lambda f, g=g: f["gender_est"] == g and f["has_numeric"]
+             and f["duration"] <= 7.0, 1)
     return picked
 
 
@@ -134,11 +172,14 @@ def prep(
             "ref_rel": f"{eid}_ref.wav", "ground_truth_rel": f"{eid}_ground_truth.wav",
             "gender_est": r["gender_est"], "pitch_hz": r["pitch_hz"],
             "length": r["length"], "duration": round(r["duration"], 1),
+            "has_numeric": r["has_numeric"],
         })
     print(f"[demo] curated {len(entries)} comparison examples: "
-          f"{[(e['gender_est'], e['length']) for e in entries]}")
+          f"{[(e['gender_est'], e['length'], 'NUM' if e['has_numeric'] else '') for e in entries]}")
 
     digit_entries = [{"id": did, "kind": "digit", "text": txt} for did, txt in DIGIT_PROMPTS]
+    long_entries = [{"id": lid, "kind": "long", "text": txt} for lid, txt in LONG_PROMPTS]
+    noref = digit_entries + long_entries   # default voice, no reference
 
     # Base outputs (one load), then LoRA outputs (second load).
     for tag, adapter_path in (("base", None), ("lora", adapter)):
@@ -148,15 +189,16 @@ def prep(
             out = DEMO_DIR / f"{e['id']}_{tag}.wav"
             synth.synth_to_file(e["text"], out, ref_audio=e["ref"])
             e[f"{tag}_rel"] = out.name
-        for e in digit_entries:                 # default voice, no ref
+        for e in noref:                         # default voice, no ref
             out = DEMO_DIR / f"{e['id']}_{tag}.wav"
             synth.synth_to_file(e["text"], out)
             e[f"{tag}_rel"] = out.name
         del synth
 
+    all_entries = entries + digit_entries + long_entries
     with open(MANIFEST, "w", encoding="utf-8") as f:
-        json.dump(entries + digit_entries, f, ensure_ascii=False, indent=2)
-    print(f"[demo] wrote {len(entries) + len(digit_entries)} entries → {MANIFEST}")
+        json.dump(all_entries, f, ensure_ascii=False, indent=2)
+    print(f"[demo] wrote {len(all_entries)} entries → {MANIFEST}")
 
 
 # ---------------------------------------------------------------------------
@@ -179,12 +221,17 @@ th{background:#f6f8fa} audio{width:200px}
 
 _RESULTS_TABLE = """
 <table class="results">
-<tr><th>Metric</th><th>Base VoxCPM2</th><th>SiangTTS (LoRA)</th></tr>
-<tr><td>Short-form Thai CER</td><td>5.70%</td><td><b>~3.8%</b></td></tr>
-<tr><td>Long-form Thai CER</td><td>runaway</td><td><b>1.6%</b></td></tr>
-<tr><td>Voice cloning SIM / CER</td><td>—</td><td><b>0.882 / 2.5%</b></td></tr>
-<tr><td>Numerals (year/price/phone)</td><td>weak</td><td><b>reads correctly</b></td></tr>
+<tr><th>Metric (small eval set)</th><th>Base VoxCPM2</th><th>SiangTTS (LoRA)</th></tr>
+<tr><td>Short-form Thai CER (5)</td><td>5.7%</td><td><b>3.8%</b></td></tr>
+<tr><td>Long-form Thai CER (2)</td><td>2.7%</td><td><b>1.6%</b></td></tr>
+<tr><td>Voice-cloning CER (20)</td><td>5.3%</td><td><b>2.5%</b></td></tr>
+<tr><td>Voice-cloning SIM (20)</td><td><b>0.905</b></td><td>0.88</td></tr>
+<tr><td>Reads numerals</td><td>yes</td><td>yes</td></tr>
 </table>
+<p class="note">VoxCPM2 already does Thai reasonably well. SiangTTS mainly
+<b>improves intelligibility</b> (CER roughly halved on cloning) while matching the
+base's speaker similarity. Listen below and judge for yourself. Eval sets are
+small (5 / 2 / 20 prompts); CER via Typhoon-Whisper.</p>
 """
 
 
@@ -203,12 +250,15 @@ def build_html() -> None:
 
     compare = [e for e in entries if e.get("kind") == "compare"]
     digits = [e for e in entries if e.get("kind") == "digit"]
+    longs = [e for e in entries if e.get("kind") == "long"]
 
     rows = []
     for e in compare:
         g = e["gender_est"]
         badges = (f'<span class="badge {g}">{"♂" if g=="male" else "♀"} {g} (est.)</span>'
                   f'<span class="badge">{e["length"]} · {e["duration"]}s</span>')
+        if e.get("has_numeric"):
+            badges += '<span class="badge num">🔢 has number</span>'
         rows.append(
             f"<tr><td class='txt'>{e['text']}<br>{badges}</td>"
             f"<td>{aud(e['ref_rel'])}</td><td>{aud(e['ground_truth_rel'])}</td>"
@@ -229,6 +279,16 @@ def build_html() -> None:
         "<th>SiangTTS (LoRA)</th></tr>" + "".join(drows) + "</table>"
     )
 
+    lrows = [
+        f"<tr><td class='txt'>{e['text']}</td><td>{aud(e['base_rel'])}</td>"
+        f"<td>{aud(e['lora_rel'])}</td></tr>"
+        for e in longs
+    ]
+    long_table = (
+        "<table><tr><th>Long sentence (~14 s)</th><th>Base VoxCPM2</th>"
+        "<th>SiangTTS (LoRA)</th></tr>" + "".join(lrows) + "</table>"
+    )
+
     html = f"""<!doctype html><html lang="en"><head><meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
 <title>SiangTTS — Thai Voice-Cloning TTS Demo</title><style>{_PAGE_CSS}</style></head><body>
@@ -239,19 +299,26 @@ def build_html() -> None:
 <h2>Voice-cloning comparison</h2>
 <p class="note">Each row: the <b>reference voice</b> (a different utterance from the
 same speaker), the real <b>ground-truth</b> recording, the <b>base</b> VoxCPM2, and
-<b>SiangTTS</b>. Examples span gender and text length. Gender is
-<i>estimated from pitch</i>. Number reading is shown in the section below.</p>
+<b>SiangTTS</b>. Examples span gender, text length, and some contain spoken
+numbers (🔢). Gender is <i>estimated from pitch</i>.</p>
 {compare_table}
+<h2>Long-form synthesis</h2>
+<p class="note">Genuinely long sentences (~14 s — longer than any Common Voice
+cloning clip above). Both models handle long Thai input here; this shows SiangTTS
+keeps quality on long text. Default voice, no ground truth.</p>
+{long_table}
 <h2>Number &amp; digit reading</h2>
-<p class="note">Arabic numerals spoken as Thai (no ground truth — the training
-transcripts contain no Arabic digits, so this shows the augmentation effect).</p>
+<p class="note">Written Arabic numerals spoken as Thai. Both base and SiangTTS read
+them correctly (VoxCPM2 has built-in number handling) — shown for completeness.
+Default voice, no ground truth.</p>
 {digit_table}
 <p class="note">CER is measured with Typhoon-Whisper-Large-v3 and is an upper bound
 on error — the ASR judge itself mis-recognises some rare Thai words the model
 pronounces correctly. License: CC-BY-SA-4.0.</p>
 </body></html>"""
     (DOCS_DIR / "index.html").write_text(html, encoding="utf-8")
-    print(f"[demo] wrote {DOCS_DIR/'index.html'} ({len(compare)} comparison + {len(digits)} digit) "
+    print(f"[demo] wrote {DOCS_DIR/'index.html'} ({len(compare)} comparison + "
+          f"{len(longs)} long + {len(digits)} digit) "
           f"+ {len(list(out_samples.glob('*.wav')))} wavs → enable GitHub Pages on /docs")
 
 

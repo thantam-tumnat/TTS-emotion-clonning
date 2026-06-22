@@ -58,15 +58,21 @@ scale and is not affiliated with it.
 ## Results
 
 Measured with **Typhoon-Whisper-Large-v3** (Thai ASR; CER) and **WavLM** x-vectors
-(speaker SIM). CER is an *upper bound on error* — the ASR judge itself mis-recognises
-some rare/archaic Thai words the model actually pronounces correctly.
+(speaker SIM) on small eval sets, so numbers are directional. CER is an *upper
+bound on error* — the ASR judge itself mis-recognises some rare/archaic Thai
+words the model pronounces correctly.
 
-| Metric | Base VoxCPM2 | **SiangTTS (this adapter)** |
+VoxCPM2's base is already a capable Thai speaker (it reads numerals and handles
+long-form). **SiangTTS's consistent, measured win is intelligibility — CER is
+roughly halved on voice cloning — while speaker similarity stays on par.**
+
+| Metric (n prompts) | Base VoxCPM2 | **SiangTTS** |
 |---|---|---|
-| Short-form Thai CER | 5.70% | **~3.8%** |
-| Long-form Thai CER | (runaway) | **1.6%** |
-| Voice cloning — SIM / CER | — | **0.882 / 2.5%** |
-| Numerals (years/prices/phones) | weak | reads correctly |
+| Short-form Thai CER (5) | 5.7% | **3.8%** |
+| Long-form Thai CER (2) | 2.7% | **1.6%** |
+| Voice-cloning CER (20) | 5.3% | **2.5%** |
+| Voice-cloning SIM (20) | **0.905** | 0.88 (on par) |
+| Reads written numerals | yes | yes |
 
 Trained 2 epochs over ~205 h: Common Voice Thai (diverse speakers) +
 porjai_central (studio-clean) + a LibriTTS-R English slice (retains English &

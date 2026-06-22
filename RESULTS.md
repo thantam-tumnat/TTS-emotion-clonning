@@ -12,6 +12,32 @@ See [`PLAN.md`](PLAN.md) for what each outcome means and what to do next.
 | 2026-06-16 | Phase-1 v0 | prompts_digits (10) | 70% (artifact) | — | **Metric artifact, not a failure.** Model reads numerals correctly (1923→"หนึ่งพันเก้าร้อยยี่สิบสาม", phone→digit-recital). CER high only because ref has Arabic digits vs spoken Thai words. Number augmentation works. |
 | 2026-06-16 | Phase-1 v0 | prompts_long (2) | 20.5% | — | long_002=0.03 (clean). long_001=0.38 — speaks full text correctly then **fails to stop, appends hallucinated speech** (termination issue, not pronunciation). |
 
+## Honest base-vs-LoRA reassessment (2026-06-17)
+
+While building the demo I measured the **base** VoxCPM2 on long-form, numerals,
+and cloning — axes I'd earlier assumed (not measured) the base was weak on. It
+is not. Corrected, evidence-based comparison:
+
+| Metric (n) | Base VoxCPM2 | SiangTTS v1 |
+|---|---|---|
+| Short Thai CER (5) | 5.7% | 3.8% |
+| Long-form CER (2) | 2.7% (clean, no runaway) | 1.6% |
+| Cloning CER (20) | 5.3% | 2.5% |
+| Cloning SIM (20) | 0.905 | 0.882 |
+| Reads Arabic numerals | yes (verified) | yes |
+
+**Takeaways / corrections to earlier claims in this file:**
+- The "base long-form = runaway" line below was wrong — base handles long-form
+  cleanly (CER 0.00 / 0.05 on two ~14 s prompts). The runaway was a **v0 (1-epoch
+  LoRA)** artifact, fixed by epoch 2 — not a base behaviour.
+- "Base weak on numerals" was wrong — base reads 1990/1,250/phone/times correctly
+  (VoxCPM2 has built-in number handling).
+- Base voice-cloning SIM (0.905) is actually ≥ LoRA (0.882) — SiangTTS does **not**
+  improve speaker similarity; it improves **intelligibility** (CER ~halved on
+  cloning, lower on short/long).
+- Net honest story: VoxCPM2 base is already a solid Thai speaker; SiangTTS is a
+  clarity/CER refinement at LoRA scale, SIM on par. Small eval sets → directional.
+
 ## Phase-1 v1 (epoch 2, step 13210) — 2026-06-16
 
 Resumed v0 → epoch 2. Final val loss 0.908 (≈ v0; dipped to 0.89 mid-epoch).
