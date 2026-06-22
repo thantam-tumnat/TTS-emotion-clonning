@@ -18,18 +18,16 @@ th{background:#f6f8fa} audio{width:200px}
 <a href="https://huggingface.co/dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA">model on HuggingFace</a></p>
 
 <table class="results">
-<tr><th>Metric (small eval set)</th><th>Base VoxCPM2</th><th>SiangTTS (LoRA)</th></tr>
-<tr><td>Short-form Thai CER (5)</td><td>5.7%</td><td><b>3.8%</b></td></tr>
-<tr><td>Long-form Thai CER (2)</td><td>2.7%</td><td><b>1.6%</b></td></tr>
-<tr><td>Voice-cloning CER (80)</td><td>3.0%</td><td><b>0.9%</b></td></tr>
-<tr><td>Voice-cloning SIM (80)</td><td>0.906</td><td><b>0.909</b></td></tr>
-<tr><td>Reads numerals</td><td>yes</td><td>yes</td></tr>
+<tr><th>Voice cloning (80 prompts)</th><th>GT — real recording</th>
+<th>Base VoxCPM2</th><th>SiangTTS (LoRA)</th></tr>
+<tr><td>Intelligibility — CER (lower ↓)</td><td>0.97%</td><td>3.26%</td><td><b>0.84%</b></td></tr>
+<tr><td>Speaker similarity — SIM (higher ↑)</td><td>0.913</td><td>0.906</td><td><b>0.909</b></td></tr>
 </table>
-<p class="note">VoxCPM2 already does Thai reasonably well. SiangTTS <b>matches the
-base's speaker similarity</b> (SIM tied) and <b>substantially improves
-intelligibility</b> (cloning CER ~3× lower). Listen below and judge for yourself.
-Short/long sets are small (5 / 2 prompts); cloning is 80 prompts; CER via
-Typhoon-Whisper.</p>
+<p class="note"><b>GT</b> = the real recording, shown as the ceiling/reference.
+SiangTTS clones at essentially the genuine same-speaker similarity (SIM ≈ GT) and
+is as intelligible as real recordings (CER ≤ GT — note CER has an ASR-judge floor,
+measured with Typhoon-Whisper). Separately, short-form Thai CER 5.7%→3.8% and
+long-form 2.7%→1.6% (small 5 / 2-prompt sets). Listen below and judge for yourself.</p>
 
 <h2>Voice-cloning comparison</h2>
 <p class="note">Each row: the <b>reference voice</b> (a different utterance from the

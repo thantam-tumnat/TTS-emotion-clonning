@@ -12,6 +12,24 @@ See [`PLAN.md`](PLAN.md) for what each outcome means and what to do next.
 | 2026-06-16 | Phase-1 v0 | prompts_digits (10) | 70% (artifact) | — | **Metric artifact, not a failure.** Model reads numerals correctly (1923→"หนึ่งพันเก้าร้อยยี่สิบสาม", phone→digit-recital). CER high only because ref has Arabic digits vs spoken Thai words. Number augmentation works. |
 | 2026-06-16 | Phase-1 v0 | prompts_long (2) | 20.5% | — | long_002=0.03 (clean). long_001=0.38 — speaks full text correctly then **fails to stop, appends hallucinated speech** (termination issue, not pronunciation). |
 
+## Cloning vs ground truth (2026-06-17, 80 prompts, macro-averaged)
+
+Added GT (the real recording) as the ceiling/reference. Each source vs the same
+reference clip / prompt text:
+
+| Source | CER ↓ | SIM vs ref ↑ |
+|---|---|---|
+| GT (real recording) | 0.97% | 0.9125 |
+| Base VoxCPM2 | 3.26% | 0.9057 |
+| **SiangTTS v1** | **0.84%** | **0.9093** |
+
+- SiangTTS cloning **CER (0.84%) ≤ GT (0.97%)** — as intelligible as real recordings
+  (clean ASR-friendly synthesis + the ASR-judge floor; not "better than humans").
+- SiangTTS **SIM (0.909) ≈ GT ceiling (0.913)** — cloning is about as close as two
+  genuine recordings of the same speaker. Base is also near-ceiling.
+- (Macro per-prompt averaging here vs corpus-level in eval.py gives slightly
+  different CER — base 3.26% macro vs 2.96% corpus; same ranking.)
+
 ## SIM gap confirmation — it was noise (2026-06-17)
 
 The 20-prompt SIM (base 0.905 > LoRA 0.882) suggested a cloning regression. Re-ran

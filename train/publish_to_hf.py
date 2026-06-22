@@ -63,16 +63,19 @@ bound on error* — the ASR judge itself mis-recognises some rare/archaic Thai
 words the model pronounces correctly.
 
 VoxCPM2's base is already a capable Thai speaker (it reads numerals and handles
-long-form). **SiangTTS matches the base's speaker similarity and substantially
-improves intelligibility — voice-cloning CER is ~3× lower.**
+long-form). **SiangTTS clones at essentially the real same-speaker similarity
+ceiling and is as intelligible as the original recordings**, with much lower CER
+than the base. The `GT` column is the real recording, included as the reference.
 
-| Metric (n prompts) | Base VoxCPM2 | **SiangTTS** |
-|---|---|---|
-| Short-form Thai CER (5) | 5.7% | **3.8%** |
-| Long-form Thai CER (2) | 2.7% | **1.6%** |
-| Voice-cloning CER (80) | 3.0% | **0.9%** |
-| Voice-cloning SIM (80) | 0.906 | **0.909** (tied) |
-| Reads written numerals | yes | yes |
+| Voice cloning (80 prompts) | GT (real rec.) | Base | **SiangTTS** |
+|---|---|---|---|
+| Intelligibility — CER ↓ | 0.97% | 3.26% | **0.84%** |
+| Speaker similarity — SIM ↑ | 0.913 | 0.906 | **0.909** |
+
+(CER ≤ GT reflects clean, ASR-friendly synthesis plus the ASR judge's own floor;
+SIM ≈ GT means cloning is about as close as two real recordings of one speaker.)
+Separately, short-form Thai CER 5.7%→3.8% and long-form 2.7%→1.6% (small 5 / 2
+-prompt sets — directional).
 
 Trained 2 epochs over ~205 h: Common Voice Thai (diverse speakers) +
 porjai_central (studio-clean) + a LibriTTS-R English slice (retains English &
