@@ -111,9 +111,13 @@ uv run python -m src.demo html              # build docs/index.html + docs/sampl
 # 2. Live demo (Gradio UI: type text + optional reference → base vs LoRA)
 uv run python -m src.app                   # http://localhost:7860  (--share for public)
 
-# 3. Inference API (FastAPI; loads base + adapter once)
+# 3. Inference API (FastAPI; loads base + adapter once). Swagger at /docs.
+#    Drop reference clips in ref/<name>.wav — encoded once at startup, cached to
+#    voices/<name>.pt, then clone by name. Register at runtime via POST /speakers.
 uv run uvicorn src.serve:app --host 0.0.0.0 --port 8000
-#    POST /tts (text) → wav   |   POST /clone (text + reference) → wav   |   GET /health
+#    POST /tts                       text [+ reference] → wav
+#    POST /tts/speaker/{speaker_id}  text in a registered voice (cached encoding)
+#    POST /speakers · GET /speakers · DELETE /speakers/{id} · GET /health
 
 # Publish the adapter to the Hub (clean release: weights + config + card + LICENSE).
 # The card links to the GitHub Pages demo — samples are NOT bundled (single source).

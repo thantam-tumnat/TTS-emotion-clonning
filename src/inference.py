@@ -74,6 +74,61 @@ class Synthesizer:
         sf.write(str(output_path), wav, self.sample_rate)
         return output_path
 
+    # ------------------------------------------------------------------
+    # Reusable voice cache — encode a reference once, clone many times.
+    # ------------------------------------------------------------------
+    def build_voice(self, ref_audio: str, prompt_text: str | None = None,
+                    prompt_audio: str | None = None) -> dict:
+        """Encode a reference clip into a reusable prompt cache (AudioVAE
+        latents + ref tokens). Do this once per voice; pass the result to
+        `synth_cached` for each generation to skip re-encoding the reference."""
+        return self.model.tts_model.build_prompt_cache(
+            reference_wav_path=ref_audio,
+            prompt_text=prompt_text,
+            prompt_wav_path=prompt_audio,
+        )
+
+    def save_voice(self, prompt_cache: dict, path: str | Path) -> Path:
+        """Persist a prompt cache to disk (tensors moved to CPU)."""
+        import torch
+
+        path = Path(path)
+        path.parent.mkdir(parents=True, exist_ok=True)
+        cpu_cache = {
+            k: (v.cpu() if hasattr(v, "cpu") else v) for k, v in prompt_cache.items()
+        }
+        torch.save(cpu_cache, str(path))
+        return path
+
+    def load_voice(self, path: str | Path) -> dict:
+        """Load a persisted prompt cache onto the model's device."""
+        import torch
+
+        dev = self.model.tts_model.device
+        return torch.load(str(path), map_location=dev)
+
+    def synth_cached(
+        self,
+        text: str,
+        prompt_cache: dict,
+        *,
+        cfg_value: float = 2.5,
+        inference_timesteps: int = 10,
+    ):
+        """Synthesize using a prompt cache from `build_voice` (no ref re-encode).
+        Mirrors the text cleanup the high-level `generate()` applies."""
+        import re
+
+        text = normalize_thai_text(text)
+        text = re.sub(r"\s+", " ", text.replace("\n", " ")).strip()
+        wav, _, _ = self.model.tts_model.generate_with_prompt_cache(
+            target_text=text,
+            prompt_cache=prompt_cache,
+            cfg_value=cfg_value,
+            inference_timesteps=inference_timesteps,
+        )
+        return wav.squeeze(0).cpu().numpy()
+
 
 def synthesize(
     text: str,

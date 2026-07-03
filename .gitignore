@@ -40,3 +40,11 @@ dist/
 # but DO track the static demo page's audio (served by GitHub Pages)
 !docs/samples/
 !docs/samples/*.wav
+
+# cached prompt caches (regenerable from ref/)
+voices/
+
+# track reference clips + README (seed voices for the API)
+!ref/
+!ref/*.wav
+!ref/*.md
