@@ -82,6 +82,12 @@ class Synthesizer:
         """Encode a reference clip into a reusable prompt cache (AudioVAE
         latents + ref tokens). Do this once per voice; pass the result to
         `synth_cached` for each generation to skip re-encoding the reference."""
+        # voxcpm rejects a prompt_text with no prompt_wav_path ("must both be
+        # provided or both be None"). A transcript on its own means "the
+        # reference clip is the prompt" — ref_continuation mode — so pair it up
+        # rather than making every caller remember to pass the path twice.
+        if prompt_text and prompt_audio is None:
+            prompt_audio = ref_audio
         return self.model.tts_model.build_prompt_cache(
             reference_wav_path=ref_audio,
             prompt_text=prompt_text,
