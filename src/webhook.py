@@ -69,6 +69,10 @@ DEFAULT_REF_TEXT = (
 NUM_STEP = int(os.environ.get("SIANGTTS_NUM_STEP", "32"))          # n8n: num_step
 GUIDANCE = float(os.environ.get("SIANGTTS_GUIDANCE", "2"))         # n8n: guidance_scale
 
+# Finished jobs kept for /jobs. State is in memory, so this is the only thing
+# stopping a long-lived process from growing without bound.
+MAX_HISTORY = int(os.environ.get("SIANGTTS_MAX_HISTORY", "500"))
+
 
 # ---------------------------------------------------------------------------
 # Request / job model
@@ -97,17 +101,28 @@ class Job:
     speed: float
     callback_url: str
     chunks: list[Chunk]
-    status: str = "queued"
+    status: str = "queued"              # queued | running | completed | failed
     error: str | None = None
     file_url: str | None = None
+    done: int = 0                       # chunks synthesised so far
     created: float = field(default_factory=time.time)
+    started: float | None = None
+    finished: float | None = None
 
-    def as_dict(self) -> dict:
+    def as_dict(self, position: int | None = None) -> dict:
+        now = time.time()
+        waited = (self.started or now) - self.created
+        ran = ((self.finished or now) - self.started) if self.started else None
         return {
             "job_id": self.job_id,
             "queue_id": self.queue_id,
             "status": self.status,
-            "chunks": len(self.chunks),
+            "voice_id": self.voice_id,
+            "progress": f"{self.done}/{len(self.chunks)}",
+            "position": position,       # place in line; None once it starts
+            "created": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.created)),
+            "waited_s": round(waited, 1),
+            "elapsed_s": round(ran, 1) if ran is not None else None,
             "file_url": self.file_url,
             "error": self.error,
         }
@@ -178,6 +193,7 @@ async def lifespan(app: FastAPI):
     _state["synth"] = synth
     _state["voices"] = VoiceCache(synth)
     _state["jobs"] = {}
+    _state["running"] = None
     _state["queue"] = asyncio.Queue()
 
     # First thaisum/newmm call loads its model; do it now so job #1 isn't slower.
@@ -216,6 +232,8 @@ async def _run_job(job: Job) -> None:
     voices: VoiceCache = _state["voices"]
     work = pipeline.WORK_ROOT / job.queue_id
     job.status = "running"
+    job.started = time.time()
+    _state["running"] = job.job_id
 
     try:
         work.mkdir(parents=True, exist_ok=True)
@@ -233,6 +251,7 @@ async def _run_job(job: Job) -> None:
             out = work / f"{ch.filename}.wav"
             await asyncio.to_thread(sf.write, str(out), wav, synth.sample_rate)
             wav_paths.append(out)
+            job.done = ch.index
             print(f"[{job.queue_id}] chunk {ch.index}/{ch.total} ok")
 
         merged = work / f"{job.queue_id}.mp3"
@@ -270,6 +289,8 @@ async def _run_job(job: Job) -> None:
             print(f"[{job.queue_id}] error callback failed: {cb_exc}")
 
     finally:
+        job.finished = time.time()
+        _state["running"] = None
         if not KEEP_WORK:
             pipeline.cleanup(work)
 
@@ -302,7 +323,17 @@ async def _accept(body: WebhookBody) -> JSONResponse:
         callback_url=callback_url,
         chunks=chunks,
     )
-    _state["jobs"][job.job_id] = job
+    jobs: dict[str, Job] = _state["jobs"]
+    jobs[job.job_id] = job
+    # Bounded history — the dict is insertion-ordered, so drop the oldest
+    # finished jobs first and never evict anything still queued or running.
+    if len(jobs) > MAX_HISTORY:
+        for jid, j in list(jobs.items()):
+            if len(jobs) <= MAX_HISTORY:
+                break
+            if j.status in ("completed", "failed"):
+                del jobs[jid]
+
     await _state["queue"].put(job)
     print(f"[{queue_id}] queued — {len(chunks)} chunk(s), voice={job.voice_id}")
     return JSONResponse({"status": "success", "job_id": job.job_id, "chunks": len(chunks)})
@@ -320,22 +351,59 @@ async def webhook_bare(body: WebhookBody) -> JSONResponse:
     return await _accept(body)
 
 
+def _positions() -> dict[str, int]:
+    """Place in line for everything still waiting, 1-based. The queue itself is
+    opaque, but jobs are enqueued in creation order, so ordering the waiting
+    ones by `created` reproduces it."""
+    waiting = sorted(
+        (j for j in _state.get("jobs", {}).values() if j.status == "queued"),
+        key=lambda j: j.created,
+    )
+    return {j.job_id: i for i, j in enumerate(waiting, 1)}
+
+
+@app.get("/jobs")
+def list_jobs(status: str | None = None, limit: int = 50) -> JSONResponse:
+    """Everything the service remembers, newest first. `?status=failed` to
+    filter — this is the surface that replaces scrolling n8n's execution list."""
+    jobs: list[Job] = list(_state.get("jobs", {}).values())
+    counts: dict[str, int] = {}
+    for j in jobs:
+        counts[j.status] = counts.get(j.status, 0) + 1
+
+    pos = _positions()
+    jobs.sort(key=lambda j: j.created, reverse=True)
+    if status:
+        jobs = [j for j in jobs if j.status == status]
+    return JSONResponse({
+        "counts": counts,
+        "running": _state.get("running"),
+        "total": len(jobs),
+        "jobs": [j.as_dict(pos.get(j.job_id)) for j in jobs[:limit]],
+    })
+
+
 @app.get("/jobs/{job_id}")
 def get_job(job_id: str) -> JSONResponse:
     job: Job | None = _state.get("jobs", {}).get(job_id)
     if job is None:
         return JSONResponse({"error": "unknown job"}, status_code=404)
-    return JSONResponse(job.as_dict())
+    return JSONResponse(job.as_dict(_positions().get(job_id)))
 
 
 @app.get("/health")
 def health() -> JSONResponse:
     synth = _state.get("synth")
     queue: asyncio.Queue | None = _state.get("queue")
+    jobs: list[Job] = list(_state.get("jobs", {}).values())
     return JSONResponse({
         "status": "ok" if synth else "loading",
         "adapter": ADAPTER,
         "sample_rate": getattr(synth, "sample_rate", None),
-        "queued": queue.qsize() if queue else None,
+        "waiting": queue.qsize() if queue else None,
+        "running": _state.get("running"),
+        "completed": sum(1 for j in jobs if j.status == "completed"),
+        "failed": sum(1 for j in jobs if j.status == "failed"),
+        "voices_cached": len(getattr(_state.get("voices"), "mem", {})),
         "upload_token": bool(pipeline.UPLOAD_TOKEN),
     })

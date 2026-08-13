@@ -103,7 +103,40 @@ curl -s -X POST http://localhost:8002/webhook/live-ai-create-new -H "Content-Typ
 Returns `{"status":"success","job_id":"smoke-1","chunks":1}`. Follow progress
 with `GET /jobs/smoke-1`; the audio URL lands on the callback URL.
 
-## 6. Cutover and rollback
+## 6. Watching the queue
+
+n8n's execution list is gone; these three endpoints replace it.
+
+| endpoint | answers |
+|---|---|
+| `GET /health` | is the service up, how deep is the queue, how many have failed |
+| `GET /jobs` | the last 500 jobs, newest first — `?status=failed`, `?limit=20` |
+| `GET /jobs/{job_id}` | one job in detail |
+
+A job reports `status` (`queued` → `running` → `completed` / `failed`),
+`progress` as `chunks_done/total`, `position` in line while it waits,
+`waited_s` before it started, `elapsed_s` since, and `file_url` or `error` at
+the end.
+
+```bash
+curl -s http://localhost:8002/jobs?status=failed | python -m json.tool
+```
+
+Reading the numbers:
+
+- `waiting` climbing while `running` never changes → a job is wedged. Check the
+  console; the chunk loop prints a line per chunk.
+- `waited_s` large but `elapsed_s` small → the GPU is the bottleneck, not the
+  code. Jobs run one at a time by design.
+- `voices_cached` growing past the number of real voices → callers are sending
+  varying `voice_text` for the same `voice_id`, and each variant re-encodes.
+- `upload_token: false` → `SIANGTTS_UPLOAD_TOKEN` is unset and every job will
+  fail at the upload step. Check this before the first real request.
+
+History lives in memory and holds the newest `SIANGTTS_MAX_HISTORY` (500)
+finished jobs; queued and running jobs are never evicted. A restart clears it.
+
+## 7. Cutover and rollback
 
 Point the caller at `:8002` instead of the n8n webhook. Keep n8n's workflow
 deactivated but saved — reactivating it is the rollback, and it still works
@@ -121,4 +154,6 @@ because `:8000` and `:8001` are untouched.
   `duration`, `preprocess_prompt`, `postprocess_output`, `audio_chunk_*`,
   `file_check` were IndexTTS-only. They are accepted and ignored.
 - Job state is in memory. A restart loses the queue; in-flight jobs never call
-  back. Fine at current volume — revisit if the queue is ever deep.
+  back, and `/jobs` starts empty. Fine at current volume — revisit if the queue
+  is ever deep.
+- No way to cancel a queued job short of restarting the service.
