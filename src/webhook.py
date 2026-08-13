@@ -177,20 +177,35 @@ class VoiceCache:
         CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     def _ref_file(self, voice_id: str) -> Path:
-        for ext in AUDIO_EXTS:
-            p = REF_DIR / f"{voice_id}{ext}"
-            if p.exists():
-                return p
-        raise RuntimeError(f"voice '{voice_id}' has no reference clip in {REF_DIR}/")
+        dirs_to_check = [REF_DIR]
+        fallback_dir = Path("C:/temp/tts_jobs/voices")
+        if fallback_dir.exists() and fallback_dir.resolve() != REF_DIR.resolve():
+            dirs_to_check.append(fallback_dir)
+
+        for d in dirs_to_check:
+            for ext in AUDIO_EXTS:
+                p = d / f"{voice_id}{ext}"
+                if p.exists():
+                    return p
+        raise RuntimeError(f"voice '{voice_id}' has no reference clip in {REF_DIR}/ or {fallback_dir}/")
 
     def get(self, voice_id: str, ref_text: str) -> dict:
+        ref_file = self._ref_file(voice_id)
+        # If caller sent empty or default ref_text, check if companion .txt exists beside the audio clip
+        if not ref_text or ref_text == DEFAULT_REF_TEXT:
+            txt_file = ref_file.with_suffix(".txt")
+            if txt_file.exists():
+                try:
+                    ref_text = txt_file.read_text(encoding="utf-8").strip() or ref_text
+                except Exception:
+                    pass
+
         digest = hashlib.sha1(ref_text.encode("utf-8")).hexdigest()[:8]
         key = f"{voice_id}-{digest}"
         if key in self.mem:
             return self.mem[key]
 
         path = CACHE_DIR / f"{key}.pt"
-        ref_file = self._ref_file(voice_id)
         if path.exists() and path.stat().st_mtime >= ref_file.stat().st_mtime:
             cache = self.synth.load_voice(path)
         else:
@@ -464,11 +479,18 @@ def list_voices() -> JSONResponse:
     """List available reference voices and cached prompt caches."""
     voices: list[dict] = []
     seen = set()
-    if REF_DIR.exists():
-        for f in REF_DIR.iterdir():
-            if f.suffix.lower() in AUDIO_EXTS:
-                seen.add(f.stem)
-                voices.append({"id": f.stem, "file": f.name, "cached": False})
+    dirs_to_check = [REF_DIR]
+    fallback_dir = Path("C:/temp/tts_jobs/voices")
+    if fallback_dir.exists() and fallback_dir.resolve() != REF_DIR.resolve():
+        dirs_to_check.append(fallback_dir)
+
+    for d in dirs_to_check:
+        if d.exists():
+            for f in d.iterdir():
+                if f.suffix.lower() in AUDIO_EXTS and f.stem not in seen:
+                    seen.add(f.stem)
+                    voices.append({"id": f.stem, "file": f.name, "cached": False})
+
     cached_ids = set()
     if CACHE_DIR.exists():
         for f in CACHE_DIR.glob("*.pt"):
