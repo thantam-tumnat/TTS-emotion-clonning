@@ -271,6 +271,18 @@ async def _run_job(job: Job) -> None:
             pipeline.MergeOptions(speed=job.speed),
         )
 
+        # Absolute path, because WORK_ROOT is relative to the working directory
+        # and "work/<id>.mp3" is not enough to find the file when the service was
+        # started from somewhere else. Logged before the upload so the line is
+        # there even when the upload is what fails.
+        print(
+            f"[{job.queue_id}] merged -> {merged.resolve()} "
+            f"({merged.stat().st_size / 1024:.0f} KB)"
+            # ASCII only: Windows consoles default to cp1252 and an em dash here
+            # raises UnicodeEncodeError mid-job.
+            + ("" if KEEP_WORK else "  [deleted after upload - SIANGTTS_KEEP_WORK=1 to keep]")
+        )
+
         job.file_url = await pipeline.upload(merged)
         job.status = "completed"
         await pipeline.post_callback(
@@ -300,8 +312,14 @@ async def _run_job(job: Job) -> None:
     finally:
         job.finished = time.time()
         _state["running"] = None
-        if not KEEP_WORK:
+        # Only a delivered job is safe to delete. A failure usually means the
+        # upload or callback broke *after* the GPU work was already done, and
+        # wiping the scratch dir there throws away minutes of synthesis and the
+        # only copy of the audio — leaving nothing to inspect or re-upload.
+        if job.status == "completed" and not KEEP_WORK:
             pipeline.cleanup(work)
+        elif job.status != "completed" and work.exists():
+            print(f"[{job.queue_id}] failed - audio kept at {work.resolve()}")
 
 
 # ---------------------------------------------------------------------------

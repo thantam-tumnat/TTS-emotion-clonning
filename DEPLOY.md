@@ -50,7 +50,9 @@ default is `10`, which is what the paper reports and what every other entry
 point in this repo uses. Raise it if you hear artifacts; 16 is the ceiling worth
 trying.
 
-Set `SIANGTTS_KEEP_WORK=1` to keep per-job scratch dirs while debugging.
+Set `SIANGTTS_KEEP_WORK=1` to keep per-job scratch dirs while debugging. Failed
+jobs keep theirs regardless — note that this means a run of failures accumulates
+audio under `SIANGTTS_WORK_DIR` and nothing prunes it.
 
 > The adapter path is a hard failure on purpose. `src/serve.py` only warned and
 > fell back to the base model, which sounds plausible but has no Thai LoRA — an

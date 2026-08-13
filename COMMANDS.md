@@ -75,7 +75,7 @@ setx SIANGTTS_ADAPTER "checkpoints/siangtts-v1" /M
 | `SIANGTTS_REF_DIR` | `ref` | reference clips, named `<voice_id>.mp3`. The old server kept these in `C:\temp\tts_jobs\voices\` — point here to reuse them in place. |
 | `SIANGTTS_CACHE_DIR` | `voice_cache` | cached encodings (`.pt`), derived from `ref/`. Safe to delete; costs a re-encode. |
 | `SIANGTTS_WORK_DIR` | `work` | job scratch. **Relative to the working directory** — set an absolute path when running as a service. |
-| `SIANGTTS_KEEP_WORK` | — | `1` keeps `work/<queue_id>/` instead of deleting it |
+| `SIANGTTS_KEEP_WORK` | — | `1` keeps `work/<queue_id>/` for successful jobs too; failed jobs are kept either way |
 | `SIANGTTS_NUM_STEP` | `10` | inference steps (was `num_step` in n8n, where it was `32` — see DEPLOY.md) |
 | `SIANGTTS_GUIDANCE` | `2` | CFG scale (was `guidance_scale`) |
 | `SIANGTTS_MAX_HISTORY` | `500` | finished jobs kept for `/jobs` |
@@ -220,7 +220,14 @@ work\<queue_id>\<queue_id>_001.wav     chunk 2 …
 work\<queue_id>\<queue_id>.mp3         merged, 192 kbps — this is what gets uploaded
 ```
 
-Deleted after the callback fires, unless `SIANGTTS_KEEP_WORK=1`.
+The merged path is printed to the console as an absolute path the moment it
+exists, before the upload is attempted, so it is in the log even when the upload
+is the thing that fails.
+
+Deleted after the callback fires, unless `SIANGTTS_KEEP_WORK=1`. **Failed jobs
+are always kept** — a failure normally happens at upload or callback, after the
+synthesis is done, so the audio survives for inspection or a manual re-upload.
+The console says where.
 
 Listen to the newest result:
 
