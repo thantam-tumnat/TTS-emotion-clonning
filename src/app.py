@@ -23,31 +23,108 @@ DEFAULT_BASE = "openbmb/VoxCPM2"
 DEFAULT_ADAPTER = "checkpoints/siangtts-lora-v0/latest"
 
 
+def chunk_text(text: str, max_chars: int = 200) -> list[str]:
+    """Split a script into synth-sized pieces: one per non-empty line, then by
+    spaces if a line is still too long. Generating a long script in a single
+    call drifts in prosody and trips voxcpm's `retry_badcase` re-runs.
+    """
+    out: list[str] = []
+    for line in text.splitlines():
+        line = line.strip()
+        if not line:
+            continue
+        if len(line) <= max_chars:
+            out.append(line)
+            continue
+        cur = ""
+        for word in line.split(" "):
+            if cur and len(cur) + 1 + len(word) > max_chars:
+                out.append(cur)
+                cur = word
+            else:
+                cur = f"{cur} {word}".strip()
+        if cur:
+            out.append(cur)
+    return out
+
+
 def build_app(base_model: str = DEFAULT_BASE, adapter: str = DEFAULT_ADAPTER):
     import gradio as gr
 
     entries = json.loads(MANIFEST.read_text(encoding="utf-8")) if MANIFEST.exists() else []
     compare = [e for e in entries if e.get("kind") == "compare"]
 
-    # Lazy model load — only when the user actually generates something.
+    # Lazy per-model load — only build the Synthesizer the user actually asks for.
     live: dict = {}
 
-    def _ensure_live():
-        if "lora" not in live:
+    def _get(which: str):
+        if which not in live:
             from .inference import Synthesizer
 
-            live["lora"] = Synthesizer(base_model=base_model, adapter_path=adapter)
-            live["base"] = Synthesizer(base_model=base_model, adapter_path=None)
-        return live
+            live[which] = Synthesizer(
+                base_model=base_model,
+                adapter_path=adapter if which == "lora" else None,
+            )
+        return live[which]
 
-    def generate(text: str, ref):
+    def _synth_long(syn, pieces, ref_path, prompt_text, gap_s, steps, cfg,
+                    label, progress):
+        import numpy as np
+
+        from .thai_normalizer import normalize_thai_text
+
+        # voxcpm requires prompt_wav_path and prompt_text to be both set or both
+        # None. Reusing the reference clip as the prompt gives `ref_continuation`
+        # mode; leaving the transcript blank keeps plain `reference` mode.
+        p_wav = ref_path if prompt_text else None
+        p_txt = normalize_thai_text(prompt_text) if prompt_text else None
+        mode = "ref+cont" if p_txt else ("ref" if ref_path else "plain")
+
+        gap = np.zeros(int(gap_s * syn.sample_rate))
+        parts = []
+        for i, piece in enumerate(pieces, 1):
+            progress((i - 1) / len(pieces),
+                     desc=f"{label} [{mode}] {i}/{len(pieces)}")
+            # Bypass Synthesizer.synth() so we can turn off retry_badcase — on long
+            # scripts a retry re-runs the whole chunk and blows up wall-clock.
+            parts.append(syn.model.generate(
+                text=normalize_thai_text(piece),
+                reference_wav_path=ref_path,
+                prompt_wav_path=p_wav,
+                prompt_text=p_txt,
+                cfg_value=float(cfg),
+                inference_timesteps=int(steps),
+                retry_badcase=False,
+            ))
+            parts.append(gap)
+        return np.concatenate(parts[:-1]) if parts else np.zeros(0)
+
+    def generate(text: str, ref, ref_text: str, which, max_chars: int,
+                 gap_s: float, steps: int, cfg: float, progress=gr.Progress()):
         if not text.strip():
             raise gr.Error("Enter some Thai text.")
-        s = _ensure_live()
+        which = list(which or [])
+        if not which:
+            raise gr.Error("Tick at least one model to generate.")
+        pieces = chunk_text(text, int(max_chars))
+        if not pieces:
+            raise gr.Error("Nothing to synthesize.")
+
         ref_path = ref if ref else None
-        sr = s["lora"].sample_rate
-        return ((sr, s["base"].synth(text, ref_audio=ref_path)),
-                (sr, s["lora"].synth(text, ref_audio=ref_path)))
+        prompt_text = (ref_text or "").strip() or None
+        if prompt_text and not ref_path:
+            raise gr.Error("A reference transcript needs a reference audio clip too "
+                           "— upload one, or clear the transcript box.")
+
+        outs = {}
+        for name in ("base", "lora"):
+            if name not in which:
+                continue
+            syn = _get(name)
+            outs[name] = (syn.sample_rate,
+                          _synth_long(syn, pieces, ref_path, prompt_text, gap_s,
+                                      steps, cfg, name, progress))
+        return outs.get("base"), outs.get("lora")
 
     with gr.Blocks(title="SiangTTS — Thai TTS + Voice Cloning") as demo:
         gr.Markdown(
@@ -56,13 +133,39 @@ def build_app(base_model: str = DEFAULT_BASE, adapter: str = DEFAULT_ADAPTER):
             "voice) and compare the **base** model with **SiangTTS**."
         )
         with gr.Tab("Try it"):
-            txt = gr.Textbox(label="Thai text", value="สวัสดีครับ ยินดีที่ได้รู้จัก")
+            txt = gr.Textbox(label="Thai text", lines=6,
+                             value="สวัสดีครับ ยินดีที่ได้รู้จัก",
+                             info="Long scripts are fine — each line is synthesized "
+                                  "separately, then joined.")
             ref_in = gr.Audio(label="Reference voice (optional, 3–10s)", type="filepath")
+            ref_txt = gr.Textbox(
+                label="Reference transcript (optional)", lines=2,
+                placeholder="ถอดคำพูดในไฟล์ ref ให้ตรงเป๊ะ — เว้นว่างไว้ก็ได้",
+                info="Blank → reference mode (clone timbre only). Filled → "
+                     "ref_continuation mode: the model also sees how that text was "
+                     "read. Must match the audio exactly or quality gets worse.")
+            which_cbg = gr.CheckboxGroup(
+                choices=[("Base VoxCPM2", "base"), ("SiangTTS (LoRA)", "lora")],
+                value=["lora"], label="Generate with")
+            with gr.Row():
+                steps_sl = gr.Slider(4, 20, value=6, step=1,
+                                     label="Diffusion steps",
+                                     info="Biggest speed lever. 10 = paper default, "
+                                          "5–6 is usually indistinguishable and ~2x faster.")
+                cfg_sl = gr.Slider(1.0, 4.0, value=2.5, step=0.1, label="CFG value")
+            with gr.Row():
+                chars_sl = gr.Slider(60, 400, value=200, step=10,
+                                     label="Max characters per chunk")
+                gap_sl = gr.Slider(0.0, 1.0, value=0.35, step=0.05,
+                                   label="Gap between chunks (s)")
             btn = gr.Button("Generate", variant="primary")
             with gr.Row():
                 out_base = gr.Audio(label="Base VoxCPM2")
                 out_lora = gr.Audio(label="SiangTTS (LoRA)")
-            btn.click(generate, [txt, ref_in], [out_base, out_lora])
+            btn.click(generate,
+                      [txt, ref_in, ref_txt, which_cbg, chars_sl, gap_sl,
+                       steps_sl, cfg_sl],
+                      [out_base, out_lora])
 
         with gr.Tab("Curated comparison"):
             if not compare:
