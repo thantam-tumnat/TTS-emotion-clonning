@@ -76,7 +76,7 @@ setx SIANGTTS_ADAPTER "checkpoints/siangtts-v1" /M
 | `SIANGTTS_CACHE_DIR` | `voice_cache` | cached encodings (`.pt`), derived from `ref/`. Safe to delete; costs a re-encode. |
 | `SIANGTTS_WORK_DIR` | `work` | job scratch. **Relative to the working directory** — set an absolute path when running as a service. |
 | `SIANGTTS_KEEP_WORK` | — | `1` keeps `work/<queue_id>/` instead of deleting it |
-| `SIANGTTS_NUM_STEP` | `32` | inference steps (was `num_step` in n8n) |
+| `SIANGTTS_NUM_STEP` | `10` | inference steps (was `num_step` in n8n, where it was `32` — see DEPLOY.md) |
 | `SIANGTTS_GUIDANCE` | `2` | CFG scale (was `guidance_scale`) |
 | `SIANGTTS_MAX_HISTORY` | `500` | finished jobs kept for `/jobs` |
 | `SIANGTTS_HTTP_TIMEOUT` | `120` | seconds for upload + callback |

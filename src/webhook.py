@@ -71,7 +71,11 @@ DEFAULT_REF_TEXT = (
     "ริ้วรอยลดเลือน จุดด่างดำจางลง ผิวไร้ปัญหาสิว "
     "บำรุงล้ำลึกจากภายในเซลล์ผิว ผิวกระจ่างใสเนียนสวยแบบนี้ได้ใจเลยค่ะ"
 )
-NUM_STEP = int(os.environ.get("SIANGTTS_NUM_STEP", "32"))          # n8n: num_step
+# n8n: num_step. The flow inherited 32 from IndexTTS, where a step is cheap.
+# Here every LM step runs the flow-matching DiT this many times, doubled again by
+# CFG — 32 costs 64 DiT forwards per step and put a single chunk at ~1s/step on an
+# uncompiled build. voxcpm's own default is 10, and the difference is inaudible.
+NUM_STEP = int(os.environ.get("SIANGTTS_NUM_STEP", "10"))
 GUIDANCE = float(os.environ.get("SIANGTTS_GUIDANCE", "2"))         # n8n: guidance_scale
 
 # Finished jobs kept for /jobs. State is in memory, so this is the only thing

@@ -40,8 +40,15 @@ SIANGTTS_WORK_DIR=work
 PYTHONIOENCODING=utf-8                        # Windows consoles are cp1252; Thai log lines crash without this
 ```
 
-Tuning knobs, defaults taken from the old flow's `send_prompt_new` body:
-`SIANGTTS_NUM_STEP=32`, `SIANGTTS_GUIDANCE=2`.
+Tuning knobs: `SIANGTTS_NUM_STEP=10`, `SIANGTTS_GUIDANCE=2`.
+
+`GUIDANCE` comes from the old flow's `send_prompt_new` body. `NUM_STEP` does not:
+the flow's `32` was an IndexTTS value, and here each LM step re-runs the
+flow-matching DiT that many times, doubled again by CFG — 64 DiT forwards per
+step, ~1s/step on a build without `torch.compile` (no triton). VoxCPM's own
+default is `10`, which is what the paper reports and what every other entry
+point in this repo uses. Raise it if you hear artifacts; 16 is the ceiling worth
+trying.
 
 Set `SIANGTTS_KEEP_WORK=1` to keep per-job scratch dirs while debugging.
 
