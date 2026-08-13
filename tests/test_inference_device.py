@@ -1,71 +1,67 @@
-"""Tests for Synthesizer._to_device.
+"""Tests for prompt-cache persistence in src/inference.py.
 
-A prompt cache has to be single-device before generation concatenates its
-tensors. What can actually break is the traversal — whether nested containers
-are reached at all — so these run on CPU and check placement plus structure.
+A prompt cache must stay on CPU. voxcpm's `_encode_wav` ends in `.cpu()` and
+`_generate_with_prompt_cache` assembles the ref prefix around `text_token` —
+always a CPU tensor, since the tokenizer builds it with `torch.LongTensor` —
+moving the finished result to the GPU itself. Putting a CUDA tensor back into
+that cache makes `torch.cat` fail with a device mismatch, so the round trip
+through disk must not "helpfully" relocate anything.
+
 The Synthesizer is built without __init__ so no model is loaded.
 """
 
 from __future__ import annotations
-
-from types import SimpleNamespace
 
 import torch
 
 from src.inference import Synthesizer
 
 
-def _synth(device: str = "cpu") -> Synthesizer:
-    s = object.__new__(Synthesizer)
-    s.model = SimpleNamespace(tts_model=SimpleNamespace(device=torch.device(device)))
-    return s
+def _synth() -> Synthesizer:
+    return object.__new__(Synthesizer)
 
 
-def _devices(value, path: str = ""):
-    """Every tensor in the structure, as (path, device string)."""
-    if torch.is_tensor(value):
-        yield path, str(value.device)
-    elif isinstance(value, dict):
-        for k, v in value.items():
-            yield from _devices(v, f"{path}.{k}")
-    elif isinstance(value, (list, tuple)):
-        for i, v in enumerate(value):
-            yield from _devices(v, f"{path}[{i}]")
-
-
-def test_moves_nested_tensors():
-    cache = {
-        "ref_audio_feat": torch.zeros(2),
-        "nested": {"a": torch.ones(2)},
-        "seq": [torch.ones(1), (torch.ones(1), torch.ones(1))],
+def _cache() -> dict:
+    return {
+        "ref_audio_feat": torch.randn(3, 2, 4),
+        "audio_feat": torch.randn(2, 2, 4),
+        "prompt_text": "ข้อความอ้างอิง",
+        "mode": "ref_continuation",
     }
-    out = _synth()._to_device(cache)
-    found = dict(_devices(out))
-    assert set(found) == {
-        ".ref_audio_feat", ".nested.a", ".seq[0]", ".seq[1][0]", ".seq[1][1]",
-    }
-    assert all(d == "cpu" for d in found.values())
 
 
-def test_preserves_non_tensors():
-    cache = {"scalar": 7, "text": "hello", "none": None, "nested": {"b": "keep"}}
-    out = _synth()._to_device(cache)
-    assert out == cache
+def test_round_trip_stays_on_cpu(tmp_path):
+    s = _synth()
+    s.save_voice(_cache(), tmp_path / "v.pt")
+    loaded = s.load_voice(tmp_path / "v.pt")
+    tensors = [v for v in loaded.values() if torch.is_tensor(v)]
+    assert tensors, "expected tensors in the cache"
+    assert all(t.device.type == "cpu" for t in tensors)
 
 
-def test_preserves_container_types():
-    out = _synth()._to_device({"t": (torch.ones(1), 3), "l": [torch.ones(1)]})
-    assert isinstance(out["t"], tuple)
-    assert isinstance(out["l"], list)
+def test_round_trip_preserves_values(tmp_path):
+    s = _synth()
+    original = _cache()
+    s.save_voice(original, tmp_path / "v.pt")
+    loaded = s.load_voice(tmp_path / "v.pt")
+
+    assert set(loaded) == set(original)
+    assert loaded["prompt_text"] == original["prompt_text"]
+    assert loaded["mode"] == original["mode"]
+    assert torch.equal(loaded["ref_audio_feat"], original["ref_audio_feat"])
+    assert torch.equal(loaded["audio_feat"], original["audio_feat"])
 
 
-def test_empty_cache():
-    assert _synth()._to_device({}) == {}
+def test_load_does_not_need_a_model(tmp_path):
+    """load_voice must not reach for self.model — a cache is not model state,
+    and reading the model's device is what pulled it onto the GPU before."""
+    s = _synth()
+    s.save_voice(_cache(), tmp_path / "v.pt")
+    assert not hasattr(s, "model")
+    s.load_voice(tmp_path / "v.pt")     # would AttributeError if it did
 
 
-def test_does_not_mutate_input():
-    inner = torch.ones(1)
-    cache = {"a": inner}
-    out = _synth()._to_device(cache)
-    assert cache["a"] is inner
-    assert torch.equal(out["a"], inner)
+def test_save_creates_parent_dirs(tmp_path):
+    s = _synth()
+    out = s.save_voice(_cache(), tmp_path / "nested" / "dir" / "v.pt")
+    assert out.exists()

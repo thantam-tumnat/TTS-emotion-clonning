@@ -77,31 +77,6 @@ class Synthesizer:
     # ------------------------------------------------------------------
     # Reusable voice cache — encode a reference once, clone many times.
     # ------------------------------------------------------------------
-    def _to_device(self, cache: dict) -> dict:
-        """Put every tensor in a prompt cache on the model's device.
-
-        `build_prompt_cache` hands back mixed placement — in ref_continuation
-        mode the reference feature comes back on CPU while the rest is on the
-        GPU — and generation concatenates the two, which torch.cat refuses.
-        Loading a cache saved on another machine has the same problem.
-        """
-        import torch
-
-        dev = self.model.tts_model.device
-
-        def move(v):
-            if torch.is_tensor(v):
-                return v.to(dev)
-            if isinstance(v, dict):
-                return {k: move(x) for k, x in v.items()}
-            if isinstance(v, list):
-                return [move(x) for x in v]
-            if isinstance(v, tuple):
-                return tuple(move(x) for x in v)
-            return v
-
-        return {k: move(v) for k, v in cache.items()}
-
     def build_voice(self, ref_audio: str, prompt_text: str | None = None,
                     prompt_audio: str | None = None) -> dict:
         """Encode a reference clip into a reusable prompt cache (AudioVAE
@@ -113,11 +88,11 @@ class Synthesizer:
         # rather than making every caller remember to pass the path twice.
         if prompt_text and prompt_audio is None:
             prompt_audio = ref_audio
-        return self._to_device(self.model.tts_model.build_prompt_cache(
+        return self.model.tts_model.build_prompt_cache(
             reference_wav_path=ref_audio,
             prompt_text=prompt_text,
             prompt_wav_path=prompt_audio,
-        ))
+        )
 
     def save_voice(self, prompt_cache: dict, path: str | Path) -> Path:
         """Persist a prompt cache to disk (tensors moved to CPU)."""
@@ -132,13 +107,20 @@ class Synthesizer:
         return path
 
     def load_voice(self, path: str | Path) -> dict:
-        """Load a persisted prompt cache onto the model's device."""
+        """Load a persisted prompt cache. Stays on CPU — that is where voxcpm
+        wants it.
+
+        A prompt cache is not model state: `_encode_wav` ends in `.cpu()`, and
+        `_generate_with_prompt_cache` assembles the whole prefix around
+        `text_token`, which the tokenizer always produces on CPU, moving the
+        result to the GPU only once it is built. Loading the cache onto the
+        model's device instead puts a CUDA tensor into that CPU assembly and
+        `torch.cat` rejects the mix — which is exactly what happened the first
+        time a cached voice was reused rather than freshly encoded.
+        """
         import torch
 
-        dev = self.model.tts_model.device
-        # map_location covers the top level; _to_device catches tensors nested
-        # inside dicts/lists that save_voice wrote out unmoved.
-        return self._to_device(torch.load(str(path), map_location=dev))
+        return torch.load(str(path), map_location="cpu")
 
     def synth_cached(
         self,
