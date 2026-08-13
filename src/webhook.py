@@ -45,18 +45,24 @@ from pathlib import Path
 
 import soundfile as sf
 from fastapi import FastAPI
-from fastapi.responses import HTMLResponse, JSONResponse
+from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from . import pipeline
 from .inference import DEFAULT_BASE_MODEL, Synthesizer
 from .thai_text import Chunk, chunk_text, prepare_prompt
 
+pipeline._load_dotenv()
+
 BASE_MODEL = os.environ.get("SIANGTTS_BASE_MODEL", DEFAULT_BASE_MODEL)
 ADAPTER = os.environ.get("SIANGTTS_ADAPTER", "checkpoints/siangtts-v1")
 DEVICE = os.environ.get("SIANGTTS_DEVICE") or None
 REF_DIR = Path(os.environ.get("SIANGTTS_REF_DIR", "ref"))
-CACHE_DIR = Path(os.environ.get("SIANGTTS_CACHE_DIR", "voice_cache"))
+CACHE_DIR = Path(
+    os.environ.get("SIANGTTS_CACHE_DIR")
+    or os.environ.get("SIANGTTS_VOICES_DIR")
+    or ("voices" if Path("voices").exists() else "voice_cache")
+)
 KEEP_WORK = os.environ.get("SIANGTTS_KEEP_WORK", "") == "1"
 
 AUDIO_EXTS = (".mp3", ".wav", ".m4a", ".ogg", ".flac")
@@ -110,6 +116,7 @@ class Job:
     speed: float
     callback_url: str
     chunks: list[Chunk]
+    prompt: str = ""
     status: str = "queued"              # queued | running | completed | failed
     error: str | None = None
     file_url: str | None = None
@@ -122,17 +129,31 @@ class Job:
         now = time.time()
         waited = (self.started or now) - self.created
         ran = ((self.finished or now) - self.started) if self.started else None
+        local_mp3 = pipeline.WORK_ROOT / self.queue_id / f"{self.queue_id}.mp3"
+        local_wav = pipeline.WORK_ROOT / self.queue_id / f"{self.queue_id}_000.wav"
+        has_audio = local_mp3.exists() or local_wav.exists()
+        audio_src = self.file_url or (f"/audio/{self.queue_id}" if has_audio else None)
         return {
             "job_id": self.job_id,
             "queue_id": self.queue_id,
             "status": self.status,
             "voice_id": self.voice_id,
+            "prompt": self.prompt,
+            "speed": self.speed,
+            "callback_url": self.callback_url,
             "progress": f"{self.done}/{len(self.chunks)}",
+            "chunks_total": len(self.chunks),
+            "chunks_done": self.done,
             "position": position,       # place in line; None once it starts
             "created": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.created)),
+            "created_ts": self.created,
+            "started_ts": self.started,
+            "finished_ts": self.finished,
             "waited_s": round(waited, 1),
             "elapsed_s": round(ran, 1) if ran is not None else None,
             "file_url": self.file_url,
+            "audio_src": audio_src,
+            "has_local_audio": has_audio,
             "error": self.error,
         }
 
@@ -218,7 +239,7 @@ async def lifespan(app: FastAPI):
         _state.clear()
 
 
-app = FastAPI(title="SiangTTS webhook", version="1.0.0", lifespan=lifespan)
+app = FastAPI(title="SiangTTS webhook", version="1.1.0", lifespan=lifespan)
 
 
 async def _worker() -> None:
@@ -271,17 +292,11 @@ async def _run_job(job: Job) -> None:
             pipeline.MergeOptions(speed=job.speed),
         )
 
-        # Absolute path, because WORK_ROOT is relative to the working directory
-        # and "work/<id>.mp3" is not enough to find the file when the service was
-        # started from somewhere else. Logged before the upload so the line is
-        # there even when the upload is what fails.
-        print(
-            f"[{job.queue_id}] merged -> {merged.resolve()} "
-            f"({merged.stat().st_size / 1024:.0f} KB)"
-            # ASCII only: Windows consoles default to cp1252 and an em dash here
-            # raises UnicodeEncodeError mid-job.
-            + ("" if KEEP_WORK else "  [deleted after upload - SIANGTTS_KEEP_WORK=1 to keep]")
+        size_kb = round(merged.stat().st_size / 1024) if merged.exists() else 0
+        disp_action = (
+            "kept" if KEEP_WORK else "deleted after upload — SIANGTTS_KEEP_WORK=1 to keep"
         )
+        print(f"[{job.queue_id}] merged -> {merged.resolve()} ({size_kb} KB)  [{disp_action}]")
 
         job.file_url = await pipeline.upload(merged)
         job.status = "completed"
@@ -349,6 +364,7 @@ async def _accept(body: WebhookBody) -> JSONResponse:
         speed=body.audio_speed or 1.0,
         callback_url=callback_url,
         chunks=chunks,
+        prompt=body.prompt,
     )
     jobs: dict[str, Job] = _state["jobs"]
     jobs[job.job_id] = job
@@ -390,7 +406,7 @@ def _positions() -> dict[str, int]:
 
 
 @app.get("/jobs")
-def list_jobs(status: str | None = None, limit: int = 50) -> JSONResponse:
+def list_jobs(status: str | None = None, limit: int = 100) -> JSONResponse:
     """Everything the service remembers, newest first. `?status=failed` to
     filter — this is the surface that replaces scrolling n8n's execution list."""
     jobs: list[Job] = list(_state.get("jobs", {}).values())
@@ -425,147 +441,1198 @@ def health() -> JSONResponse:
     jobs: list[Job] = list(_state.get("jobs", {}).values())
     return JSONResponse({
         "status": "ok" if synth else "loading",
+        "model": BASE_MODEL,
         "adapter": ADAPTER,
-        "sample_rate": getattr(synth, "sample_rate", None),
-        "waiting": queue.qsize() if queue else None,
+        "device": DEVICE or "auto",
+        "sample_rate": getattr(synth, "sample_rate", 48000),
+        "num_step": NUM_STEP,
+        "guidance": GUIDANCE,
+        "waiting": queue.qsize() if queue else 0,
         "running": _state.get("running"),
         "completed": sum(1 for j in jobs if j.status == "completed"),
         "failed": sum(1 for j in jobs if j.status == "failed"),
+        "total": len(jobs),
         "voices_cached": len(getattr(_state.get("voices"), "mem", {})),
-        "upload_token": bool(pipeline.UPLOAD_TOKEN),
+        "upload_token": bool(
+            os.environ.get("SIANGTTS_UPLOAD_TOKEN", "").strip() or pipeline.UPLOAD_TOKEN
+        ),
     })
 
 
+@app.get("/voices")
+def list_voices() -> JSONResponse:
+    """List available reference voices and cached prompt caches."""
+    voices: list[dict] = []
+    seen = set()
+    if REF_DIR.exists():
+        for f in REF_DIR.iterdir():
+            if f.suffix.lower() in AUDIO_EXTS:
+                seen.add(f.stem)
+                voices.append({"id": f.stem, "file": f.name, "cached": False})
+    cached_ids = set()
+    if CACHE_DIR.exists():
+        for f in CACHE_DIR.glob("*.pt"):
+            stem = f.stem.split("-")[0]
+            cached_ids.add(stem)
+    for v in voices:
+        if v["id"] in cached_ids:
+            v["cached"] = True
+    # If default voice is not in ref directory, list it anyway
+    if DEFAULT_VOICE not in seen:
+        voices.insert(0, {"id": DEFAULT_VOICE, "file": f"{DEFAULT_VOICE}.mp3", "cached": DEFAULT_VOICE in cached_ids})
+    return JSONResponse({"voices": voices, "default": DEFAULT_VOICE})
+
+
+@app.get("/audio/{queue_id}")
+async def get_audio(queue_id: str):
+    """Serve locally generated audio for direct dashboard preview."""
+    mp3_path = pipeline.WORK_ROOT / queue_id / f"{queue_id}.mp3"
+    if mp3_path.exists():
+        return FileResponse(mp3_path, media_type="audio/mpeg", filename=f"{queue_id}.mp3")
+    wav_path = pipeline.WORK_ROOT / queue_id / f"{queue_id}_000.wav"
+    if wav_path.exists():
+        return FileResponse(wav_path, media_type="audio/wav", filename=f"{queue_id}.wav")
+    return JSONResponse({"error": "audio not found in local scratch"}, status_code=404)
+
+
 # ---------------------------------------------------------------------------
-# Queue page
+# Queue Monitoring Dashboard UI
 # ---------------------------------------------------------------------------
 
-# One self-contained file, no build step and no CDN — this runs on a LAN box
-# that may have no outbound internet, and a dashboard that needs a network
-# fetch to render is a dashboard that fails exactly when you need it. It polls
-# /jobs, so everything shown here is also available as JSON.
 QUEUE_PAGE = """<!doctype html>
+<html lang="en">
+<head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>SiangTTS · queue</title>
+<title>SiangTTS · Voice Cloning Queue</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
 <style>
   :root {
     color-scheme: light dark;
-    --bg: #fbfbfa; --fg: #1c1b1a; --dim: #6d6a67;
-    --line: #e3e1de; --card: #fff;
-    --run: #2563eb; --ok: #15803d; --fail: #b91c1c; --wait: #a16207;
+    --font-sans: -apple-system, BlinkMacSystemFont, "Segoe UI", "Sarabun", Roboto, Helvetica, Arial, sans-serif;
+    --font-mono: ui-monospace, "SF Mono", "Cascadia Code", "Cascadia Mono", Menlo, Consolas, monospace;
+    
+    --bg: #090d16;
+    --surface: #111726;
+    --surface-elevated: #1a2236;
+    --surface-hover: #222d47;
+    --border: #263352;
+    --border-subtle: #1c2740;
+    
+    --text: #f1f5f9;
+    --text-muted: #94a3b8;
+    --text-dim: #64748b;
+    
+    --primary: #38bdf8;
+    --primary-glow: rgba(56, 189, 248, 0.15);
+    --run: #38bdf8;
+    --run-bg: rgba(56, 189, 248, 0.12);
+    --ok: #34d399;
+    --ok-bg: rgba(52, 211, 153, 0.12);
+    --fail: #f87171;
+    --fail-bg: rgba(248, 113, 113, 0.12);
+    --wait: #fbbf24;
+    --wait-bg: rgba(251, 191, 36, 0.12);
   }
-  @media (prefers-color-scheme: dark) {
-    :root {
-      --bg: #191817; --fg: #eceae7; --dim: #9a9691;
-      --line: #322f2c; --card: #201f1d;
-      --run: #60a5fa; --ok: #4ade80; --fail: #f87171; --wait: #fbbf24;
-    }
+
+  [data-theme="light"] {
+    --bg: #f8fafc;
+    --surface: #ffffff;
+    --surface-elevated: #f1f5f9;
+    --surface-hover: #e2e8f0;
+    --border: #cbd5e1;
+    --border-subtle: #e2e8f0;
+    
+    --text: #0f172a;
+    --text-muted: #475569;
+    --text-dim: #94a3b8;
+    
+    --primary: #0284c7;
+    --primary-glow: rgba(2, 132, 199, 0.12);
+    --run: #0284c7;
+    --run-bg: #e0f2fe;
+    --ok: #16a34a;
+    --ok-bg: #dcfce7;
+    --fail: #dc2626;
+    --fail-bg: #fee2e2;
+    --wait: #d97706;
+    --wait-bg: #fef3c7;
   }
-  * { box-sizing: border-box }
+
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  
   body {
-    margin: 0; padding: 1.5rem; background: var(--bg); color: var(--fg);
-    font: 15px/1.5 ui-sans-serif, system-ui, "Segoe UI", "Sarabun", sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    font-family: var(--font-sans);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
+    padding: 1.5rem 2rem 3rem;
   }
-  header { display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap;
-           margin-bottom: 1.25rem }
-  h1 { font-size: 1.15rem; margin: 0; font-weight: 600 }
-  .meta { color: var(--dim); font-size: .85rem }
-  .stats { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem }
-  .stat { background: var(--card); border: 1px solid var(--line);
-          border-radius: 8px; padding: .5rem .8rem; min-width: 5.5rem }
-  .stat b { display: block; font-size: 1.35rem; font-weight: 600;
-            font-variant-numeric: tabular-nums; line-height: 1.2 }
-  .stat span { color: var(--dim); font-size: .75rem; text-transform: uppercase;
-               letter-spacing: .04em }
-  .wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px;
-          background: var(--card) }
-  table { border-collapse: collapse; width: 100%; font-size: .875rem }
-  th, td { text-align: left; padding: .55rem .7rem; white-space: nowrap;
-           border-bottom: 1px solid var(--line) }
-  th { color: var(--dim); font-weight: 500; font-size: .75rem;
-       text-transform: uppercase; letter-spacing: .04em }
-  tr:last-child td { border-bottom: 0 }
-  td.num { font-variant-numeric: tabular-nums }
-  code { font: 12px/1 ui-monospace, "Cascadia Mono", Consolas, monospace;
-         color: var(--dim) }
-  .badge { font-size: .75rem; font-weight: 600 }
-  .running { color: var(--run) } .completed { color: var(--ok) }
-  .failed  { color: var(--fail) } .queued  { color: var(--wait) }
-  .err { color: var(--fail); max-width: 28rem; white-space: normal }
-  a { color: var(--run) }
-  .empty { padding: 2.5rem; text-align: center; color: var(--dim) }
+
+  /* Header */
+  header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 1rem;
+    padding-bottom: 1.5rem;
+    border-bottom: 1px solid var(--border-subtle);
+    margin-bottom: 1.5rem;
+  }
+
+  .brand {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+  }
+
+  .brand-logo {
+    width: 38px;
+    height: 38px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #0284c7, #38bdf8);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #fff;
+    font-weight: 800;
+    font-size: 1.15rem;
+    box-shadow: 0 4px 12px var(--primary-glow);
+  }
+
+  .brand-title h1 {
+    font-size: 1.25rem;
+    font-weight: 700;
+    letter-spacing: -0.02em;
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .brand-title p {
+    font-size: 0.8rem;
+    color: var(--text-muted);
+  }
+
+  .status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: var(--ok);
+    box-shadow: 0 0 8px var(--ok);
+    display: inline-block;
+    animation: pulse 2s infinite ease-in-out;
+  }
+  .status-dot.disconnected { background: var(--fail); box-shadow: 0 0 8px var(--fail); }
+
+  @keyframes pulse {
+    0%, 100% { opacity: 1; transform: scale(1); }
+    50% { opacity: 0.4; transform: scale(0.85); }
+  }
+
+  /* System Info Badges */
+  .sys-info {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+  }
+
+  .pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    padding: 0.3rem 0.65rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    font-weight: 500;
+  }
+
+  .pill b { color: var(--text); }
+  .pill.success { border-color: var(--ok); color: var(--ok); }
+  .pill.warning { border-color: var(--wait); color: var(--wait); }
+
+  /* Controls */
+  .header-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+  }
+
+  .btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 0.4rem;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.45rem 0.85rem;
+    border-radius: 8px;
+    font-size: 0.825rem;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    font-family: inherit;
+  }
+  .btn:hover { background: var(--surface-hover); border-color: var(--primary); }
+  .btn:active { transform: scale(0.98); }
+  .btn-primary { background: var(--primary); color: #090d16; border-color: var(--primary); font-weight: 600; }
+  .btn-primary:hover { opacity: 0.9; color: #090d16; }
+  .btn-icon { padding: 0.45rem; width: 34px; height: 34px; }
+
+  select.select-control {
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 0.45rem 0.75rem;
+    border-radius: 8px;
+    font-size: 0.825rem;
+    cursor: pointer;
+    font-family: inherit;
+  }
+
+  /* Metric KPI Grid */
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+    gap: 0.85rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .kpi-card {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem 1.15rem;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  .kpi-card:hover { transform: translateY(-2px); border-color: var(--text-dim); }
+  .kpi-card.active { border-color: var(--primary); box-shadow: 0 0 0 1px var(--primary); }
+
+  .kpi-label {
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-muted);
+    margin-bottom: 0.35rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .kpi-value {
+    font-size: 1.75rem;
+    font-weight: 700;
+    line-height: 1.2;
+    font-variant-numeric: tabular-nums;
+  }
+
+  .kpi-sub {
+    font-size: 0.725rem;
+    color: var(--text-dim);
+    margin-top: 0.25rem;
+  }
+
+  .kpi-card.running .kpi-value { color: var(--run); }
+  .kpi-card.queued .kpi-value { color: var(--wait); }
+  .kpi-card.completed .kpi-value { color: var(--ok); }
+  .kpi-card.failed .kpi-value { color: var(--fail); }
+
+  /* Active Running Spotlight */
+  .running-banner {
+    display: none;
+    background: linear-gradient(135deg, rgba(56, 189, 248, 0.1), rgba(17, 23, 38, 0.9));
+    border: 1px solid var(--run);
+    border-radius: 12px;
+    padding: 1rem 1.25rem;
+    margin-bottom: 1.5rem;
+    position: relative;
+    box-shadow: 0 4px 20px var(--primary-glow);
+  }
+  .running-banner.active { display: block; }
+  .running-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 0.5rem; }
+  .running-title { font-weight: 600; font-size: 0.9rem; color: var(--run); display: flex; align-items: center; gap: 0.5rem; }
+  .running-timer { font-family: var(--font-mono); font-size: 1.1rem; font-weight: 700; color: var(--run); }
+  .running-prompt { color: var(--text); font-size: 0.875rem; margin-bottom: 0.75rem; font-style: italic; }
+  .progress-bar-bg { height: 6px; background: rgba(255,255,255,0.1); border-radius: 9999px; overflow: hidden; }
+  .progress-bar-fill { height: 100%; width: 50%; background: var(--run); border-radius: 9999px; animation: shimmer 1.5s infinite linear; }
+  @keyframes shimmer { 0% { opacity: 0.6; } 50% { opacity: 1; } 100% { opacity: 0.6; } }
+
+  /* Toolbar */
+  .toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+  }
+
+  .tabs {
+    display: flex;
+    gap: 0.35rem;
+    background: var(--surface);
+    padding: 0.25rem;
+    border-radius: 10px;
+    border: 1px solid var(--border);
+  }
+
+  .tab {
+    padding: 0.35rem 0.75rem;
+    border-radius: 6px;
+    font-size: 0.8rem;
+    font-weight: 500;
+    color: var(--text-muted);
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+  }
+  .tab:hover { color: var(--text); }
+  .tab.active { background: var(--surface-elevated); color: var(--text); font-weight: 600; box-shadow: 0 1px 3px rgba(0,0,0,0.2); }
+  .tab-badge {
+    background: var(--surface-hover);
+    padding: 0.1rem 0.4rem;
+    border-radius: 999px;
+    font-size: 0.7rem;
+  }
+
+  .search-box {
+    position: relative;
+    min-width: 240px;
+  }
+  .search-input {
+    width: 100%;
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.4rem 0.75rem 0.4rem 2rem;
+    color: var(--text);
+    font-size: 0.825rem;
+    font-family: inherit;
+  }
+  .search-input:focus { outline: none; border-color: var(--primary); }
+  .search-icon {
+    position: absolute;
+    left: 0.65rem;
+    top: 50%;
+    transform: translateY(-50%);
+    color: var(--text-dim);
+    pointer-events: none;
+  }
+
+  /* Table Container */
+  .table-wrap {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    overflow: hidden;
+    box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  }
+
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 0.825rem;
+    text-align: left;
+  }
+
+  th {
+    background: var(--surface-elevated);
+    color: var(--text-muted);
+    font-weight: 600;
+    font-size: 0.725rem;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+
+  td {
+    padding: 0.75rem 1rem;
+    border-bottom: 1px solid var(--border-subtle);
+    vertical-align: middle;
+  }
+
+  tr:last-child td { border-bottom: none; }
+  tr:hover td { background: var(--surface-hover); }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.2rem 0.6rem;
+    border-radius: 9999px;
+    font-size: 0.75rem;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+  }
+  .badge.running { background: var(--run-bg); color: var(--run); border: 1px solid var(--run); }
+  .badge.queued { background: var(--wait-bg); color: var(--wait); border: 1px solid var(--wait); }
+  .badge.completed { background: var(--ok-bg); color: var(--ok); border: 1px solid var(--ok); }
+  .badge.failed { background: var(--fail-bg); color: var(--fail); border: 1px solid var(--fail); }
+
+  .mono { font-family: var(--font-mono); font-size: 0.78rem; color: var(--text-muted); }
+  .num { font-variant-numeric: tabular-nums; }
+  
+  .copy-btn {
+    background: transparent;
+    border: none;
+    color: var(--text-dim);
+    cursor: pointer;
+    padding: 2px 4px;
+    border-radius: 4px;
+    transition: all 0.15s ease;
+  }
+  .copy-btn:hover { color: var(--primary); background: var(--surface-hover); }
+
+  .prompt-snippet {
+    max-width: 240px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    color: var(--text);
+  }
+
+  .tag-voice {
+    display: inline-block;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.15rem 0.45rem;
+    font-size: 0.75rem;
+    color: var(--text-muted);
+  }
+
+  /* Audio player inline */
+  .audio-action {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+  }
+  .btn-play {
+    width: 28px;
+    height: 28px;
+    border-radius: 50%;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    transition: all 0.15s ease;
+  }
+  .btn-play:hover { background: var(--primary); color: #090d16; border-color: var(--primary); }
+  .btn-play.playing { background: var(--ok); color: #090d16; border-color: var(--ok); }
+
+  .empty-state {
+    padding: 3rem;
+    text-align: center;
+    color: var(--text-muted);
+  }
+  .empty-state svg { width: 42px; height: 42px; margin-bottom: 0.75rem; color: var(--text-dim); }
+
+  /* Modal */
+  .modal-overlay {
+    display: none;
+    position: fixed;
+    top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,0.65);
+    backdrop-filter: blur(4px);
+    z-index: 100;
+    align-items: center;
+    justify-content: center;
+    padding: 1.5rem;
+  }
+  .modal-overlay.active { display: flex; }
+
+  .modal {
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    max-width: 600px;
+    width: 100%;
+    max-height: 90vh;
+    display: flex;
+    flex-direction: column;
+    box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+    overflow: hidden;
+    animation: modalPop 0.15s ease-out;
+  }
+  @keyframes modalPop {
+    from { opacity: 0; transform: scale(0.95); }
+    to { opacity: 1; transform: scale(1); }
+  }
+
+  .modal-header {
+    padding: 1.25rem 1.5rem;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+  }
+  .modal-header h2 { font-size: 1.1rem; font-weight: 700; }
+  .modal-body { padding: 1.5rem; overflow-y: auto; display: flex; flex-direction: column; gap: 1.25rem; }
+  .modal-footer {
+    padding: 1rem 1.5rem;
+    border-top: 1px solid var(--border);
+    display: flex;
+    justify-content: flex-end;
+    gap: 0.5rem;
+  }
+
+  .form-group { display: flex; flex-direction: column; gap: 0.4rem; }
+  .form-group label { font-size: 0.75rem; font-weight: 600; text-transform: uppercase; color: var(--text-muted); }
+  .form-control {
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.55rem 0.75rem;
+    color: var(--text);
+    font-size: 0.85rem;
+    font-family: inherit;
+  }
+  .form-control:focus { outline: none; border-color: var(--primary); }
+  textarea.form-control { min-height: 80px; resize: vertical; }
+
+  .preset-pills { display: flex; gap: 0.35rem; flex-wrap: wrap; margin-top: 0.25rem; }
+  .preset-pill {
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    border-radius: 6px;
+    padding: 0.2rem 0.5rem;
+    font-size: 0.725rem;
+    cursor: pointer;
+    color: var(--text-muted);
+  }
+  .preset-pill:hover { border-color: var(--primary); color: var(--primary); }
+
+  /* Toast Notification */
+  .toast {
+    position: fixed;
+    bottom: 2rem;
+    right: 2rem;
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.75rem 1.25rem;
+    color: var(--text);
+    font-size: 0.85rem;
+    box-shadow: 0 10px 25px rgba(0,0,0,0.3);
+    z-index: 200;
+    display: none;
+    animation: toastSlide 0.2s ease-out;
+  }
+  .toast.active { display: block; }
+  @keyframes toastSlide { from { transform: translateY(100%); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+
+  pre.json-view {
+    background: var(--surface-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 0.75rem;
+    font-family: var(--font-mono);
+    font-size: 0.75rem;
+    color: var(--text-muted);
+    overflow-x: auto;
+    max-height: 220px;
+  }
+
+  @media (max-width: 768px) {
+    body { padding: 1rem; }
+    .kpi-grid { grid-template-columns: repeat(2, 1fr); }
+  }
 </style>
+</head>
+<body>
+
 <header>
-  <h1>SiangTTS queue</h1>
-  <span class="meta" id="meta">connecting…</span>
+  <div class="brand">
+    <div class="brand-logo">S</div>
+    <div class="brand-title">
+      <h1>SiangTTS Queue <span class="status-dot" id="status-dot" title="Connected"></span></h1>
+      <p>Real-time Voice Synthesis &amp; Webhook Monitor</p>
+    </div>
+  </div>
+
+  <div class="sys-info">
+    <div class="pill" id="pill-model">Model: <b>VoxCPM2</b></div>
+    <div class="pill" id="pill-lora">LoRA: <b>siangtts-v1</b></div>
+    <div class="pill" id="pill-sr">Audio: <b>48 kHz</b></div>
+    <div class="pill" id="pill-steps">Steps: <b>10</b></div>
+    <div class="pill" id="pill-upload">Upload: <b id="val-upload">—</b></div>
+  </div>
+
+  <div class="header-actions">
+    <button class="btn btn-primary" onclick="openTestModal()">
+      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 5v14M5 12h14"/></svg>
+      New Test Job
+    </button>
+    <select class="select-control" id="refresh-interval" onchange="updateRefreshInterval(this.value)">
+      <option value="1000">Refresh 1s</option>
+      <option value="2000" selected>Refresh 2s</option>
+      <option value="5000">Refresh 5s</option>
+      <option value="0">Paused</option>
+    </select>
+    <button class="btn btn-icon" title="Refresh Now" onclick="tick()">
+      <svg id="refresh-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
+    </button>
+    <button class="btn btn-icon" title="Toggle Dark/Light Mode" onclick="toggleTheme()">
+      <svg id="theme-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+    </button>
+  </div>
 </header>
-<div class="stats" id="stats"></div>
-<div class="wrap"><table>
-  <thead><tr>
-    <th>#</th><th>status</th><th>job</th><th>voice</th><th>chunks</th>
-    <th>created</th><th>waited</th><th>elapsed</th><th>result</th>
-  </tr></thead>
-  <tbody id="rows"></tbody>
-</table></div>
+
+<!-- KPI Stats Grid -->
+<div class="kpi-grid">
+  <div class="kpi-card running" id="card-running" onclick="setFilter('running')">
+    <div class="kpi-label">Running <span class="badge running" style="font-size:0.65rem;">Active</span></div>
+    <div class="kpi-value" id="kpi-running">0</div>
+    <div class="kpi-sub">GPU Synthesis</div>
+  </div>
+  <div class="kpi-card queued" id="card-queued" onclick="setFilter('queued')">
+    <div class="kpi-label">In Queue <span class="badge queued" style="font-size:0.65rem;">Waiting</span></div>
+    <div class="kpi-value" id="kpi-queued">0</div>
+    <div class="kpi-sub">FIFO Line</div>
+  </div>
+  <div class="kpi-card completed" id="card-completed" onclick="setFilter('completed')">
+    <div class="kpi-label">Completed <span class="badge completed" style="font-size:0.65rem;">Done</span></div>
+    <div class="kpi-value" id="kpi-completed">0</div>
+    <div class="kpi-sub" id="kpi-avg-time">Avg: —</div>
+  </div>
+  <div class="kpi-card failed" id="card-failed" onclick="setFilter('failed')">
+    <div class="kpi-label">Failed <span class="badge failed" style="font-size:0.65rem;">Errors</span></div>
+    <div class="kpi-value" id="kpi-failed">0</div>
+    <div class="kpi-sub">Needs Attention</div>
+  </div>
+  <div class="kpi-card active" id="card-all" onclick="setFilter('all')">
+    <div class="kpi-label">Total Jobs</div>
+    <div class="kpi-value" id="kpi-total">0</div>
+    <div class="kpi-sub" id="meta-updated">Connecting…</div>
+  </div>
+</div>
+
+<!-- Active Running Spotlight Banner -->
+<div class="running-banner" id="running-banner">
+  <div class="running-header">
+    <div class="running-title">
+      <span class="status-dot"></span>
+      Synthesizing on GPU: <b id="run-job-id">—</b> &bull; Voice: <span class="tag-voice" id="run-voice">—</span> &bull; <span id="run-chunk">Chunk 1/1</span>
+    </div>
+    <div class="running-timer" id="run-timer">0.0s</div>
+  </div>
+  <div class="running-prompt" id="run-prompt">"..."</div>
+  <div class="progress-bar-bg"><div class="progress-bar-fill"></div></div>
+</div>
+
+<!-- Toolbar -->
+<div class="toolbar">
+  <div class="tabs">
+    <button class="tab active" id="tab-all" onclick="setFilter('all')">All <span class="tab-badge" id="tab-badge-all">0</span></button>
+    <button class="tab" id="tab-running" onclick="setFilter('running')">Running <span class="tab-badge" id="tab-badge-running">0</span></button>
+    <button class="tab" id="tab-queued" onclick="setFilter('queued')">Queued <span class="tab-badge" id="tab-badge-queued">0</span></button>
+    <button class="tab" id="tab-completed" onclick="setFilter('completed')">Completed <span class="tab-badge" id="tab-badge-completed">0</span></button>
+    <button class="tab" id="tab-failed" onclick="setFilter('failed')">Failed <span class="tab-badge" id="tab-badge-failed">0</span></button>
+  </div>
+
+  <div class="search-box">
+    <svg class="search-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="m21 21-4.3-4.3"/></svg>
+    <input type="text" class="search-input" id="search-input" placeholder="Search Job ID, voice, prompt, error…" oninput="renderTable()">
+  </div>
+</div>
+
+<!-- Table -->
+<div class="table-wrap">
+  <table>
+    <thead>
+      <tr>
+        <th style="width: 40px;">#</th>
+        <th style="width: 100px;">Status</th>
+        <th style="width: 170px;">Job ID</th>
+        <th>Prompt Script</th>
+        <th style="width: 110px;">Voice</th>
+        <th style="width: 70px;">Chunks</th>
+        <th style="width: 110px;">Created</th>
+        <th style="width: 80px;">Waited</th>
+        <th style="width: 80px;">Elapsed</th>
+        <th style="width: 120px;">Result / Audio</th>
+      </tr>
+    </thead>
+    <tbody id="table-body">
+      <tr><td colspan="10" class="empty-state">Loading queue data…</td></tr>
+    </tbody>
+  </table>
+</div>
+
+<!-- Job Details Modal -->
+<div class="modal-overlay" id="modal-details" onclick="if(event.target===this)closeDetailsModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2 id="det-title">Job Details</h2>
+      <button class="copy-btn" onclick="closeDetailsModal()">&times;</button>
+    </div>
+    <div class="modal-body" id="det-body">
+      <!-- Injected by JS -->
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="copyDetailsJSON()">Copy JSON</button>
+      <button class="btn btn-primary" onclick="closeDetailsModal()">Close</button>
+    </div>
+  </div>
+</div>
+
+<!-- Quick Test Job Modal -->
+<div class="modal-overlay" id="modal-test" onclick="if(event.target===this)closeTestModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <h2>Create Test Voice Job</h2>
+      <button class="copy-btn" onclick="closeTestModal()">&times;</button>
+    </div>
+    <div class="modal-body">
+      <div class="form-group">
+        <label>Thai Prompt Script</label>
+        <textarea class="form-control" id="test-prompt" placeholder="ใส่ข้อความภาษาไทยที่ต้องการสร้างเสียง...">ถ้าพี่กำลังหาหูฟังที่ใส่แล้วเสียงแน่น เบสมา แต่ยังฟังรายละเอียดชัด สนใจสินค้าตัวไหนกดที่ตะกร้าได้เลยนะคะ</textarea>
+        <div class="preset-pills">
+          <span class="preset-pill" onclick="setPreset('ecommerce')">🛍️ E-Commerce Live</span>
+          <span class="preset-pill" onclick="setPreset('service')">💬 Customer Service</span>
+          <span class="preset-pill" onclick="setPreset('short')">⚡ Quick Test</span>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 0.85rem;">
+        <div class="form-group">
+          <label>Voice ID</label>
+          <select class="form-control" id="test-voice">
+            <option value="demo_female">demo_female</option>
+            <option value="thai_female">thai_female</option>
+            <option value="demo_male">demo_male</option>
+          </select>
+        </div>
+
+        <div class="form-group">
+          <label>Audio Speed (<span id="test-speed-val">1.0x</span>)</label>
+          <input type="range" class="form-control" id="test-speed" min="0.8" max="1.5" step="0.05" value="1.0" oninput="document.getElementById('test-speed-val').textContent=this.value+'x'">
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label>Optional Callback URL</label>
+        <input type="text" class="form-control" id="test-callback" placeholder="https://webhook.site/... (Leave empty for default)">
+      </div>
+    </div>
+    <div class="modal-footer">
+      <button class="btn" onclick="closeTestModal()">Cancel</button>
+      <button class="btn btn-primary" id="btn-submit-test" onclick="submitTestJob()">
+        Submit to Queue
+      </button>
+    </div>
+  </div>
+</div>
+
+<!-- Global Audio Element -->
+<audio id="global-audio" style="display:none;"></audio>
+
+<!-- Toast -->
+<div class="toast" id="toast"></div>
+
 <script>
-// Escape before interpolating: job ids and voice ids arrive from the caller's
-// POST body, so they are untrusted input, not our own strings.
-const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
-  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
-const secs = v => v == null ? "—" : v < 60 ? v.toFixed(1) + "s"
-  : Math.floor(v / 60) + "m " + Math.round(v % 60) + "s";
+let currentData = { counts: {}, running: null, total: 0, jobs: [] };
+let currentFilter = 'all';
+let pollTimer = null;
+let currentPlayingUrl = null;
+let selectedJob = null;
+let runningStartLocal = null;
 
-// Long ids are noise at a glance but you still want the whole thing when
-// grepping logs — show the head, keep the rest in the title attribute.
-const shortId = s => !s ? "—" :
-  `<code title="${esc(s)}">${esc(s.length > 10 ? s.slice(0, 8) + "…" : s)}</code>`;
+// Helpers
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const secs = v => v == null ? "—" : v < 60 ? v.toFixed(1) + "s" : Math.floor(v / 60) + "m " + Math.round(v % 60) + "s";
 
-const STATES = ["running", "queued", "completed", "failed"];
+function showToast(msg) {
+  const t = document.getElementById("toast");
+  t.textContent = msg;
+  t.classList.add("active");
+  setTimeout(() => t.classList.remove("active"), 2500);
+}
 
-function render(d) {
-  document.getElementById("stats").innerHTML = STATES.map(s =>
-    `<div class="stat"><b class="${s}">${d.counts[s] || 0}</b><span>${s}</span></div>`
-  ).join("");
+function copyText(txt, label="Copied!") {
+  navigator.clipboard.writeText(txt).then(() => showToast(label));
+}
 
-  const rows = d.jobs.map(j => `<tr>
-    <td class="num">${j.position ?? ""}</td>
-    <td class="badge ${esc(j.status)}">${esc(j.status)}</td>
-    <td>${shortId(j.job_id)}</td>
-    <td>${shortId(j.voice_id)}</td>
-    <td class="num">${esc(j.progress)}</td>
-    <td class="num">${esc(j.created)}</td>
-    <td class="num">${secs(j.waited_s)}</td>
-    <td class="num">${secs(j.elapsed_s)}</td>
-    <td>${j.error ? `<span class="err">${esc(j.error)}</span>`
-        : j.file_url ? `<a href="${esc(j.file_url)}" target="_blank"
-                          rel="noopener noreferrer">audio</a>` : "—"}</td>
-  </tr>`).join("");
+// Filter Handling
+function setFilter(f) {
+  currentFilter = f;
+  ['all', 'running', 'queued', 'completed', 'failed'].forEach(s => {
+    const tab = document.getElementById(`tab-${s}`);
+    const card = document.getElementById(`card-${s}`);
+    if (tab) tab.classList.toggle('active', s === f);
+    if (card) card.classList.toggle('active', s === f);
+  });
+  renderTable();
+}
 
-  document.getElementById("rows").innerHTML = rows ||
-    `<tr><td colspan="9" class="empty">no jobs yet</td></tr>`;
-  document.getElementById("meta").textContent =
-    `${d.total} job(s) · updated ${new Date().toLocaleTimeString()}`;
+// Table Rendering
+function renderTable() {
+  const query = (document.getElementById("search-input").value || "").trim().toLowerCase();
+  let list = currentData.jobs || [];
+
+  if (currentFilter !== 'all') {
+    list = list.filter(j => j.status === currentFilter);
+  }
+
+  if (query) {
+    list = list.filter(j => 
+      (j.job_id && j.job_id.toLowerCase().includes(query)) ||
+      (j.voice_id && j.voice_id.toLowerCase().includes(query)) ||
+      (j.prompt && j.prompt.toLowerCase().includes(query)) ||
+      (j.error && j.error.toLowerCase().includes(query))
+    );
+  }
+
+  const tbody = document.getElementById("table-body");
+  if (!list.length) {
+    tbody.innerHTML = `<tr><td colspan="10" class="empty-state">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="10"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+      <div>No jobs found ${query ? 'matching search query' : `in status '${currentFilter}'`}</div>
+    </td></tr>`;
+    return;
+  }
+
+  tbody.innerHTML = list.map((j, idx) => {
+    const audioUrl = j.file_url || (j.has_local_audio ? `/audio/${j.queue_id}` : null);
+    const isPlaying = currentPlayingUrl && currentPlayingUrl === audioUrl;
+    const shortJob = j.job_id ? (j.job_id.length > 18 ? j.job_id.slice(0, 16) + "…" : j.job_id) : "—";
+    const promptSnippet = j.prompt ? esc(j.prompt) : `<span style="color:var(--text-dim);">—</span>`;
+
+    return `<tr onclick="openDetailsModal('${esc(j.job_id)}')" style="cursor:pointer;">
+      <td class="num" style="color:var(--text-dim); font-weight:600;">${j.position ? '#' + j.position : idx + 1}</td>
+      <td><span class="badge ${esc(j.status)}">${esc(j.status)}</span></td>
+      <td>
+        <span class="mono" title="${esc(j.job_id)}">${esc(shortJob)}</span>
+        <button class="copy-btn" title="Copy Job ID" onclick="event.stopPropagation();copyText('${esc(j.job_id)}', 'Job ID copied!')">
+          <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"/><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"/></svg>
+        </button>
+      </td>
+      <td><div class="prompt-snippet" title="${esc(j.prompt || '')}">${promptSnippet}</div></td>
+      <td><span class="tag-voice">${esc(j.voice_id || 'default')}</span></td>
+      <td class="num">${esc(j.progress || '0/1')}</td>
+      <td class="num" style="color:var(--text-muted); font-size:0.75rem;">${esc(j.created || '').split(' ')[1] || esc(j.created || '')}</td>
+      <td class="num">${secs(j.waited_s)}</td>
+      <td class="num">${secs(j.elapsed_s)}</td>
+      <td onclick="event.stopPropagation();">
+        <div class="audio-action">
+          ${audioUrl ? `
+            <button class="btn-play ${isPlaying ? 'playing' : ''}" title="${isPlaying ? 'Pause' : 'Play Audio'}" onclick="toggleAudio('${esc(audioUrl)}')">
+              ${isPlaying ? 
+                `<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"/><rect x="14" y="4" width="4" height="16"/></svg>` : 
+                `<svg width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"/></svg>`}
+            </button>
+            <a href="${esc(audioUrl)}" target="_blank" class="btn" style="padding:0.25rem 0.5rem; font-size:0.75rem;" title="Download / Open Audio">URL</a>
+          ` : (j.error ? `<span style="color:var(--fail); font-size:0.75rem;">Error</span>` : `<span style="color:var(--text-dim);">—</span>`)}
+        </div>
+      </td>
+    </tr>`;
+  }).join("");
+}
+
+// UI State Update
+function updateUI(d) {
+  currentData = d;
+
+  // Counts
+  const counts = d.counts || {};
+  const running = counts.running || 0;
+  const queued = counts.queued || 0;
+  const completed = counts.completed || 0;
+  const failed = counts.failed || 0;
+  const total = d.total || 0;
+
+  document.getElementById("kpi-running").textContent = running;
+  document.getElementById("kpi-queued").textContent = queued;
+  document.getElementById("kpi-completed").textContent = completed;
+  document.getElementById("kpi-failed").textContent = failed;
+  document.getElementById("kpi-total").textContent = total;
+
+  document.getElementById("tab-badge-all").textContent = total;
+  document.getElementById("tab-badge-running").textContent = running;
+  document.getElementById("tab-badge-queued").textContent = queued;
+  document.getElementById("tab-badge-completed").textContent = completed;
+  document.getElementById("tab-badge-failed").textContent = failed;
+
+  // Avg time for completed
+  const completedJobs = (d.jobs || []).filter(j => j.status === 'completed' && j.elapsed_s != null);
+  if (completedJobs.length > 0) {
+    const avg = completedJobs.reduce((acc, j) => acc + j.elapsed_s, 0) / completedJobs.length;
+    document.getElementById("kpi-avg-time").textContent = `Avg: ${avg.toFixed(1)}s`;
+  } else {
+    document.getElementById("kpi-avg-time").textContent = "Avg: —";
+  }
+
+  // Running Spotlight
+  const banner = document.getElementById("running-banner");
+  const activeJob = (d.jobs || []).find(j => j.status === 'running');
+  if (activeJob) {
+    banner.classList.add("active");
+    document.getElementById("run-job-id").textContent = activeJob.job_id;
+    document.getElementById("run-voice").textContent = activeJob.voice_id;
+    document.getElementById("run-chunk").textContent = `Chunk ${activeJob.progress || '1/1'}`;
+    document.getElementById("run-prompt").textContent = `"${activeJob.prompt || 'Synthesizing voice chunk...'}"`;
+    document.getElementById("run-timer").textContent = secs(activeJob.elapsed_s);
+  } else {
+    banner.classList.remove("active");
+  }
+
+  document.getElementById("meta-updated").textContent = `Updated ${new Date().toLocaleTimeString()}`;
+  document.getElementById("status-dot").classList.remove("disconnected");
+  renderTable();
+}
+
+// Audio Player
+function toggleAudio(url) {
+  const player = document.getElementById("global-audio");
+  if (currentPlayingUrl === url && !player.paused) {
+    player.pause();
+    currentPlayingUrl = null;
+  } else {
+    player.src = url;
+    player.play().catch(e => showToast("Audio play failed: " + e.message));
+    currentPlayingUrl = url;
+  }
+  renderTable();
+}
+
+document.getElementById("global-audio").addEventListener("ended", () => {
+  currentPlayingUrl = null;
+  renderTable();
+});
+
+// Modal Details
+function openDetailsModal(jobId) {
+  const job = (currentData.jobs || []).find(j => j.job_id === jobId);
+  if (!job) return;
+  selectedJob = job;
+  const modal = document.getElementById("modal-details");
+  document.getElementById("det-title").textContent = `Job: ${job.job_id}`;
+
+  const audioUrl = job.file_url || (job.has_local_audio ? `/audio/${job.queue_id}` : null);
+
+  let html = `
+    <div style="display:flex; justify-content:space-between; align-items:center;">
+      <span class="badge ${esc(job.status)}" style="font-size:0.85rem;">${esc(job.status)}</span>
+      <span class="mono">Queue ID: ${esc(job.queue_id)}</span>
+    </div>
+
+    ${job.prompt ? `
+      <div class="form-group">
+        <label>Thai Prompt Script</label>
+        <div style="background:var(--surface-elevated); border:1px solid var(--border); border-radius:8px; padding:0.75rem; font-size:0.9rem; line-height:1.6;">
+          ${esc(job.prompt)}
+        </div>
+      </div>
+    ` : ''}
+
+    ${audioUrl ? `
+      <div class="form-group">
+        <label>Audio Playback</label>
+        <audio controls style="width:100%; border-radius:8px;" src="${esc(audioUrl)}"></audio>
+      </div>
+    ` : ''}
+
+    ${job.error ? `
+      <div class="form-group">
+        <label style="color:var(--fail);">Error Message</label>
+        <div style="background:var(--fail-bg); border:1px solid var(--fail); color:var(--fail); border-radius:8px; padding:0.75rem; font-family:var(--font-mono); font-size:0.75rem; white-space:pre-wrap;">
+          ${esc(job.error)}
+        </div>
+      </div>
+    ` : ''}
+
+    <div style="display:grid; grid-template-columns:1fr 1fr; gap:0.5rem; font-size:0.8rem;">
+      <div class="pill">Voice: <b>${esc(job.voice_id)}</b></div>
+      <div class="pill">Speed: <b>${job.speed || 1.0}x</b></div>
+      <div class="pill">Progress: <b>${esc(job.progress)} chunks</b></div>
+      <div class="pill">Elapsed: <b>${secs(job.elapsed_s)}</b></div>
+    </div>
+
+    <div class="form-group">
+      <label>Raw Job JSON</label>
+      <pre class="json-view">${esc(JSON.stringify(job, null, 2))}</pre>
+    </div>
+  `;
+
+  document.getElementById("det-body").innerHTML = html;
+  modal.classList.add("active");
+}
+
+function closeDetailsModal() {
+  document.getElementById("modal-details").classList.remove("active");
+}
+
+function copyDetailsJSON() {
+  if (selectedJob) copyText(JSON.stringify(selectedJob, null, 2), "Job JSON copied!");
+}
+
+// Quick Test Modal
+function openTestModal() {
+  document.getElementById("modal-test").classList.add("active");
+  fetchVoices();
+}
+function closeTestModal() {
+  document.getElementById("modal-test").classList.remove("active");
+}
+
+function setPreset(type) {
+  const p = document.getElementById("test-prompt");
+  if (type === 'ecommerce') {
+    p.value = "ถ้าพี่กำลังหาหูฟังที่ใส่แล้วเสียงแน่น เบสมา แต่ยังฟังรายละเอียดชัด สนใจสินค้าตัวไหนกดที่ตะกร้าได้เลยนะคะ";
+  } else if (type === 'service') {
+    p.value = "สวัสดีค่ะ ยินดีต้อนรับเข้าสู่ระบบ SiangTTS หากมีข้อสงสัยสอบถามเพิ่มเติมได้ตลอดเวลาค่ะ";
+  } else {
+    p.value = "ทดสอบระบบเสียงภาษาไทย SiangTTS หนึ่ง สอง สาม";
+  }
+}
+
+async function fetchVoices() {
+  try {
+    const res = await fetch("/voices");
+    if (res.ok) {
+      const data = await res.json();
+      const sel = document.getElementById("test-voice");
+      if (data.voices && data.voices.length > 0) {
+        sel.innerHTML = data.voices.map(v => 
+          `<option value="${esc(v.id)}" ${v.id === data.default ? 'selected' : ''}>${esc(v.id)} ${v.cached ? '(cached)' : ''}</option>`
+        ).join("");
+      }
+    }
+  } catch (e) {}
+}
+
+async function submitTestJob() {
+  const btn = document.getElementById("btn-submit-test");
+  const prompt = document.getElementById("test-prompt").value.trim();
+  const voice_id = document.getElementById("test-voice").value;
+  const speed = parseFloat(document.getElementById("test-speed").value) || 1.0;
+  const callback_url = document.getElementById("test-callback").value.trim();
+
+  if (!prompt) {
+    showToast("กรุณาใส่ข้อความ Prompt");
+    return;
+  }
+
+  btn.disabled = true;
+  btn.textContent = "Enqueuing...";
+
+  try {
+    const res = await fetch("/webhook/live-ai-create-new", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        prompt: prompt,
+        voice_id: voice_id,
+        audio_speed: speed,
+        callback_url: callback_url
+      })
+    });
+    const d = await res.json();
+    if (res.ok) {
+      showToast(`Job queued: ${d.job_id || 'Success'}`);
+      closeTestModal();
+      setFilter('all');
+      tick();
+    } else {
+      showToast("Error: " + (d.error || res.statusText));
+    }
+  } catch (e) {
+    showToast("Request failed: " + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Submit to Queue";
+  }
+}
+
+// Fetch loop
+async function fetchHealth() {
+  try {
+    const r = await fetch("/health");
+    if (r.ok) {
+      const h = await r.json();
+      if (h.upload_token) {
+        document.getElementById("val-upload").textContent = "Bearer Set";
+        document.getElementById("pill-upload").className = "pill success";
+      } else {
+        document.getElementById("val-upload").textContent = "Local Mode";
+        document.getElementById("pill-upload").className = "pill warning";
+      }
+      if (h.num_step) document.getElementById("pill-steps").innerHTML = `Steps: <b>${h.num_step}</b>`;
+    }
+  } catch (e) {}
 }
 
 async function tick() {
+  const icon = document.getElementById("refresh-icon");
+  if (icon) icon.style.transform = "rotate(180deg)";
   try {
-    const r = await fetch("jobs?limit=100", { cache: "no-store" });
+    const r = await fetch("/jobs?limit=100", { cache: "no-store" });
     if (!r.ok) throw new Error("HTTP " + r.status);
-    render(await r.json());
+    updateUI(await r.json());
   } catch (e) {
-    // Say so rather than freezing on stale numbers — a queue page that looks
-    // alive while the service is down is worse than no page.
-    document.getElementById("meta").textContent = "disconnected — " + e.message;
+    document.getElementById("meta-updated").textContent = "Disconnected — " + e.message;
+    document.getElementById("status-dot").classList.add("disconnected");
+  } finally {
+    if (icon) setTimeout(() => icon.style.transform = "none", 200);
   }
 }
+
+function updateRefreshInterval(ms) {
+  clearInterval(pollTimer);
+  const val = parseInt(ms, 10);
+  if (val > 0) {
+    pollTimer = setInterval(tick, val);
+  }
+}
+
+function toggleTheme() {
+  const isLight = document.documentElement.getAttribute("data-theme") === "light";
+  if (isLight) {
+    document.documentElement.removeAttribute("data-theme");
+    localStorage.setItem("theme", "dark");
+  } else {
+    document.documentElement.setAttribute("data-theme", "light");
+    localStorage.setItem("theme", "light");
+  }
+}
+
+// Init
+if (localStorage.getItem("theme") === "light") {
+  document.documentElement.setAttribute("data-theme", "light");
+}
+fetchHealth();
 tick();
-setInterval(tick, 2000);
+pollTimer = setInterval(tick, 2000);
 </script>
+</body>
+</html>
 """
 
 
+@app.get("/queue", response_class=HTMLResponse)
 @app.get("/", response_class=HTMLResponse)
 def queue_page() -> HTMLResponse:
-    """Live view of the queue — the thing n8n's execution list used to be."""
+    """Live view of the queue - monitoring dashboard."""
     return HTMLResponse(QUEUE_PAGE)

@@ -21,6 +21,24 @@ from pathlib import Path
 
 import httpx
 
+
+def _load_dotenv() -> None:
+    env_path = Path(".env")
+    if env_path.exists():
+        with open(env_path, encoding="utf-8") as f:
+            for line in f:
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line:
+                    continue
+                k, v = line.split("=", 1)
+                k = k.strip()
+                v = v.strip().strip("'").strip('"')
+                if k and k not in os.environ:
+                    os.environ[k] = v
+
+
+_load_dotenv()
+
 WORK_ROOT = Path(os.environ.get("SIANGTTS_WORK_DIR", "work"))
 UPLOAD_URL = os.environ.get(
     "SIANGTTS_UPLOAD_URL", "https://looklike.ai/api/v1/live-gpt/upload"
@@ -111,20 +129,26 @@ def merge_chunks(wav_paths: list[Path], out_path: Path, opts: MergeOptions) -> P
     return out_path
 
 
-async def upload(path: Path, *, url: str = UPLOAD_URL, token: str = UPLOAD_TOKEN) -> str:
+async def upload(path: Path, *, url: str | None = None, token: str | None = None) -> str:
     """POST the merged audio as multipart `file`, return the `file_url` field.
 
     The bearer token lived in n8n's credential store as "VR_live Auth"; it now
     comes from SIANGTTS_UPLOAD_TOKEN.
     """
-    if not token:
+    _load_dotenv()
+    target_url = (url or os.environ.get("SIANGTTS_UPLOAD_URL") or UPLOAD_URL).strip()
+    bearer_token = (
+        token or os.environ.get("SIANGTTS_UPLOAD_TOKEN", "").strip() or UPLOAD_TOKEN
+    ).strip()
+
+    if not bearer_token:
         raise RuntimeError("SIANGTTS_UPLOAD_TOKEN is not set")
 
-    headers = {"Authorization": f"Bearer {token}"}
+    headers = {"Authorization": f"Bearer {bearer_token}"}
     async with httpx.AsyncClient(timeout=HTTP_TIMEOUT) as client:
         with open(path, "rb") as fh:
             resp = await client.post(
-                url, headers=headers, files={"file": (path.name, fh, "audio/mpeg")}
+                target_url, headers=headers, files={"file": (path.name, fh, "audio/mpeg")}
             )
     if resp.status_code >= 400:
         raise RuntimeError(f"upload failed {resp.status_code} - {resp.text[:300]}")
