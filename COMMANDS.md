@@ -72,8 +72,8 @@ setx SIANGTTS_ADAPTER "checkpoints/siangtts-v1" /M
 | `SIANGTTS_UPLOAD_TOKEN` | — | bearer for the upload endpoint. Unset = every job fails at upload. |
 | `SIANGTTS_UPLOAD_URL` | `https://looklike.ai/api/v1/live-gpt/upload` | where the merged mp3 goes |
 | `SIANGTTS_DEFAULT_CALLBACK` | `https://test.looklike.ai/.../audio-callback` | used when the caller omits `callback_url` |
-| `SIANGTTS_REF_DIR` | `ref` | reference clips, named `<voice_id>.mp3` |
-| `SIANGTTS_VOICES_DIR` | `voices` | cached encodings (`.pt`) |
+| `SIANGTTS_REF_DIR` | `ref` | reference clips, named `<voice_id>.mp3`. The old server kept these in `C:\temp\tts_jobs\voices\` — point here to reuse them in place. |
+| `SIANGTTS_CACHE_DIR` | `voice_cache` | cached encodings (`.pt`), derived from `ref/`. Safe to delete; costs a re-encode. |
 | `SIANGTTS_WORK_DIR` | `work` | job scratch. **Relative to the working directory** — set an absolute path when running as a service. |
 | `SIANGTTS_KEEP_WORK` | — | `1` keeps `work/<queue_id>/` instead of deleting it |
 | `SIANGTTS_NUM_STEP` | `32` | inference steps (was `num_step` in n8n) |
@@ -90,13 +90,13 @@ setx SIANGTTS_ADAPTER "checkpoints/siangtts-v1" /M
 Testing — localhost only, no one else can reach it:
 
 ```
-uv run uvicorn src.webhook:app --host 127.0.0.1 --port 8002
+uv run uvicorn src.webhook:app --host 127.0.0.1 --port 8010
 ```
 
-Reachable from other machines (**the service has no authentication** — make sure the firewall blocks 8002 from the internet):
+Reachable from other machines (**the service has no authentication** — make sure the firewall blocks 8010 from the internet):
 
 ```
-uv run uvicorn src.webhook:app --host 0.0.0.0 --port 8002
+uv run uvicorn src.webhook:app --host 0.0.0.0 --port 8010
 ```
 
 Ready when the console prints `[webhook] ready — sr=48000 work=work`. Model load takes 30–60 s; the port isn't listening before that. Stop with `Ctrl+C`.
@@ -106,7 +106,7 @@ Do **not** add `--workers N`: each worker loads its own copy of the model into V
 ### As a Windows service
 
 ```
-nssm install SiangTTS "C:\Users\opendream002\.local\bin\uv.exe" "run uvicorn src.webhook:app --host 0.0.0.0 --port 8002"
+nssm install SiangTTS "C:\Users\opendream002\.local\bin\uv.exe" "run uvicorn src.webhook:app --host 0.0.0.0 --port 8010"
 ```
 ```
 nssm set SiangTTS AppDirectory "C:\Users\opendream002\Desktop\SIANGTTS\VoxCPM-thai"
@@ -120,7 +120,7 @@ nssm start SiangTTS
 
 `nssm restart SiangTTS` · `nssm stop SiangTTS` · `nssm edit SiangTTS`
 
-`AppDirectory` matters: `work/`, `ref/`, `voices/` and the adapter path are all relative to it.
+`AppDirectory` matters: `work/`, `ref/`, `voice_cache/` and the adapter path are all relative to it.
 
 ---
 
@@ -129,55 +129,59 @@ nssm start SiangTTS
 Health:
 
 ```
-curl http://localhost:8002/health
+curl http://localhost:8010/health
 ```
 
 Create audio (cmd — inner quotes must be escaped):
 
 ```
-curl -X POST http://localhost:8002/webhook/live-ai-create-new -H "Content-Type: application/json" -d "{\"queue_id\":\"smoke1\",\"prompt\":\"สนใจสินค้าตัวไหน กดที่ตะกร้าได้เลยนะคะ\",\"voice_id\":\"demo_female\",\"callback_url\":\"https://webhook.site/xxxx\"}"
+curl -X POST http://localhost:8010/webhook/live-ai-create-new -H "Content-Type: application/json" -d "{\"queue_id\":\"smoke1\",\"prompt\":\"สนใจสินค้าตัวไหน กดที่ตะกร้าได้เลยนะคะ\",\"voice_id\":\"demo_female\",\"callback_url\":\"https://webhook.site/xxxx\"}"
 ```
 
 PowerShell is easier for JSON:
 
 ```
-Invoke-RestMethod -Method Post http://localhost:8002/webhook/live-ai-create-new -ContentType "application/json" -Body '{"queue_id":"smoke1","prompt":"สนใจสินค้าตัวไหน","voice_id":"demo_female","callback_url":"https://webhook.site/xxxx"}'
+Invoke-RestMethod -Method Post http://localhost:8010/webhook/live-ai-create-new -ContentType "application/json" -Body '{"queue_id":"smoke1","prompt":"สนใจสินค้าตัวไหน","voice_id":"demo_female","callback_url":"https://webhook.site/xxxx"}'
 ```
 
 Or import `SiangTTS.postman_collection.json` into Postman — 7 requests, ready to go.
 
-Browser: `http://localhost:8002/docs` is a full Swagger UI you can fire requests from.
+Browser: `http://localhost:8010/docs` is a full Swagger UI you can fire requests from.
 
 ---
 
 ## Watch the queue
 
+Open <http://localhost:8010/> in a browser — live table, polls every 2 s, no
+build step and no CDN (works on a box with no outbound internet). Everything on
+it comes from `/jobs`, so the CLI below shows the same data.
+
 ```
-curl http://localhost:8002/jobs
+curl http://localhost:8010/jobs
 ```
 ```
-curl http://localhost:8002/jobs/smoke1
+curl http://localhost:8010/jobs/smoke1
 ```
 ```
-curl "http://localhost:8002/jobs?status=failed"
+curl "http://localhost:8010/jobs?status=failed"
 ```
 
 PowerShell, as a table:
 
 ```
-(Invoke-RestMethod http://localhost:8002/jobs).jobs | Format-Table job_id,status,progress,position,waited_s,elapsed_s
+(Invoke-RestMethod http://localhost:8010/jobs).jobs | Format-Table job_id,status,progress,position,waited_s,elapsed_s
 ```
 
 Live view, refreshing every 3 s:
 
 ```
-while ($true) { Clear-Host; Invoke-RestMethod http://localhost:8002/health | Format-List; Start-Sleep 3 }
+while ($true) { Clear-Host; Invoke-RestMethod http://localhost:8010/health | Format-List; Start-Sleep 3 }
 ```
 
 Failures with their reasons:
 
 ```
-(Invoke-RestMethod "http://localhost:8002/jobs?status=failed").jobs | Format-Table job_id,created,error -Wrap
+(Invoke-RestMethod "http://localhost:8010/jobs?status=failed").jobs | Format-Table job_id,created,error -Wrap
 ```
 
 ---
@@ -288,5 +292,5 @@ dir src\webhook.py src\thai_text.py src\pipeline.py tests\test_thai_text.py
 | `status: "loading"` on /health | model still loading | wait 30–60 s |
 | `UnicodeEncodeError` in the console | Windows cp1252 | `set PYTHONIOENCODING=utf-8`, restart |
 | CUDA out of memory | IndexTTS is holding the GPU | `nvidia-smi`, free VRAM before starting |
-| port 8002 in use | already running | `netstat -ano | findstr :8002` then `taskkill /PID <pid> /F` |
+| port 8010 in use | already running | `netstat -ano | findstr :8010` then `taskkill /PID <pid> /F` |
 | queue stuck, nothing progressing | a job is wedged | restart — there is no per-job cancel |

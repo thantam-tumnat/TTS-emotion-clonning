@@ -113,7 +113,7 @@ uv run python -m src.app                   # http://localhost:7860  (--share for
 
 # 3. Inference API (FastAPI; loads base + adapter once). Swagger at /docs.
 #    Drop reference clips in ref/<name>.wav — encoded once at startup, cached to
-#    voices/<name>.pt, then clone by name. Register at runtime via POST /speakers.
+#    voice_cache/<name>.pt, then clone by name. Register at runtime via POST /speakers.
 uv run uvicorn src.serve:app --host 0.0.0.0 --port 8000
 #    POST /tts                       text [+ reference] → wav
 #    POST /tts/speaker/{speaker_id}  text in a registered voice (cached encoding)

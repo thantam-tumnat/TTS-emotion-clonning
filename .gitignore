@@ -42,7 +42,8 @@ dist/
 !docs/samples/*.wav
 
 # cached prompt caches (regenerable from ref/)
-voices/
+voice_cache/
+voices/          # pre-rename name; keep ignored so old checkouts stay clean
 
 # track reference clips + README (seed voices for the API)
 !ref/

@@ -34,8 +34,8 @@ uv sync --extra serve
 SIANGTTS_ADAPTER=checkpoints/siangtts-v1      # REQUIRED — service refuses to start if missing
 SIANGTTS_UPLOAD_TOKEN=<bearer>                # was the n8n credential "VR_live Auth"
 SIANGTTS_DEFAULT_CALLBACK=https://test.looklike.ai/api/v1/live-gpt/n8n/audio-callback
-SIANGTTS_REF_DIR=ref
-SIANGTTS_VOICES_DIR=voices
+SIANGTTS_REF_DIR=ref                          # or C:\temp\tts_jobs\voices to reuse the old server's clips
+SIANGTTS_CACHE_DIR=voice_cache                # derived .pt files — NOT the reference audio
 SIANGTTS_WORK_DIR=work
 PYTHONIOENCODING=utf-8                        # Windows consoles are cp1252; Thai log lines crash without this
 ```
@@ -58,8 +58,11 @@ ref/2f6d7e8a-8767-4875-95c3-360fb061a090.mp3
 ref/thai_female.mp3          # the default when voice_id is absent
 ```
 
-Copy them over from the old server's `C:\temp\tts_jobs\voices\`. Encodings are
-built on first use and cached in `voices/`; the cache key includes the
+Copy them over from the old server's `C:\temp\tts_jobs\voices\` — or skip the
+copy and set `SIANGTTS_REF_DIR` to that folder directly. (The old system's
+`voices\` holds reference *audio*; ours holds derived caches. Same word, two
+meanings — hence `SIANGTTS_CACHE_DIR` for the latter.) Encodings are
+built on first use and cached in `voice_cache/`; the cache key includes the
 `voice_text` so a voice sent with a different reference transcript re-encodes
 rather than silently reusing the wrong prompt cache.
 
@@ -109,6 +112,7 @@ n8n's execution list is gone; these three endpoints replace it.
 
 | endpoint | answers |
 |---|---|
+| `GET /` | queue page — live table in the browser, refreshes every 2 s |
 | `GET /health` | is the service up, how deep is the queue, how many have failed |
 | `GET /jobs` | the last 500 jobs, newest first — `?status=failed`, `?limit=20` |
 | `GET /jobs/{job_id}` | one job in detail |

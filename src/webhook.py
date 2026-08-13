@@ -18,7 +18,12 @@ Config (env):
     SIANGTTS_BASE_MODEL     base HF id
     SIANGTTS_DEVICE         cuda / cpu          (default: auto)
     SIANGTTS_REF_DIR        reference clips     (default ref/)
-    SIANGTTS_VOICES_DIR     prompt-cache store  (default voices/)
+                            NB: the old system kept these in
+                            C:\\temp\\tts_jobs\\voices — point this there to
+                            reuse them in place.
+    SIANGTTS_CACHE_DIR      prompt-cache store  (default voice_cache/)
+                            Derived .pt files, not audio. Deleting it only
+                            costs a re-encode.
     SIANGTTS_WORK_DIR       job scratch         (default work/)
     SIANGTTS_UPLOAD_URL     upload endpoint
     SIANGTTS_UPLOAD_TOKEN   bearer for upload   (was n8n credential "VR_live Auth")
@@ -40,7 +45,7 @@ from pathlib import Path
 
 import soundfile as sf
 from fastapi import FastAPI
-from fastapi.responses import JSONResponse
+from fastapi.responses import HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from . import pipeline
@@ -51,7 +56,7 @@ BASE_MODEL = os.environ.get("SIANGTTS_BASE_MODEL", DEFAULT_BASE_MODEL)
 ADAPTER = os.environ.get("SIANGTTS_ADAPTER", "checkpoints/siangtts-v1")
 DEVICE = os.environ.get("SIANGTTS_DEVICE") or None
 REF_DIR = Path(os.environ.get("SIANGTTS_REF_DIR", "ref"))
-VOICES_DIR = Path(os.environ.get("SIANGTTS_VOICES_DIR", "voices"))
+CACHE_DIR = Path(os.environ.get("SIANGTTS_CACHE_DIR", "voice_cache"))
 KEEP_WORK = os.environ.get("SIANGTTS_KEEP_WORK", "") == "1"
 
 AUDIO_EXTS = (".mp3", ".wav", ".m4a", ".ogg", ".flac")
@@ -144,7 +149,7 @@ class VoiceCache:
     def __init__(self, synth: Synthesizer) -> None:
         self.synth = synth
         self.mem: dict[str, dict] = {}
-        VOICES_DIR.mkdir(parents=True, exist_ok=True)
+        CACHE_DIR.mkdir(parents=True, exist_ok=True)
 
     def _ref_file(self, voice_id: str) -> Path:
         for ext in AUDIO_EXTS:
@@ -159,7 +164,7 @@ class VoiceCache:
         if key in self.mem:
             return self.mem[key]
 
-        path = VOICES_DIR / f"{key}.pt"
+        path = CACHE_DIR / f"{key}.pt"
         ref_file = self._ref_file(voice_id)
         if path.exists() and path.stat().st_mtime >= ref_file.stat().st_mtime:
             cache = self.synth.load_voice(path)
@@ -407,3 +412,138 @@ def health() -> JSONResponse:
         "voices_cached": len(getattr(_state.get("voices"), "mem", {})),
         "upload_token": bool(pipeline.UPLOAD_TOKEN),
     })
+
+
+# ---------------------------------------------------------------------------
+# Queue page
+# ---------------------------------------------------------------------------
+
+# One self-contained file, no build step and no CDN — this runs on a LAN box
+# that may have no outbound internet, and a dashboard that needs a network
+# fetch to render is a dashboard that fails exactly when you need it. It polls
+# /jobs, so everything shown here is also available as JSON.
+QUEUE_PAGE = """<!doctype html>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SiangTTS · queue</title>
+<style>
+  :root {
+    color-scheme: light dark;
+    --bg: #fbfbfa; --fg: #1c1b1a; --dim: #6d6a67;
+    --line: #e3e1de; --card: #fff;
+    --run: #2563eb; --ok: #15803d; --fail: #b91c1c; --wait: #a16207;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #191817; --fg: #eceae7; --dim: #9a9691;
+      --line: #322f2c; --card: #201f1d;
+      --run: #60a5fa; --ok: #4ade80; --fail: #f87171; --wait: #fbbf24;
+    }
+  }
+  * { box-sizing: border-box }
+  body {
+    margin: 0; padding: 1.5rem; background: var(--bg); color: var(--fg);
+    font: 15px/1.5 ui-sans-serif, system-ui, "Segoe UI", "Sarabun", sans-serif;
+  }
+  header { display: flex; align-items: baseline; gap: .75rem; flex-wrap: wrap;
+           margin-bottom: 1.25rem }
+  h1 { font-size: 1.15rem; margin: 0; font-weight: 600 }
+  .meta { color: var(--dim); font-size: .85rem }
+  .stats { display: flex; gap: .5rem; flex-wrap: wrap; margin-bottom: 1rem }
+  .stat { background: var(--card); border: 1px solid var(--line);
+          border-radius: 8px; padding: .5rem .8rem; min-width: 5.5rem }
+  .stat b { display: block; font-size: 1.35rem; font-weight: 600;
+            font-variant-numeric: tabular-nums; line-height: 1.2 }
+  .stat span { color: var(--dim); font-size: .75rem; text-transform: uppercase;
+               letter-spacing: .04em }
+  .wrap { overflow-x: auto; border: 1px solid var(--line); border-radius: 8px;
+          background: var(--card) }
+  table { border-collapse: collapse; width: 100%; font-size: .875rem }
+  th, td { text-align: left; padding: .55rem .7rem; white-space: nowrap;
+           border-bottom: 1px solid var(--line) }
+  th { color: var(--dim); font-weight: 500; font-size: .75rem;
+       text-transform: uppercase; letter-spacing: .04em }
+  tr:last-child td { border-bottom: 0 }
+  td.num { font-variant-numeric: tabular-nums }
+  code { font: 12px/1 ui-monospace, "Cascadia Mono", Consolas, monospace;
+         color: var(--dim) }
+  .badge { font-size: .75rem; font-weight: 600 }
+  .running { color: var(--run) } .completed { color: var(--ok) }
+  .failed  { color: var(--fail) } .queued  { color: var(--wait) }
+  .err { color: var(--fail); max-width: 28rem; white-space: normal }
+  a { color: var(--run) }
+  .empty { padding: 2.5rem; text-align: center; color: var(--dim) }
+</style>
+<header>
+  <h1>SiangTTS queue</h1>
+  <span class="meta" id="meta">connecting…</span>
+</header>
+<div class="stats" id="stats"></div>
+<div class="wrap"><table>
+  <thead><tr>
+    <th>#</th><th>status</th><th>job</th><th>voice</th><th>chunks</th>
+    <th>created</th><th>waited</th><th>elapsed</th><th>result</th>
+  </tr></thead>
+  <tbody id="rows"></tbody>
+</table></div>
+<script>
+// Escape before interpolating: job ids and voice ids arrive from the caller's
+// POST body, so they are untrusted input, not our own strings.
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c =>
+  ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+const secs = v => v == null ? "—" : v < 60 ? v.toFixed(1) + "s"
+  : Math.floor(v / 60) + "m " + Math.round(v % 60) + "s";
+
+// Long ids are noise at a glance but you still want the whole thing when
+// grepping logs — show the head, keep the rest in the title attribute.
+const shortId = s => !s ? "—" :
+  `<code title="${esc(s)}">${esc(s.length > 10 ? s.slice(0, 8) + "…" : s)}</code>`;
+
+const STATES = ["running", "queued", "completed", "failed"];
+
+function render(d) {
+  document.getElementById("stats").innerHTML = STATES.map(s =>
+    `<div class="stat"><b class="${s}">${d.counts[s] || 0}</b><span>${s}</span></div>`
+  ).join("");
+
+  const rows = d.jobs.map(j => `<tr>
+    <td class="num">${j.position ?? ""}</td>
+    <td class="badge ${esc(j.status)}">${esc(j.status)}</td>
+    <td>${shortId(j.job_id)}</td>
+    <td>${shortId(j.voice_id)}</td>
+    <td class="num">${esc(j.progress)}</td>
+    <td class="num">${esc(j.created)}</td>
+    <td class="num">${secs(j.waited_s)}</td>
+    <td class="num">${secs(j.elapsed_s)}</td>
+    <td>${j.error ? `<span class="err">${esc(j.error)}</span>`
+        : j.file_url ? `<a href="${esc(j.file_url)}" target="_blank"
+                          rel="noopener noreferrer">audio</a>` : "—"}</td>
+  </tr>`).join("");
+
+  document.getElementById("rows").innerHTML = rows ||
+    `<tr><td colspan="9" class="empty">no jobs yet</td></tr>`;
+  document.getElementById("meta").textContent =
+    `${d.total} job(s) · updated ${new Date().toLocaleTimeString()}`;
+}
+
+async function tick() {
+  try {
+    const r = await fetch("jobs?limit=100", { cache: "no-store" });
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    render(await r.json());
+  } catch (e) {
+    // Say so rather than freezing on stale numbers — a queue page that looks
+    // alive while the service is down is worse than no page.
+    document.getElementById("meta").textContent = "disconnected — " + e.message;
+  }
+}
+tick();
+setInterval(tick, 2000);
+</script>
+"""
+
+
+@app.get("/", response_class=HTMLResponse)
+def queue_page() -> HTMLResponse:
+    """Live view of the queue — the thing n8n's execution list used to be."""
+    return HTMLResponse(QUEUE_PAGE)

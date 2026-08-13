@@ -1,7 +1,7 @@
 """FastAPI inference server for SiangTTS (VoxCPM2 + Thai LoRA).
 
 Interface modelled on KhongkhunAPI: drop reference clips in `ref/`, their
-encodings are precomputed at startup and cached in `voices/`, and you synthesize
+encodings are precomputed at startup and cached in `voice_cache/`, and you synthesize
 either zero-shot (upload a reference) or by a registered `speaker_id`.
 
 VoxCPM2's "embedding" is a **prompt cache** (encoded reference latents), not a
@@ -39,8 +39,12 @@ _BASE_MODEL = os.environ.get("SIANGTTS_BASE_MODEL", DEFAULT_BASE_MODEL)
 _ADAPTER = os.environ.get("SIANGTTS_ADAPTER", "checkpoints/siangtts-lora-v0/latest")
 _DEVICE = os.environ.get("SIANGTTS_DEVICE") or None
 
-REF_DIR = Path("ref")               # source reference clips (drop new voices here)
-VOICES_DIR = Path("voices")         # cached prompt caches (<speaker_id>.pt)
+# Two different things, so two different names. REF_DIR holds the audio a human
+# supplied — losing it loses the voice. CACHE_DIR holds .pt files derived from
+# it — deleting it only costs a re-encode. The old n8n system called its *ref*
+# folder "voices" (C:\temp\tts_jobs\voices), so don't reuse that word here.
+REF_DIR = Path(os.environ.get("SIANGTTS_REF_DIR", "ref"))
+CACHE_DIR = Path(os.environ.get("SIANGTTS_CACHE_DIR", "voice_cache"))
 AUDIO_EXTS = {".wav", ".mp3", ".m4a", ".ogg", ".flac"}
 
 _state: dict = {}
@@ -49,12 +53,12 @@ _state: dict = {}
 def _init_ref_speakers(synth: Synthesizer) -> None:
     """Precompute + cache a prompt cache for every clip in ref/ (skip if cached)."""
     REF_DIR.mkdir(exist_ok=True)
-    VOICES_DIR.mkdir(exist_ok=True)
+    CACHE_DIR.mkdir(exist_ok=True)
     for ref_file in sorted(REF_DIR.iterdir()):
         if ref_file.suffix.lower() not in AUDIO_EXTS:
             continue
         sid = ref_file.stem
-        cache_path = VOICES_DIR / f"{sid}.pt"
+        cache_path = CACHE_DIR / f"{sid}.pt"
         if cache_path.exists() and cache_path.stat().st_mtime >= ref_file.stat().st_mtime:
             _state["voices"][sid] = synth.load_voice(cache_path)
             print(f"  [skip] {sid} (cached)")
@@ -170,7 +174,7 @@ async def register_speaker(
     ref_dest = REF_DIR / f"{speaker_id}{suffix}"
     await _save_upload(reference, dest=ref_dest)       # persist clip in ref/
     cache = synth.build_voice(str(ref_dest))
-    synth.save_voice(cache, VOICES_DIR / f"{speaker_id}.pt")
+    synth.save_voice(cache, CACHE_DIR / f"{speaker_id}.pt")
     _state["voices"][speaker_id] = cache
     return JSONResponse({"speaker_id": speaker_id, "status": "registered"})
 
@@ -185,7 +189,7 @@ def delete_speaker(speaker_id: str) -> JSONResponse:
     if speaker_id not in _state.get("voices", {}):
         raise HTTPException(404, f"speaker '{speaker_id}' not found")
     _state["voices"].pop(speaker_id, None)
-    (VOICES_DIR / f"{speaker_id}.pt").unlink(missing_ok=True)
+    (CACHE_DIR / f"{speaker_id}.pt").unlink(missing_ok=True)
     for ref_file in REF_DIR.glob(f"{speaker_id}.*"):
         ref_file.unlink(missing_ok=True)
     return JSONResponse({"speaker_id": speaker_id, "status": "deleted"})
