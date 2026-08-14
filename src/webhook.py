@@ -102,6 +102,7 @@ class WebhookBody(BaseModel):
     queue_id: str = ""
     voice_id: str = ""
     voice_text: str = ""
+    ref_text: str = ""
     audio_speed: float = 1.0
     country_code: str = "th"
     callback_url: str = ""
@@ -375,7 +376,7 @@ async def _accept(body: WebhookBody) -> JSONResponse:
         job_id=body.job_id or queue_id,
         queue_id=queue_id,
         voice_id=body.voice_id.strip() or DEFAULT_VOICE,
-        ref_text=body.voice_text.strip() or DEFAULT_REF_TEXT,
+        ref_text=(body.ref_text or body.voice_text).strip() or DEFAULT_REF_TEXT,
         speed=body.audio_speed or 1.0,
         callback_url=callback_url,
         chunks=chunks,
