@@ -42,6 +42,13 @@ class SiangTTSService:
 
         try:
             import json
+            import torch
+            try:
+                import torch._dynamo
+                torch._dynamo.config.suppress_errors = True
+            except Exception:
+                pass
+
             from voxcpm import VoxCPM
             from voxcpm.model.voxcpm2 import LoRAConfig
 
