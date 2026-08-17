@@ -17,6 +17,7 @@ from app.models import (
     SpeakerListResponse,
     SynthesizeRequest,
 )
+from app.config import settings
 from app.segmenter import segment_text
 from app.annotator import annotator
 from app.renderers import get_renderer
@@ -68,6 +69,9 @@ def health_check():
         "status": "ok",
         "service": "thai-tts-tone-annotation",
         "version": "2.0.0",
+        "provider": settings.llm_provider,
+        "default_model": settings.gemini_model if settings.llm_provider == "gemini" else settings.llm_model,
+        "escalate_model": settings.gemini_escalate_model if settings.llm_provider == "gemini" else settings.llm_escalate_model,
         "speakers_count": len(siangtts_service.list_speakers()),
         "synthesizer": siangtts_service.status,
     }
@@ -84,7 +88,12 @@ def annotate_endpoint(req: AnnotateRequest):
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
     clauses = segment_text(text)
-    response = annotator.annotate(original_text=text, clauses=clauses, guidance=req.guidance)
+    response = annotator.annotate(
+        original_text=text,
+        clauses=clauses,
+        guidance=req.guidance,
+        custom_model=req.model
+    )
     return response
 
 
@@ -112,7 +121,12 @@ def speak_endpoint(req: SpeakRequest):
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
     clauses = segment_text(text)
-    annotated = annotator.annotate(original_text=text, clauses=clauses, guidance=req.guidance)
+    annotated = annotator.annotate(
+        original_text=text,
+        clauses=clauses,
+        guidance=req.guidance,
+        custom_model=req.model
+    )
     
     renderer = get_renderer(req.engine)
     rendered = renderer.render(annotated.segments)
@@ -123,7 +137,11 @@ def speak_endpoint(req: SpeakRequest):
         prompt=rendered.prompt,
         segments=annotated.segments,
         model_used=annotated.model_used,
-        fallback=annotated.fallback
+        fallback=annotated.fallback,
+        error=annotated.error,
+        error_detail=annotated.error_detail,
+        attempts=annotated.attempts,
+        chunks=rendered.chunks
     )
 
 
@@ -184,7 +202,12 @@ async def synthesize_endpoint(req: SynthesizeRequest):
     # If text has brackets or auto-annotate requested, prepare rendered text
     if req.auto_annotate and not text.startswith("("):
         clauses = segment_text(text)
-        annotated = annotator.annotate(original_text=text, clauses=clauses, guidance=req.guidance)
+        annotated = annotator.annotate(
+            original_text=text,
+            clauses=clauses,
+            guidance=req.guidance,
+            custom_model=req.model
+        )
         renderer = get_renderer(req.engine if req.engine in ("voxcpm", "siangtts") else "voxcpm")
         rendered = renderer.render(annotated.segments)
         # One chunk per tone run, each with its instruction leading, so no style
@@ -217,6 +240,7 @@ async def synthesize_with_upload_endpoint(
     text: str = Form(...),
     file: Optional[UploadFile] = File(None),
     guidance: Optional[str] = Form(None),
+    model: Optional[str] = Form(None),
     cfg_value: float = Form(2.5),
     inference_timesteps: int = Form(10),
     auto_annotate: bool = Form(True),
@@ -231,7 +255,12 @@ async def synthesize_with_upload_endpoint(
 
     if auto_annotate and not clean_text.startswith("("):
         clauses = segment_text(clean_text)
-        annotated = annotator.annotate(original_text=clean_text, clauses=clauses, guidance=guidance)
+        annotated = annotator.annotate(
+            original_text=clean_text,
+            clauses=clauses,
+            guidance=guidance,
+            custom_model=model
+        )
         renderer = get_renderer("voxcpm")
         rendered = renderer.render(annotated.segments)
         parts = [c.text for c in rendered.chunks] if rendered.chunks else [rendered.text]

@@ -184,3 +184,46 @@ def test_speak_endpoint(mock_get_gemini, mock_segment_text):
     assert data["engine"] == "elevenlabs"
     assert data["text"] == "[sad] ขอโทษนะ ฉันไม่ได้ตั้งใจ [angry] แต่เธอก็ไม่ฟังฉันเลย"
     assert data["fallback"] is False
+
+
+@patch("app.main.segment_text")
+@patch("app.annotator.Annotator.get_gemini_client")
+def test_annotate_endpoint_custom_model(mock_get_gemini, mock_segment_text):
+    mock_client = MagicMock()
+    mock_get_gemini.return_value = mock_client
+
+    text = "สวัสดีครับ วันนี้อากาศดีมาก"
+    mock_segment_text.return_value = ["สวัสดีครับ ", "วันนี้อากาศดีมาก"]
+    mock_client.models.generate_content.return_value = make_mock_gemini_response([
+        {"i": 0, "tone": "happy", "intensity": 2},
+        {"i": 1, "tone": "happy", "intensity": 2},
+    ])
+
+    response = client.post("/annotate", json={"text": text, "model": "gemini-2.0-flash"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["model_used"] == "gemini-2.0-flash"
+    assert data["fallback"] is False
+    assert data["attempts"][0]["model"] == "gemini-2.0-flash"
+    assert data["attempts"][0]["status"] == "success"
+
+
+@patch("app.main.segment_text")
+@patch("app.annotator.Annotator.get_gemini_client")
+def test_annotate_all_failed_diagnostic_json(mock_get_gemini, mock_segment_text):
+    mock_client = MagicMock()
+    mock_get_gemini.return_value = mock_client
+
+    text = "สวัสดีครับ วันนี้อากาศดีมาก"
+    mock_segment_text.return_value = ["สวัสดีครับ ", "วันนี้อากาศดีมาก"]
+    mock_client.models.generate_content.side_effect = Exception("429 RESOURCE_EXHAUSTED: Quota exceeded")
+
+    response = client.post("/annotate", json={"text": text, "model": "gemini-2.5-flash"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["fallback"] is True
+    assert data["model_used"] == "fallback-neutral"
+    assert data["error"] is not None
+    assert "429 RESOURCE_EXHAUSTED" in data["error_detail"]
+    assert len(data["attempts"]) >= 1
+    assert data["attempts"][0]["status"] == "failed"

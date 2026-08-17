@@ -166,7 +166,13 @@ class Annotator:
             client = self.get_anthropic_client()
             return self._call_anthropic(client, model, clauses, guidance=guidance)
 
-    def annotate(self, original_text: str, clauses: List[str], guidance: Optional[str] = None) -> AnnotateResponse:
+    def annotate(
+        self,
+        original_text: str,
+        clauses: List[str],
+        guidance: Optional[str] = None,
+        custom_model: Optional[str] = None
+    ) -> AnnotateResponse:
         """
         Annotate clauses with emotional tones.
         Executes primary model -> escalation model -> fallback neutral.
@@ -181,11 +187,13 @@ class Annotator:
 
         provider = settings.llm_provider.lower()
         if provider == "gemini":
-            primary_model = settings.gemini_model
+            primary_model = (custom_model.strip() if custom_model and custom_model.strip() else settings.gemini_model)
             escalate_model = settings.gemini_escalate_model
         else:
-            primary_model = settings.llm_model
+            primary_model = (custom_model.strip() if custom_model and custom_model.strip() else settings.llm_model)
             escalate_model = settings.llm_escalate_model
+
+        attempts: List[dict] = []
 
         # Attempt 1: Primary Model
         try:
@@ -196,32 +204,41 @@ class Annotator:
                 raw_labels=raw_labels,
                 max_segments=settings.max_segments
             )
+            attempts.append({"model": primary_model, "provider": provider, "status": "success"})
             return AnnotateResponse(
                 original=original_text,
                 segments=segments,
                 model_used=primary_model,
-                fallback=False
+                fallback=False,
+                attempts=attempts
             )
         except Exception as err:
-            logger.warning(f"Primary model {primary_model} ({provider}) failed: {err}. Escalating to {escalate_model}")
+            err_msg = str(err)
+            logger.warning(f"Primary model {primary_model} ({provider}) failed: {err_msg}. Escalating to {escalate_model}")
+            attempts.append({"model": primary_model, "provider": provider, "status": "failed", "error": err_msg})
 
-        # Attempt 2: Escalation Model
-        try:
-            raw_labels = self._run_provider(provider, escalate_model, clauses, guidance=guidance)
-            segments = validate_and_build_segments(
-                original_text=original_text,
-                clauses=clauses,
-                raw_labels=raw_labels,
-                max_segments=settings.max_segments
-            )
-            return AnnotateResponse(
-                original=original_text,
-                segments=segments,
-                model_used=escalate_model,
-                fallback=False
-            )
-        except Exception as err:
-            logger.error(f"Escalation model {escalate_model} ({provider}) failed: {err}. Falling back to neutral.")
+        # Attempt 2: Escalation Model (only if different from primary)
+        if escalate_model and escalate_model != primary_model:
+            try:
+                raw_labels = self._run_provider(provider, escalate_model, clauses, guidance=guidance)
+                segments = validate_and_build_segments(
+                    original_text=original_text,
+                    clauses=clauses,
+                    raw_labels=raw_labels,
+                    max_segments=settings.max_segments
+                )
+                attempts.append({"model": escalate_model, "provider": provider, "status": "success"})
+                return AnnotateResponse(
+                    original=original_text,
+                    segments=segments,
+                    model_used=escalate_model,
+                    fallback=False,
+                    attempts=attempts
+                )
+            except Exception as err:
+                err_msg = str(err)
+                logger.error(f"Escalation model {escalate_model} ({provider}) failed: {err_msg}. Falling back to neutral.")
+                attempts.append({"model": escalate_model, "provider": provider, "status": "failed", "error": err_msg})
 
         # Attempt 3: Safe Fallback
         fallback_segments = [
@@ -231,11 +248,15 @@ class Annotator:
                 intensity=2
             )
         ]
+        error_summary = "; ".join([f"[{a['model']}]: {a.get('error', 'unknown error')}" for a in attempts if a.get('status') == 'failed'])
         return AnnotateResponse(
             original=original_text,
             segments=fallback_segments,
             model_used="fallback-neutral",
-            fallback=True
+            fallback=True,
+            error="LLM annotation failed (e.g. Quota Exceeded or API error)",
+            error_detail=error_summary,
+            attempts=attempts
         )
 
 

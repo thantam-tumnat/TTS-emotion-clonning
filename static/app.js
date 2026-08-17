@@ -15,6 +15,11 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnRemoveFile = document.getElementById('btn-remove-file');
   const btnSaveSpeaker = document.getElementById('btn-save-speaker');
 
+  // LLM Model Selector Elements
+  const llmModelSelect = document.getElementById('llm-model-select');
+  const customModelGroup = document.getElementById('custom-model-group');
+  const customModelInput = document.getElementById('custom-model-input');
+
   const paramCfg = document.getElementById('param-cfg');
   const paramSteps = document.getElementById('param-steps');
   const valCfg = document.getElementById('val-cfg');
@@ -30,6 +35,15 @@ document.addEventListener('DOMContentLoaded', () => {
   const modelBadge = document.getElementById('model-badge');
   const modelName = document.getElementById('model-name');
   const fallbackIndicator = document.getElementById('fallback-indicator');
+
+  // Error Banner Elements
+  const errorBanner = document.getElementById('error-banner');
+  const errorTitle = document.getElementById('error-title');
+  const errorDetailText = document.getElementById('error-detail-text');
+  const btnCloseError = document.getElementById('btn-close-error');
+  const btnSwitchTo2flash = document.getElementById('btn-switch-to-2flash');
+  const btnSwitchTo15flash = document.getElementById('btn-switch-to-15flash');
+  const btnViewRawJson = document.getElementById('btn-view-raw-json');
 
   const tabButtons = document.querySelectorAll('.tab-btn');
   const tabPanes = document.querySelectorAll('.tab-pane');
@@ -47,6 +61,8 @@ document.addEventListener('DOMContentLoaded', () => {
   
   const segmentsContainer = document.getElementById('segments-container');
   const rawJson = document.getElementById('raw-json');
+  const btnCopyJson = document.getElementById('btn-copy-json');
+  const jsonStatusBadge = document.getElementById('json-status-badge');
 
   const btnCopyOutput = document.getElementById('btn-copy-output');
   const btnCopyPrompt = document.getElementById('btn-copy-prompt');
@@ -83,8 +99,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // API Base URL (Use relative URL for any port/domain when served via HTTP/HTTPS, fallback to localhost:8000 only if opened as a file)
+  // API Base URL
   const API_BASE = window.location.protocol === 'file:' ? 'http://127.0.0.1:8000' : '';
+
+  // Get selected model helper
+  function getSelectedModel() {
+    if (!llmModelSelect) return null;
+    const val = llmModelSelect.value;
+    if (val === 'custom') {
+      return (customModelInput && customModelInput.value.trim()) ? customModelInput.value.trim() : null;
+    }
+    return val || null;
+  }
+
+  // Model select change handler
+  if (llmModelSelect) {
+    llmModelSelect.addEventListener('change', () => {
+      if (llmModelSelect.value === 'custom') {
+        customModelGroup.classList.remove('hidden');
+        customModelInput.focus();
+      } else {
+        customModelGroup.classList.add('hidden');
+      }
+    });
+  }
 
   // Slider updates
   paramCfg.addEventListener('input', () => {
@@ -101,7 +139,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (res.ok) {
         const data = await res.json();
         healthStatus.className = 'status-indicator online';
-        healthStatus.querySelector('.status-label').textContent = `API พร้อมใช้งาน (${data.speakers_count || 0} voices)`;
+        healthStatus.querySelector('.status-label').textContent = `API พร้อมใช้งาน (${data.speakers_count || 0} voices, LLM: ${data.default_model || data.provider})`;
       } else {
         throw new Error('Health check failed');
       }
@@ -270,20 +308,28 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 
   // Tab switching
+  function switchTab(targetTab) {
+    tabButtons.forEach(b => {
+      if (b.getAttribute('data-tab') === targetTab) {
+        b.classList.add('active');
+      } else {
+        b.classList.remove('active');
+      }
+    });
+
+    tabPanes.forEach(pane => {
+      if (pane.id === `tab-${targetTab}`) {
+        pane.classList.remove('hidden');
+      } else {
+        pane.classList.add('hidden');
+      }
+    });
+  }
+
   tabButtons.forEach(btn => {
     btn.addEventListener('click', () => {
       const targetTab = btn.getAttribute('data-tab');
-      
-      tabButtons.forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-
-      tabPanes.forEach(pane => {
-        if (pane.id === `tab-${targetTab}`) {
-          pane.classList.remove('hidden');
-        } else {
-          pane.classList.add('hidden');
-        }
-      });
+      switchTab(targetTab);
     });
   });
 
@@ -310,6 +356,7 @@ document.addEventListener('DOMContentLoaded', () => {
     outputEditableText.value = '';
     liveTagPreview.innerHTML = '';
     audioPlayerCard.classList.add('hidden');
+    if (errorBanner) errorBanner.classList.add('hidden');
   }
 
   function formatIntensityStars(intensity) {
@@ -319,7 +366,6 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function highlightAudioTags(text) {
-    // Replace [tag] or (Instruction) with highlighted badge span
     let formatted = text.replace(/(\[[a-zA-Z\s]+\])/g, '<span class="tag-highlight">$1</span>');
     formatted = formatted.replace(/(\([a-zA-Z\s,.-]+\))/g, '<span class="instruction-highlight">$1</span>');
     return formatted;
@@ -352,6 +398,41 @@ document.addEventListener('DOMContentLoaded', () => {
     textarea.dispatchEvent(new Event('input'));
   }
 
+  // Error Banner Controls
+  if (btnCloseError) {
+    btnCloseError.addEventListener('click', () => {
+      errorBanner.classList.add('hidden');
+    });
+  }
+
+  if (btnSwitchTo2flash) {
+    btnSwitchTo2flash.addEventListener('click', () => {
+      if (llmModelSelect) {
+        llmModelSelect.value = 'gemini-2.0-flash';
+        customModelGroup.classList.add('hidden');
+      }
+      errorBanner.classList.add('hidden');
+      handleAnnotate();
+    });
+  }
+
+  if (btnSwitchTo15flash) {
+    btnSwitchTo15flash.addEventListener('click', () => {
+      if (llmModelSelect) {
+        llmModelSelect.value = 'gemini-1.5-flash';
+        customModelGroup.classList.add('hidden');
+      }
+      errorBanner.classList.add('hidden');
+      handleAnnotate();
+    });
+  }
+
+  if (btnViewRawJson) {
+    btnViewRawJson.addEventListener('click', () => {
+      switchTab('raw');
+    });
+  }
+
   // Process Annotation & Render Script
   async function handleAnnotate() {
     const text = textInput.value.trim();
@@ -363,7 +444,8 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const guidance = guidanceInput.value.trim();
     const engine = engineSelect.value;
-    showLoading(true, 'กำลังวิเคราะห์ข้อความและจัดเรียงโทนอารมณ์...');
+    const model = getSelectedModel();
+    showLoading(true, `กำลังวิเคราะห์ข้อความด้วย ${model || 'LLM'}...`);
 
     try {
       const response = await fetch(`${API_BASE}/speak`, {
@@ -374,19 +456,32 @@ document.addEventListener('DOMContentLoaded', () => {
         body: JSON.stringify({
           text: text,
           guidance: guidance || null,
-          engine: engine
+          engine: engine,
+          model: model
         })
       });
 
+      const data = await response.json().catch(() => ({}));
+
       if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || `Server error: ${response.status}`);
+        throw new Error(data.detail || `Server error: ${response.status}`);
       }
 
-      const data = await response.json();
       renderResults(data, engine);
     } catch (err) {
-      alert(`เกิดข้อผิดพลาดในการประมวลผล: ${err.message}\n(โปรดตรวจสอบว่าเปิดเซิร์ฟเวอร์ backend หรือยัง)`);
+      if (errorBanner) {
+        errorBanner.classList.remove('hidden');
+        errorTitle.textContent = 'เกิดข้อผิดพลาดในการเรียก LLM API';
+        errorDetailText.textContent = err.message || 'ไม่สามารถเชื่อมต่อเซิร์ฟเวอร์ได้';
+      }
+      if (rawJson) {
+        rawJson.textContent = JSON.stringify({ error: err.message, status: "request_failed" }, null, 2);
+      }
+      if (jsonStatusBadge) {
+        jsonStatusBadge.textContent = 'Error / Failed';
+        jsonStatusBadge.className = 'json-status-badge error-badge';
+      }
+      alert(`เกิดข้อผิดพลาดในการประมวลผล: ${err.message}\n(ดูรายละเอียดเพิ่มเติมในแถบ Raw JSON)`);
       showEmptyState();
     } finally {
       showLoading(false);
@@ -407,6 +502,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const cfgValue = parseFloat(paramCfg.value) || 2.5;
     const timesteps = parseInt(paramSteps.value, 10) || 10;
     const guidance = guidanceInput.value.trim();
+    const model = getSelectedModel();
 
     showLoading(true, '🎙️ กำลังสังเคราะห์เสียงด้วย SiangTTS (VoxCPM2)...');
 
@@ -418,6 +514,7 @@ document.addEventListener('DOMContentLoaded', () => {
         formData.append('text', text);
         formData.append('file', selectedAudioFile);
         if (guidance) formData.append('guidance', guidance);
+        if (model) formData.append('model', model);
         formData.append('cfg_value', cfgValue);
         formData.append('inference_timesteps', timesteps);
         formData.append('auto_annotate', 'true');
@@ -438,6 +535,7 @@ document.addEventListener('DOMContentLoaded', () => {
             speaker_id: speakerId,
             guidance: guidance || null,
             engine: engine,
+            model: model,
             cfg_value: cfgValue,
             inference_timesteps: timesteps,
             auto_annotate: true
@@ -471,6 +569,14 @@ document.addEventListener('DOMContentLoaded', () => {
         document.getElementById(`tab-${activeTab}`).classList.remove('hidden');
       }
     } catch (err) {
+      if (errorBanner) {
+        errorBanner.classList.remove('hidden');
+        errorTitle.textContent = 'เกิดข้อผิดพลาดในการสังเคราะห์เสียง';
+        errorDetailText.textContent = err.message;
+      }
+      if (rawJson) {
+        rawJson.textContent = JSON.stringify({ error: err.message, status: "synthesis_failed" }, null, 2);
+      }
       alert(`เกิดข้อผิดพลาดในการสังเคราะห์เสียง: ${err.message}`);
     } finally {
       showLoading(false);
@@ -479,6 +585,28 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function renderResults(data, engine) {
     emptyState.classList.add('hidden');
+    
+    // Check fallback / error status
+    if (data.fallback || data.error || data.error_detail) {
+      if (errorBanner) {
+        errorBanner.classList.remove('hidden');
+        errorTitle.textContent = '⚠️ การประมวลผล LLM ไม่สำเร็จ (ใช้งาน Fallback Neutral)';
+        errorDetailText.textContent = data.error_detail || data.error || 'โมเดลไม่ตอบสนองหรือโควตาใช้งานหมด (429 RESOURCE_EXHAUSTED)';
+      }
+      if (jsonStatusBadge) {
+        jsonStatusBadge.textContent = 'Fallback Neutral (LLM Issue)';
+        jsonStatusBadge.className = 'json-status-badge error-badge';
+      }
+    } else {
+      if (errorBanner) {
+        errorBanner.classList.add('hidden');
+      }
+      if (jsonStatusBadge) {
+        jsonStatusBadge.textContent = 'HTTP 200 OK (Success)';
+        jsonStatusBadge.className = 'json-status-badge';
+      }
+    }
+
     // Show model badge
     modelBadge.classList.remove('hidden');
     modelName.textContent = data.model_used;
@@ -505,32 +633,36 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 2. Render Segments Tab
     segmentsContainer.innerHTML = '';
-    data.segments.forEach((seg, idx) => {
-      const item = document.createElement('div');
-      item.className = `segment-item border-${seg.tone}`;
-      item.innerHTML = `
-        <div class="segment-meta">
-          <div class="segment-meta-left">
-            <span class="seg-index">#${idx + 1}</span>
-            <span class="tone-chip tone-${seg.tone}">${seg.tone}</span>
+    if (data.segments && data.segments.length > 0) {
+      data.segments.forEach((seg, idx) => {
+        const item = document.createElement('div');
+        item.className = `segment-item border-${seg.tone}`;
+        item.innerHTML = `
+          <div class="segment-meta">
+            <div class="segment-meta-left">
+              <span class="seg-index">#${idx + 1}</span>
+              <span class="tone-chip tone-${seg.tone}">${seg.tone}</span>
+            </div>
+            <span class="intensity-stars">${formatIntensityStars(seg.intensity)}</span>
           </div>
-          <span class="intensity-stars">${formatIntensityStars(seg.intensity)}</span>
-        </div>
-        <div class="segment-text">${escapeHtml(seg.text)}</div>
-      `;
-      segmentsContainer.appendChild(item);
-    });
+          <div class="segment-text">${escapeHtml(seg.text)}</div>
+        `;
+        segmentsContainer.appendChild(item);
+      });
+    }
 
     // 3. Raw JSON Tab
     rawJson.textContent = JSON.stringify(data, null, 2);
 
-    // Default to editor tab
-    const activeTab = document.querySelector('.tab-btn.active').getAttribute('data-tab');
-    document.getElementById(`tab-${activeTab}`).classList.remove('hidden');
+    // Default to editor tab if nothing active
+    const activeBtn = document.querySelector('.tab-btn.active');
+    const activeTab = activeBtn ? activeBtn.getAttribute('data-tab') : 'editor';
+    switchTab(activeTab);
   }
 
-  // Copy helper
+  // Copy helpers
   function setupCopyBtn(btn, getSourceText) {
+    if (!btn) return;
     btn.addEventListener('click', async () => {
       const text = getSourceText();
       if (!text) return;
@@ -552,6 +684,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   setupCopyBtn(btnCopyOutput, () => outputEditableText.value);
   setupCopyBtn(btnCopyPrompt, () => geminiPromptEditable.value);
+  setupCopyBtn(btnCopyJson, () => rawJson.textContent);
 
   btnProcess.addEventListener('click', handleAnnotate);
   btnSynthesizeDirect.addEventListener('click', handleSynthesize);

@@ -23,6 +23,7 @@ class Segment(BaseModel):
 class AnnotateRequest(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
     guidance: Optional[str] = Field(default=None, description="Optional custom emotion/tone guidance")
+    model: Optional[str] = Field(default=None, description="Optional specific LLM model to use")
 
 
 class AnnotateResponse(BaseModel):
@@ -30,6 +31,9 @@ class AnnotateResponse(BaseModel):
     segments: list[Segment]
     model_used: str
     fallback: bool  # True = validate failed, fallback to all neutral
+    error: Optional[str] = None
+    error_detail: Optional[str] = None
+    attempts: Optional[list[dict]] = None
 
 
 class RenderRequest(BaseModel):
@@ -56,6 +60,7 @@ class SpeakRequest(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
     guidance: Optional[str] = Field(default=None, description="Optional custom emotion/tone guidance")
     engine: Literal["elevenlabs", "gemini", "voxcpm", "siangtts"] = "voxcpm"
+    model: Optional[str] = Field(default=None, description="Optional specific LLM model to use")
 
 
 class SpeakResponse(BaseModel):
@@ -65,6 +70,10 @@ class SpeakResponse(BaseModel):
     segments: list[Segment]
     model_used: str
     fallback: bool
+    error: Optional[str] = None
+    error_detail: Optional[str] = None
+    attempts: Optional[list[dict]] = None
+    chunks: Optional[list[RenderedChunk]] = None
 
 
 class SpeakerInfo(BaseModel):
@@ -83,6 +92,7 @@ class SynthesizeRequest(BaseModel):
     speaker_id: Optional[str] = None
     guidance: Optional[str] = None
     engine: Literal["voxcpm", "siangtts", "elevenlabs", "gemini"] = "voxcpm"
+    model: Optional[str] = Field(default=None, description="Optional specific LLM model to use")
     cfg_value: float = Field(default=2.5, ge=1.0, le=10.0)
     inference_timesteps: int = Field(default=10, ge=4, le=50)
     auto_annotate: bool = True
