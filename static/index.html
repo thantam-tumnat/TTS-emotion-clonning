@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="th">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Thai TTS Tone Annotation Studio</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <div class="logo-badge">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+            <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+            <line x1="12" y1="19" x2="12" y2="22"></line>
+          </svg>
+        </div>
+        <div>
+          <h1 class="app-title">Thai TTS Tone Annotation Studio</h1>
+          <p class="app-subtitle">เครื่องมือวิเคราะห์โทนเสียงและแก้ไข Audio Tags สำหรับ Text-to-Speech ภาษาไทย</p>
+        </div>
+      </div>
+      <div class="header-meta">
+        <div id="health-status" class="status-indicator">
+          <span class="status-dot"></span>
+          <span class="status-label">กำลังเชื่อมต่อ...</span>
+        </div>
+      </div>
+    </header>
+
+    <!-- Main Workspace -->
+    <main class="workspace-grid">
+      <!-- Left Column: Input & Presets -->
+      <section class="card input-card">
+        <div class="card-header">
+          <div class="card-title-group">
+            <span class="step-num">1</span>
+            <h2>ข้อความภาษาไทย & Prompt (Input)</h2>
+          </div>
+          <span id="char-counter" class="char-counter">0 ตัวอักษร</span>
+        </div>
+
+        <div class="preset-section">
+          <span class="preset-label">ตัวอย่างข้อความทดสอบ:</span>
+          <div class="preset-pills">
+            <button type="button" class="preset-btn" data-preset="shift">😢+😡 เศร้าปนโกรธ</button>
+            <button type="button" class="preset-btn" data-preset="sarcastic">😏 ประชดประชัน</button>
+            <button type="button" class="preset-btn" data-preset="happy">🎉 ดีใจสุดขีด</button>
+            <button type="button" class="preset-btn" data-preset="calm">☕ สงบนุ่มนวล</button>
+            <button type="button" class="preset-btn" data-preset="news">📰 ข่าวสาร/เป็นกลาง</button>
+          </div>
+        </div>
+
+        <div class="textarea-wrapper">
+          <label for="text-input" class="field-label">ข้อความภาษาไทยที่ต้องการแปลง:</label>
+          <textarea 
+            id="text-input" 
+            placeholder="พิมพ์ข้อความภาษาไทยที่นี่... เช่น: ขอโทษนะ ฉันไม่ได้ตั้งใจ แต่เธอก็ไม่ฟังฉันเลย" 
+            rows="5"
+            spellcheck="false"
+          ></textarea>
+        </div>
+
+        <div class="guidance-wrapper">
+          <label for="guidance-input" class="field-label">
+            <span>คำแนะนำอารมณ์เพิ่มเติม (Custom Prompt / Guidance - ไม่บังคับ):</span>
+          </label>
+          <input 
+            type="text" 
+            id="guidance-input" 
+            class="custom-input"
+            placeholder="เช่น: ขอให้เน้นประชดอย่างแรง, ท่อนแรกเศร้าท่อนหลังโกรธจัด, น้ำเสียงนุ่มนวล"
+          />
+        </div>
+
+        <div class="controls-bar">
+          <div class="engine-select-group">
+            <label for="engine-select">เป้าหมาย TTS Engine:</label>
+            <select id="engine-select" class="custom-select">
+              <option value="elevenlabs">ElevenLabs (Inline Audio Tags)</option>
+              <option value="gemini">Gemini (Prompt + Clean Text)</option>
+            </select>
+          </div>
+          <div class="btn-actions">
+            <button type="button" id="btn-clear" class="btn btn-secondary">ล้างค่า</button>
+            <button type="button" id="btn-process" class="btn btn-primary">
+              <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polygon points="5 3 19 12 5 21 5 3"></polygon>
+              </svg>
+              <span>วิเคราะห์ & สร้างข้อความ</span>
+            </button>
+          </div>
+        </div>
+      </section>
+
+      <!-- Right Column: Output & Text Editor -->
+      <section class="card output-card">
+        <div class="card-header">
+          <div class="card-title-group">
+            <span class="step-num">2</span>
+            <h2>ข้อความพร้อมส่ง TTS (แก้ไขได้ - Editable Output)</h2>
+          </div>
+          <div id="model-badge" class="model-badge hidden">
+            <span id="model-name">gemini-2.5-flash</span>
+            <span id="fallback-indicator" class="badge-tag normal">Normal</span>
+          </div>
+        </div>
+
+        <!-- Tab Controls -->
+        <div class="tab-nav">
+          <button type="button" class="tab-btn active" data-tab="editor">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
+            Text & Tag Editor
+          </button>
+          <button type="button" class="tab-btn" data-tab="segments">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
+            การแบ่งช่วงอารมณ์ (Segments)
+          </button>
+          <button type="button" class="tab-btn" data-tab="raw">
+            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="16 18 22 12 16 6"></polyline><polyline points="8 6 2 12 8 18"></polyline></svg>
+            Raw JSON
+          </button>
+        </div>
+
+        <!-- Tab Contents -->
+        <div class="tab-content-wrapper">
+          <!-- Loading State -->
+          <div id="loading-state" class="state-container hidden">
+            <div class="spinner"></div>
+            <p class="state-text">กำลังวิเคราะห์ข้อความด้วย LLM...</p>
+          </div>
+
+          <!-- Empty State -->
+          <div id="empty-state" class="state-container">
+            <div class="empty-icon">
+              <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"></path>
+              </svg>
+            </div>
+            <p class="empty-title">ยังไม่มีข้อความผลลัพธ์</p>
+            <p class="empty-desc">พิมพ์ข้อความภาษาไทย หรือเลือกตัวอย่างด้านซ้าย แล้วกดปุ่ม "วิเคราะห์ & สร้างข้อความ"</p>
+          </div>
+
+          <!-- Tab 1: Editable Text & Tag Editor -->
+          <div id="tab-editor" class="tab-pane active">
+            <div class="editor-section">
+              <!-- Quick Insert Toolbar -->
+              <div class="tag-toolbar">
+                <span class="toolbar-label">คลิกเพื่อแทรก Tag ลงในข้อความ:</span>
+                <div class="tag-buttons-row">
+                  <button type="button" class="tag-insert-btn tone-sad" data-tag="[sad] ">+ [sad]</button>
+                  <button type="button" class="tag-insert-btn tone-angry" data-tag="[angry] ">+ [angry]</button>
+                  <button type="button" class="tag-insert-btn tone-happy" data-tag="[happily] ">+ [happily]</button>
+                  <button type="button" class="tag-insert-btn tone-excited" data-tag="[excited] ">+ [excited]</button>
+                  <button type="button" class="tag-insert-btn tone-calm" data-tag="[calm] ">+ [calm]</button>
+                  <button type="button" class="tag-insert-btn tone-nervous" data-tag="[nervous] ">+ [nervous]</button>
+                  <button type="button" class="tag-insert-btn tone-sarcastic" data-tag="[sarcastic] ">+ [sarcastic]</button>
+                  <button type="button" class="tag-insert-btn tone-neutral" data-tag="[very sad] ">+ [very...]</button>
+                  <button type="button" class="tag-insert-btn tone-neutral" data-tag="[slightly sad] ">+ [slightly...]</button>
+                </div>
+              </div>
+
+              <!-- Main Editable Textarea -->
+              <div class="editor-box">
+                <div class="editor-header">
+                  <span class="editor-label">ข้อความที่พร้อมส่งเข้า TTS (สามารถพิมพ์แก้ไขได้โดยตรง):</span>
+                  <div class="editor-actions">
+                    <span id="output-char-counter" class="char-counter">0 ตัวอักษร</span>
+                    <button type="button" class="btn-copy" id="btn-copy-output" title="คัดลอกข้อความทั้งหมด">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                      <span>คัดลอกข้อความ</span>
+                    </button>
+                  </div>
+                </div>
+                <textarea 
+                  id="output-editable-text" 
+                  class="output-textarea" 
+                  rows="5"
+                  placeholder="ผลลัพธ์ข้อความพร้อม Tag จะปรากฏที่นี่ และคุณสามารถแก้ไขหรือปรับเปลี่ยนคำได้ตามต้องการ..."
+                  spellcheck="false"
+                ></textarea>
+              </div>
+
+              <!-- Live Highlight Preview -->
+              <div class="preview-box">
+                <span class="preview-label">Live Visual Tag Preview:</span>
+                <div id="live-tag-preview" class="live-preview-content"></div>
+              </div>
+
+              <!-- Gemini Prompt Box (if Gemini selected) -->
+              <div id="gemini-prompt-section" class="gemini-prompt-section hidden">
+                <div class="editor-header">
+                  <span class="editor-label">Gemini Instruction Prompt (คำสั่งอารมณ์):</span>
+                  <button type="button" class="btn-copy" id="btn-copy-prompt" title="คัดลอกคำสั่ง">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                    <span>คัดลอก Prompt</span>
+                  </button>
+                </div>
+                <textarea 
+                  id="gemini-prompt-editable" 
+                  class="prompt-textarea" 
+                  rows="3"
+                  spellcheck="false"
+                ></textarea>
+              </div>
+            </div>
+          </div>
+
+          <!-- Tab 2: Segments -->
+          <div id="tab-segments" class="tab-pane hidden">
+            <div id="segments-container" class="segments-list"></div>
+          </div>
+
+          <!-- Tab 3: Raw JSON -->
+          <div id="tab-raw" class="tab-pane hidden">
+            <pre id="raw-json" class="json-viewer"></pre>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <!-- Tone Legend Footer -->
+    <footer class="tone-legend-card">
+      <div class="legend-title">Tier 1 Tone Dictionary (8 อารมณ์):</div>
+      <div class="legend-grid">
+        <div class="legend-item"><span class="tone-chip tone-neutral">neutral</span><span>เป็นกลาง / บรรยาย</span></div>
+        <div class="legend-item"><span class="tone-chip tone-sad">sad</span><span>เศร้า / เสียใจ</span></div>
+        <div class="legend-item"><span class="tone-chip tone-happy">happy</span><span>ร่าเริง / ดีใจ</span></div>
+        <div class="legend-item"><span class="tone-chip tone-angry">angry</span><span>โกรธ / เสียงแข็ง</span></div>
+        <div class="legend-item"><span class="tone-chip tone-excited">excited</span><span>ตื่นเต้น / กระตือรือร้น</span></div>
+        <div class="legend-item"><span class="tone-chip tone-calm">calm</span><span>สงบ / นุ่มนวล</span></div>
+        <div class="legend-item"><span class="tone-chip tone-nervous">nervous</span><span>ประหม่า / ลังเล</span></div>
+        <div class="legend-item"><span class="tone-chip tone-sarcastic">sarcastic</span><span>ประชด / แดกดัน</span></div>
+      </div>
+    </footer>
+  </div>
+
+  <script src="/static/app.js"></script>
+</body>
+</html>
