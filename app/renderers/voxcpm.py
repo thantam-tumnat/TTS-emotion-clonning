@@ -1,5 +1,5 @@
 from typing import List, Optional
-from app.models import Segment, Tone, RenderResponse
+from app.models import Segment, Tone, RenderResponse, RenderedChunk
 from app.renderers.base import BaseRenderer
 
 VOXCPM_INSTRUCTION_MAP = {
@@ -56,31 +56,61 @@ def format_voxcpm_instruction(tone: Tone, intensity: int = 2) -> Optional[str]:
 class VoxCPMRenderer(BaseRenderer):
     """
     Renders segments for VoxCPM2 / SiangTTS with natural-language control instructions.
-    Example: '(Calm and soothing voice, speaking softly) หายใจเข้าลึกๆ ผ่อนคลาย'
+    Example: '(Calm and soothing voice, speaking softly)หายใจเข้าลึกๆ ผ่อนคลาย'
+
+    VoxCPM2 reads a style parenthetical only when it leads the text it is given; one
+    appearing mid-text is spoken aloud instead. So each run of same-tone segments
+    becomes its own chunk with the instruction at position 0, and the caller
+    synthesizes the chunks separately. ``text`` remains a single-shot rendering that
+    only carries the opening instruction.
     """
 
     def render(self, segments: List[Segment]) -> RenderResponse:
         if not segments:
-            return RenderResponse(text="", prompt=None)
+            return RenderResponse(text="", prompt=None, chunks=[])
 
-        out = []
+        chunks: List[RenderedChunk] = []
+        instructions_used: List[str] = []
         prev_tone: Optional[Tone] = None
-        instructions_used = []
 
         for seg in segments:
-            if seg.tone != prev_tone and seg.tone != Tone.NEUTRAL:
-                instruction = format_voxcpm_instruction(seg.tone, seg.intensity)
-                if instruction:
-                    out.append(f"{instruction} ")
-                    instructions_used.append(f"{seg.tone.value} (lvl {seg.intensity})")
+            # Same tone as the previous segment: extend it rather than re-stating.
+            if seg.tone == prev_tone and chunks:
+                chunks[-1].body += seg.text
+                chunks[-1].text += seg.text
+                continue
 
-            out.append(seg.text)
+            instruction = (
+                format_voxcpm_instruction(seg.tone, seg.intensity)
+                if seg.tone != Tone.NEUTRAL
+                else None
+            )
+            if instruction:
+                instructions_used.append(f"{seg.tone.value} (lvl {seg.intensity})")
+
+            # No space after ')' -- that is the documented VoxCPM2 format.
+            chunks.append(
+                RenderedChunk(
+                    text=f"{instruction}{seg.text}" if instruction else seg.text,
+                    instruction=instruction,
+                    body=seg.text,
+                )
+            )
             prev_tone = seg.tone
 
-        rendered_text = "".join(out).strip()
-        prompt_summary = ", ".join(instructions_used) if instructions_used else "neutral"
+        for c in chunks:
+            c.body = c.body.strip()
+            c.text = c.text.strip()
+        chunks = [c for c in chunks if c.body]
+
+        # Single-shot form: the leading instruction applies, the rest is plain body
+        # text so no parenthetical ever lands mid-utterance.
+        lead = chunks[0].instruction if chunks else None
+        joined = "".join(c.body for c in chunks)
+        rendered_text = f"{lead}{joined}" if lead else joined
 
         return RenderResponse(
-            text=rendered_text,
-            prompt=prompt_summary
+            text=rendered_text.strip(),
+            prompt=", ".join(instructions_used) if instructions_used else "neutral",
+            chunks=chunks,
         )

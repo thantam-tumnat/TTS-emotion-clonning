@@ -2,15 +2,153 @@ from __future__ import annotations
 
 import io
 import os
-import shutil
+import sys
 import tempfile
 from pathlib import Path
-from typing import Dict, List, Optional, Any
+from typing import Dict, List, Optional, Any, Sequence, Tuple
 
 from app.config import settings
 from app.services.thai_normalizer import normalize_thai_text
 
 AUDIO_EXTS = {".wav", ".mp3", ".m4a", ".ogg", ".flac"}
+
+# Mock-only. The real synthesizer reports the model's own rate.
+MOCK_SAMPLE_RATE = 48000
+
+
+class SynthesizerUnavailable(RuntimeError):
+    """Raised when the real VoxCPM2 model could not be loaded."""
+
+
+def _wav_to_numpy(wav: Any):
+    """Normalize a VoxCPM waveform (tensor or ndarray) to a 1-D float32 array."""
+    import numpy as np
+
+    if hasattr(wav, "detach"):
+        wav = wav.detach()
+        if wav.dim() > 1:
+            wav = wav.squeeze(0)
+        # bfloat16 has no numpy equivalent; float() is a no-op when already float32.
+        return wav.float().cpu().numpy()
+    return np.asarray(wav, dtype="float32")
+
+
+class _RealSynthesizer:
+    """Thin adapter over the VoxCPM wrapper.
+
+    Note that prompt-cache construction and cached generation live on
+    ``model.tts_model`` (VoxCPM2Model), not on the ``VoxCPM`` wrapper. Calling them
+    on the wrapper silently does nothing useful.
+    """
+
+    def __init__(
+        self,
+        base_model: str,
+        adapter_path: Optional[str],
+        lora_config: Any,
+        device: Optional[str],
+        load_denoiser: bool,
+        optimize: bool,
+    ):
+        from voxcpm import VoxCPM
+
+        self.model = VoxCPM.from_pretrained(
+            base_model,
+            load_denoiser=load_denoiser,
+            optimize=optimize,
+            device=device,
+            lora_config=lora_config,
+            lora_weights_path=adapter_path,
+        )
+        self.tts_model = self.model.tts_model
+        self.sample_rate = self.tts_model.sample_rate
+        self.lora_loaded = adapter_path is not None
+
+    def synth(
+        self,
+        text: str,
+        *,
+        ref_audio: Optional[str] = None,
+        prompt_cache: Any = None,
+        cfg_value: float = 2.5,
+        inference_timesteps: int = 10,
+    ):
+        text = normalize_thai_text(text)
+        if prompt_cache is not None:
+            wav, _, _ = self.tts_model.generate_with_prompt_cache(
+                target_text=text,
+                prompt_cache=prompt_cache,
+                cfg_value=cfg_value,
+                inference_timesteps=inference_timesteps,
+                retry_badcase=True,
+            )
+            return _wav_to_numpy(wav)
+        return _wav_to_numpy(
+            self.model.generate(
+                text=text,
+                reference_wav_path=ref_audio,
+                cfg_value=cfg_value,
+                inference_timesteps=inference_timesteps,
+            )
+        )
+
+    def build_voice(self, ref_audio_path: str, prompt_text: Optional[str] = None) -> Any:
+        """Encode a reference clip into a reusable prompt cache.
+
+        With a transcript, VoxCPM2's "ultimate cloning" mode (reference + continuation)
+        gives noticeably higher timbre fidelity, so use it when one is available.
+        """
+        if prompt_text:
+            return self.tts_model.build_prompt_cache(
+                prompt_text=prompt_text,
+                prompt_wav_path=ref_audio_path,
+                reference_wav_path=ref_audio_path,
+            )
+        return self.tts_model.build_prompt_cache(reference_wav_path=ref_audio_path)
+
+    def save_voice(self, cache: Any, dest_path: Path) -> None:
+        import torch
+
+        torch.save(cache, dest_path)
+
+    def load_voice(self, src_path: Path) -> Any:
+        import torch
+
+        return torch.load(src_path, map_location="cpu", weights_only=False)
+
+
+class _MockSynthesizer:
+    """Emits a 440 Hz tone. Test scaffolding only -- never a production fallback."""
+
+    def __init__(self):
+        self.sample_rate = MOCK_SAMPLE_RATE
+        self.lora_loaded = False
+
+    def synth(
+        self,
+        text: str,
+        *,
+        ref_audio: Optional[str] = None,
+        prompt_cache: Any = None,
+        cfg_value: float = 2.5,
+        inference_timesteps: int = 10,
+    ):
+        import numpy as np
+
+        text = normalize_thai_text(text)
+        duration_sec = max(1.0, min(10.0, len(text) * 0.12))
+        num_samples = int(self.sample_rate * duration_sec)
+        t = np.linspace(0, duration_sec, num_samples, endpoint=False)
+        return (0.2 * np.sin(2 * np.pi * 440 * t) * np.exp(-t / 3.0)).astype("float32")
+
+    def build_voice(self, ref_audio_path: str, prompt_text: Optional[str] = None) -> Any:
+        return f"mock_latent_for_{ref_audio_path}"
+
+    def save_voice(self, cache: Any, dest_path: Path) -> None:
+        dest_path.write_text(str(cache), encoding="utf-8")
+
+    def load_voice(self, src_path: Path) -> Any:
+        return f"loaded_mock_from_{src_path}"
 
 
 class SiangTTSService:
@@ -27,158 +165,189 @@ class SiangTTSService:
         self.base_model = base_model or settings.siangtts_base_model
         self.adapter_path = adapter_path or settings.siangtts_adapter
         self.device = device or settings.siangtts_device or None
-        
+
         self.ref_dir.mkdir(parents=True, exist_ok=True)
         self.cache_dir.mkdir(parents=True, exist_ok=True)
 
         self._voices: Dict[str, Any] = {}
         self._synthesizer: Any = None
         self._is_loaded: bool = False
+        self._load_error: Optional[str] = None
+        self._using_mock: bool = False
+
+    # ------------------------------------------------------------------ #
+    # Model loading
+    # ------------------------------------------------------------------ #
+
+    def _resolve_adapter(self) -> Optional[str]:
+        """Resolve the LoRA adapter to a local directory.
+
+        The configured value is normally a Hugging Face repo id, not a path, so a
+        bare ``Path.exists()`` check would always miss and silently drop the LoRA.
+        """
+        spec = (self.adapter_path or "").strip()
+        if not spec:
+            return None
+
+        local = Path(spec)
+        if local.exists():
+            return str(local)
+
+        try:
+            from huggingface_hub import snapshot_download
+
+            resolved = snapshot_download(repo_id=spec)
+            print(f"[SiangTTS] LoRA adapter resolved: {spec} -> {resolved}", file=sys.stderr)
+            return resolved
+        except Exception as e:
+            # Base VoxCPM2 supports Thai natively, so this degrades quality rather
+            # than breaking synthesis. Warn loudly and carry on.
+            print(
+                f"[SiangTTS] WARNING: could not fetch LoRA adapter '{spec}': {e}\n"
+                f"[SiangTTS] Continuing with base {self.base_model} (lower Thai quality).",
+                file=sys.stderr,
+            )
+            return None
+
+    def _load_lora_config(self, adapter_dir: Optional[str]) -> Any:
+        if not adapter_dir:
+            return None
+        cfg_file = Path(adapter_dir) / "lora_config.json"
+        if not cfg_file.exists():
+            # VoxCPM builds a sensible default when weights are given without a config.
+            return None
+        try:
+            import json
+
+            from voxcpm.model.voxcpm2 import LoRAConfig
+
+            with open(cfg_file, encoding="utf-8") as f:
+                cfg_data = json.load(f).get("lora_config", {})
+            return LoRAConfig(**cfg_data)
+        except Exception as e:
+            print(f"[SiangTTS] WARNING: bad lora_config.json ({e}); using defaults.", file=sys.stderr)
+            return None
 
     def get_synthesizer(self) -> Any:
-        """Lazy loader for VoxCPM / SiangTTS Synthesizer."""
+        """Lazy-load the VoxCPM2 synthesizer.
+
+        A failure here used to be swallowed and replaced with a sine-tone mock, which
+        is indistinguishable from a broken model at the speaker. It now raises unless
+        mock mode is explicitly enabled.
+        """
         if self._synthesizer is not None:
             return self._synthesizer
 
         try:
-            import json
-            import torch
             try:
                 import torch._dynamo
+
                 torch._dynamo.config.suppress_errors = True
             except Exception:
                 pass
 
-            from voxcpm import VoxCPM
-            from voxcpm.model.voxcpm2 import LoRAConfig
+            adapter = self._resolve_adapter()
+            lora_config = self._load_lora_config(adapter)
 
-            lora_config = None
-            adapter = self.adapter_path if self.adapter_path and Path(self.adapter_path).exists() else None
-            
-            if adapter:
-                cfg_file = Path(adapter) / "lora_config.json"
-                if cfg_file.exists():
-                    with open(cfg_file, encoding="utf-8") as f:
-                        cfg_data = json.load(f).get("lora_config", {})
-                        lora_config = LoRAConfig(**cfg_data)
-
-            class _SynthesizerImpl:
-                def __init__(self, base_model: str, adapter_path: str | None, lora_config: Any):
-                    self.model = VoxCPM.from_pretrained(
-                        base_model,
-                        lora_config=lora_config,
-                        lora_weights_path=adapter_path,
-                    )
-                    self.sample_rate = 48000
-
-                def synth(self, text: str, *, ref_audio: str | None = None, prompt_cache: Any = None, cfg_value: float = 2.5, inference_timesteps: int = 10):
-                    text = normalize_thai_text(text)
-                    if prompt_cache is not None:
-                        return self.model.generate_with_prompt_cache(
-                            text=text,
-                            prompt_cache=prompt_cache,
-                            cfg_value=cfg_value,
-                            inference_timesteps=inference_timesteps,
-                        )
-                    return self.model.generate(
-                        text=text,
-                        reference_wav_path=ref_audio,
-                        cfg_value=cfg_value,
-                        inference_timesteps=inference_timesteps,
-                    )
-
-                def build_voice(self, ref_audio_path: str) -> Any:
-                    if hasattr(self.model, "build_prompt_cache"):
-                        return self.model.build_prompt_cache(ref_audio_path)
-                    return ref_audio_path
-
-                def save_voice(self, cache: Any, dest_path: Path):
-                    import torch
-                    if hasattr(torch, "save") and not isinstance(cache, (str, Path)):
-                        torch.save(cache, dest_path)
-
-                def load_voice(self, src_path: Path) -> Any:
-                    import torch
-                    if hasattr(torch, "load"):
-                        return torch.load(src_path, map_location="cpu")
-                    return str(src_path)
-
-            self._synthesizer = _SynthesizerImpl(self.base_model, adapter, lora_config)
+            self._synthesizer = _RealSynthesizer(
+                base_model=self.base_model,
+                adapter_path=adapter,
+                lora_config=lora_config,
+                device=self.device,
+                load_denoiser=settings.siangtts_load_denoiser,
+                optimize=settings.siangtts_optimize,
+            )
             self._is_loaded = True
+            self._using_mock = False
+            self._load_error = None
+            print(
+                f"[SiangTTS] Loaded {self.base_model} "
+                f"(LoRA={'yes' if adapter else 'no'}, sample_rate={self._synthesizer.sample_rate})",
+                file=sys.stderr,
+            )
             return self._synthesizer
         except Exception as e:
-            # Fallback mock synthesizer for CPU/testing environment
-            print(f"[SiangTTS] voxcpm/torch not active or failed to load: {e}. Using fallback simulation mode.")
-            return self._get_fallback_synthesizer()
+            self._load_error = f"{type(e).__name__}: {e}"
+            if not settings.siangtts_allow_mock:
+                raise SynthesizerUnavailable(
+                    f"VoxCPM2 failed to load: {self._load_error}. "
+                    f"This is usually GPU memory (VoxCPM2 needs ~8GB VRAM) or host "
+                    f"commit charge. Free the GPU, or set SIANGTTS_DEVICE=cpu. "
+                    f"Set SIANGTTS_ALLOW_MOCK=true only if you want a test tone."
+                ) from e
 
-    def _get_fallback_synthesizer(self) -> Any:
-        class _MockSynthesizer:
-            def __init__(self):
-                self.sample_rate = 48000
-
-            def synth(self, text: str, *, ref_audio: str | None = None, prompt_cache: Any = None, cfg_value: float = 2.5, inference_timesteps: int = 10):
-                import numpy as np
-                text = normalize_thai_text(text)
-                duration_sec = max(1.0, min(10.0, len(text) * 0.12))
-                num_samples = int(self.sample_rate * duration_sec)
-                t = np.linspace(0, duration_sec, num_samples, endpoint=False)
-                # Gentle pleasant tone burst for testing
-                wave = (0.2 * np.sin(2 * np.pi * 440 * t) * np.exp(-t / 3.0)).astype(np.float32)
-                return wave
-
-            def build_voice(self, ref_audio_path: str) -> Any:
-                return f"mock_latent_for_{ref_audio_path}"
-
-            def save_voice(self, cache: Any, dest_path: Path):
-                with open(dest_path, "w", encoding="utf-8") as f:
-                    f.write(str(cache))
-
-            def load_voice(self, src_path: Path) -> Any:
-                return f"loaded_mock_from_{src_path}"
-
-        if self._synthesizer is None:
+            print(
+                f"[SiangTTS] WARNING: model load failed ({self._load_error}).\n"
+                f"[SiangTTS] SIANGTTS_ALLOW_MOCK is on -- output will be a 440Hz TEST TONE, not speech.",
+                file=sys.stderr,
+            )
             self._synthesizer = _MockSynthesizer()
-        return self._synthesizer
+            self._using_mock = True
+            self._is_loaded = False
+            return self._synthesizer
+
+    @property
+    def status(self) -> Dict[str, Any]:
+        return {
+            "loaded": self._is_loaded,
+            "using_mock": self._using_mock,
+            "load_error": self._load_error,
+            "base_model": self.base_model,
+            "lora_loaded": bool(getattr(self._synthesizer, "lora_loaded", False)),
+            "sample_rate": getattr(self._synthesizer, "sample_rate", None),
+        }
+
+    # ------------------------------------------------------------------ #
+    # Speaker registry
+    # ------------------------------------------------------------------ #
+
+    def _transcript_for(self, ref_file: Path) -> Optional[str]:
+        """Optional sidecar transcript (``ref/<id>.txt``) enabling ultimate cloning."""
+        txt = ref_file.with_suffix(".txt")
+        if txt.exists():
+            content = txt.read_text(encoding="utf-8").strip()
+            return content or None
+        return None
+
+    def _ref_files(self) -> List[Path]:
+        return [p for p in sorted(self.ref_dir.iterdir()) if p.suffix.lower() in AUDIO_EXTS]
 
     def init_speakers(self) -> None:
-        """Scan ref/ directory, precompute and cache prompt latents."""
-        synth = self.get_synthesizer()
-        for ref_file in sorted(self.ref_dir.iterdir()):
-            if ref_file.suffix.lower() not in AUDIO_EXTS:
-                continue
+        """Scan ref/, precomputing and caching prompt latents."""
+        try:
+            synth = self.get_synthesizer()
+        except SynthesizerUnavailable as e:
+            print(f"[SiangTTS] Skipping speaker init: {e}", file=sys.stderr)
+            return
+
+        for ref_file in self._ref_files():
             sid = ref_file.stem
             cache_path = self.cache_dir / f"{sid}.pt"
             if cache_path.exists() and cache_path.stat().st_mtime >= ref_file.stat().st_mtime:
                 try:
                     self._voices[sid] = synth.load_voice(cache_path)
                     continue
-                except Exception:
-                    pass
+                except Exception as e:
+                    print(f"[SiangTTS] Stale cache for '{sid}' ({e}); rebuilding.", file=sys.stderr)
             try:
-                cache = synth.build_voice(str(ref_file))
+                cache = synth.build_voice(str(ref_file), self._transcript_for(ref_file))
                 synth.save_voice(cache, cache_path)
                 self._voices[sid] = cache
             except Exception as ex:
-                print(f"[SiangTTS] Warning: Could not cache voice '{sid}': {ex}")
+                print(f"[SiangTTS] WARNING: could not cache voice '{sid}': {ex}", file=sys.stderr)
 
     def list_speakers(self) -> List[Dict[str, Any]]:
-        """List registered speaker profiles."""
-        speakers = []
-        for ref_file in sorted(self.ref_dir.iterdir()):
-            if ref_file.suffix.lower() not in AUDIO_EXTS:
-                continue
-            sid = ref_file.stem
-            cache_path = self.cache_dir / f"{sid}.pt"
-            speakers.append({
-                "id": sid,
-                "name": sid.replace("_", " ").title(),
-                "filename": ref_file.name,
-                "cached": cache_path.exists(),
-            })
-        return speakers
+        return [
+            {
+                "id": f.stem,
+                "name": f.stem.replace("_", " ").title(),
+                "filename": f.name,
+                "cached": (self.cache_dir / f"{f.stem}.pt").exists(),
+            }
+            for f in self._ref_files()
+        ]
 
     def register_speaker(self, speaker_id: str, audio_bytes: bytes, filename: str) -> Dict[str, Any]:
-        """Save a new reference audio and precompute latent cache."""
         clean_id = "".join(c for c in speaker_id.strip().lower() if c.isalnum() or c in ("-", "_"))
         if not clean_id:
             clean_id = "custom_speaker"
@@ -188,17 +357,16 @@ class SiangTTSService:
             ext = ".wav"
 
         ref_path = self.ref_dir / f"{clean_id}{ext}"
-        with open(ref_path, "wb") as f:
-            f.write(audio_bytes)
+        ref_path.write_bytes(audio_bytes)
 
-        synth = self.get_synthesizer()
         cache_path = self.cache_dir / f"{clean_id}.pt"
         try:
-            cache = synth.build_voice(str(ref_path))
+            synth = self.get_synthesizer()
+            cache = synth.build_voice(str(ref_path), self._transcript_for(ref_path))
             synth.save_voice(cache, cache_path)
             self._voices[clean_id] = cache
         except Exception as e:
-            print(f"[SiangTTS] Failed to cache latent for {clean_id}: {e}")
+            print(f"[SiangTTS] WARNING: failed to cache latent for {clean_id}: {e}", file=sys.stderr)
 
         return {
             "id": clean_id,
@@ -208,7 +376,6 @@ class SiangTTSService:
         }
 
     def delete_speaker(self, speaker_id: str) -> bool:
-        """Remove a speaker profile from disk and memory."""
         found = False
         for f in self.ref_dir.glob(f"{speaker_id}.*"):
             if f.is_file():
@@ -225,6 +392,35 @@ class SiangTTSService:
 
         return found
 
+    # ------------------------------------------------------------------ #
+    # Synthesis
+    # ------------------------------------------------------------------ #
+
+    def _resolve_voice(
+        self,
+        speaker_id: Optional[str],
+        ref_audio_bytes: Optional[bytes],
+        ref_filename: Optional[str],
+    ) -> Tuple[Optional[Any], Optional[str], Optional[str]]:
+        """Return (prompt_cache, ref_audio_path, temp_path_to_clean_up)."""
+        if ref_audio_bytes:
+            ext = Path(ref_filename or "upload.wav").suffix.lower()
+            if ext not in AUDIO_EXTS:
+                ext = ".wav"
+            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tf:
+                tf.write(ref_audio_bytes)
+                temp_path = tf.name
+            return None, temp_path, temp_path
+
+        if speaker_id:
+            if speaker_id in self._voices:
+                return self._voices[speaker_id], None, None
+            for cand in self.ref_dir.glob(f"{speaker_id}.*"):
+                if cand.suffix.lower() in AUDIO_EXTS:
+                    return None, str(cand), None
+
+        return None, None, None
+
     def synthesize(
         self,
         text: str,
@@ -235,47 +431,66 @@ class SiangTTSService:
         cfg_value: float = 2.5,
         inference_timesteps: int = 10,
     ) -> bytes:
+        """Synthesize a single utterance. Returns WAV bytes."""
+        return self.synthesize_many(
+            [text],
+            speaker_id=speaker_id,
+            ref_audio_bytes=ref_audio_bytes,
+            ref_filename=ref_filename,
+            cfg_value=cfg_value,
+            inference_timesteps=inference_timesteps,
+        )
+
+    def synthesize_many(
+        self,
+        texts: Sequence[str],
+        *,
+        speaker_id: Optional[str] = None,
+        ref_audio_bytes: Optional[bytes] = None,
+        ref_filename: Optional[str] = None,
+        cfg_value: float = 2.5,
+        inference_timesteps: int = 10,
+        gap_ms: int = 60,
+    ) -> bytes:
+        """Synthesize several chunks against one voice and concatenate them.
+
+        Each chunk carries its own leading style instruction, which is how per-segment
+        emotion is expressed -- VoxCPM2 only honours a style parenthetical at the very
+        start of the text it is given.
         """
-        Synthesize Thai speech with voice cloning and emotion control instruction.
-        Returns WAV binary audio bytes.
-        """
+        import numpy as np
         import soundfile as sf
+
+        chunks = [t.strip() for t in texts if t and t.strip()]
+        if not chunks:
+            raise ValueError("No text to synthesize")
+
         synth = self.get_synthesizer()
-        sample_rate = getattr(synth, "sample_rate", 48000)
+        sample_rate = getattr(synth, "sample_rate", MOCK_SAMPLE_RATE)
 
-        # 1. Check if direct ref audio uploaded
-        temp_ref_path = None
-        prompt_cache = None
-        ref_audio_path = None
-
-        if ref_audio_bytes:
-            ext = Path(ref_filename or "upload.wav").suffix.lower()
-            if ext not in AUDIO_EXTS:
-                ext = ".wav"
-            with tempfile.NamedTemporaryFile(suffix=ext, delete=False) as tf:
-                tf.write(ref_audio_bytes)
-                temp_ref_path = tf.name
-            ref_audio_path = temp_ref_path
-        elif speaker_id:
-            if speaker_id in self._voices:
-                prompt_cache = self._voices[speaker_id]
-            else:
-                # Find file in ref/
-                for cand in self.ref_dir.glob(f"{speaker_id}.*"):
-                    if cand.suffix.lower() in AUDIO_EXTS:
-                        ref_audio_path = str(cand)
-                        break
+        prompt_cache, ref_audio_path, temp_ref_path = self._resolve_voice(
+            speaker_id, ref_audio_bytes, ref_filename
+        )
 
         try:
-            wav = synth.synth(
-                text=text,
-                ref_audio=ref_audio_path,
-                prompt_cache=prompt_cache,
-                cfg_value=cfg_value,
-                inference_timesteps=inference_timesteps,
-            )
+            rendered = []
+            gap = np.zeros(int(sample_rate * gap_ms / 1000), dtype="float32")
+            for i, chunk in enumerate(chunks):
+                wav = synth.synth(
+                    text=chunk,
+                    ref_audio=ref_audio_path,
+                    prompt_cache=prompt_cache,
+                    cfg_value=cfg_value,
+                    inference_timesteps=inference_timesteps,
+                )
+                if i:
+                    rendered.append(gap)
+                rendered.append(np.asarray(wav, dtype="float32"))
+
+            audio = np.concatenate(rendered) if len(rendered) > 1 else rendered[0]
+
             out_buf = io.BytesIO()
-            sf.write(out_buf, wav, sample_rate, format="WAV")
+            sf.write(out_buf, audio, sample_rate, format="WAV", subtype="PCM_16")
             return out_buf.getvalue()
         finally:
             if temp_ref_path and os.path.exists(temp_ref_path):

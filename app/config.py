@@ -31,6 +31,17 @@ class Settings(BaseSettings):
     siangtts_ref_dir: str = "ref"
     siangtts_cache_dir: str = "voice_cache"
 
+    # The denoiser (ZipEnhancer) is only used when generate(denoise=True), which we
+    # never do. Loading it costs memory for nothing, so it is off by default.
+    siangtts_load_denoiser: bool = False
+    # torch.compile warm-up. Faster steady-state, but slow to start and fragile on
+    # Windows; enable once the model is confirmed loading.
+    siangtts_optimize: bool = False
+    # When the real model fails to load, fall back to the sine-tone mock instead of
+    # raising. Only ever useful for tests -- a silent fallback in production sounds
+    # exactly like a broken model.
+    siangtts_allow_mock: bool = False
+
     @field_validator("reanchor_chars", mode="before")
     @classmethod
     def parse_reanchor_chars(cls, v):

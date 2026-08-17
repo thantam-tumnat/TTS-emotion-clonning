@@ -20,7 +20,7 @@ from app.models import (
 from app.segmenter import segment_text
 from app.annotator import annotator
 from app.renderers import get_renderer
-from app.services.siangtts_service import siangtts_service
+from app.services.siangtts_service import siangtts_service, SynthesizerUnavailable
 
 
 @asynccontextmanager
@@ -69,6 +69,7 @@ def health_check():
         "service": "thai-tts-tone-annotation",
         "version": "2.0.0",
         "speakers_count": len(siangtts_service.list_speakers()),
+        "synthesizer": siangtts_service.status,
     }
 
 
@@ -186,14 +187,16 @@ async def synthesize_endpoint(req: SynthesizeRequest):
         annotated = annotator.annotate(original_text=text, clauses=clauses, guidance=req.guidance)
         renderer = get_renderer(req.engine if req.engine in ("voxcpm", "siangtts") else "voxcpm")
         rendered = renderer.render(annotated.segments)
-        prompt_text = rendered.text
+        # One chunk per tone run, each with its instruction leading, so no style
+        # parenthetical is ever spoken aloud mid-utterance.
+        parts = [c.text for c in rendered.chunks] if rendered.chunks else [rendered.text]
     else:
-        prompt_text = text
+        parts = [text]
 
     # Perform synthesis via SiangTTSService
     try:
-        wav_bytes = siangtts_service.synthesize(
-            text=prompt_text,
+        wav_bytes = siangtts_service.synthesize_many(
+            parts,
             speaker_id=req.speaker_id,
             cfg_value=req.cfg_value,
             inference_timesteps=req.inference_timesteps,
@@ -203,6 +206,8 @@ async def synthesize_endpoint(req: SynthesizeRequest):
             media_type="audio/wav",
             headers={"Content-Disposition": 'inline; filename="synthesized.wav"'},
         )
+    except SynthesizerUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Synthesis failed: {str(e)}")
 
@@ -229,16 +234,16 @@ async def synthesize_with_upload_endpoint(
         annotated = annotator.annotate(original_text=clean_text, clauses=clauses, guidance=guidance)
         renderer = get_renderer("voxcpm")
         rendered = renderer.render(annotated.segments)
-        prompt_text = rendered.text
+        parts = [c.text for c in rendered.chunks] if rendered.chunks else [rendered.text]
     else:
-        prompt_text = clean_text
+        parts = [clean_text]
 
     audio_bytes = await file.read() if file else None
     filename = file.filename if file else None
 
     try:
-        wav_bytes = siangtts_service.synthesize(
-            text=prompt_text,
+        wav_bytes = siangtts_service.synthesize_many(
+            parts,
             ref_audio_bytes=audio_bytes,
             ref_filename=filename,
             cfg_value=cfg_value,
@@ -249,5 +254,7 @@ async def synthesize_with_upload_endpoint(
             media_type="audio/wav",
             headers={"Content-Disposition": 'inline; filename="synthesized_custom.wav"'},
         )
+    except SynthesizerUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Synthesis failed: {str(e)}")

@@ -22,8 +22,8 @@ def test_voxcpm_renderer_calm_prompt():
         Segment(text="หายใจเข้าลึกๆ ผ่อนคลาย แล้วค่อยๆ ปล่อยวางทุกอย่างลงนะ", tone=Tone.CALM, intensity=2)
     ]
     res = renderer.render(segments)
-    assert res.text.startswith("(Calm and soothing voice, speaking softly) ")
-    assert "หายใจเข้าลึกๆ" in res.text
+    # VoxCPM2's documented format puts no space between ')' and the content.
+    assert res.text.startswith("(Calm and soothing voice, speaking softly)หายใจเข้าลึกๆ")
 
 
 @pytest.mark.parametrize("tone,intensity,expected_substr", [
@@ -51,11 +51,37 @@ def test_voxcpm_renderer_factory():
 
 
 def test_voxcpm_renderer_multi_segment_transitions():
+    """Each tone run becomes its own chunk with the instruction leading it.
+
+    VoxCPM2 only honours a style parenthetical at position 0; one appearing mid-text
+    gets spoken aloud, so res.text must carry only the opening instruction.
+    """
     renderer = VoxCPMRenderer()
     segments = [
         Segment(text="ขอโทษนะ ฉันไม่ได้ตั้งใจ ", tone=Tone.SAD, intensity=2),
         Segment(text="แต่เธอก็ไม่ฟังฉันเลย", tone=Tone.ANGRY, intensity=2)
     ]
     res = renderer.render(segments)
-    assert "(Sad and melancholic voice, slight sighs)" in res.text
-    assert "(Angry, firm and aggressive tone)" in res.text
+
+    assert len(res.chunks) == 2
+    assert res.chunks[0].instruction == "(Sad and melancholic voice, slight sighs)"
+    assert res.chunks[1].instruction == "(Angry, firm and aggressive tone)"
+    for chunk in res.chunks:
+        assert chunk.text.startswith(chunk.instruction)
+        assert "(" not in chunk.body
+
+    # Single-shot rendering: leading instruction only, nothing mid-utterance.
+    assert res.text.startswith("(Sad and melancholic voice, slight sighs)")
+    assert "(Angry, firm and aggressive tone)" not in res.text
+    assert res.text.count("(") == 1
+
+
+def test_voxcpm_renderer_merges_consecutive_same_tone():
+    renderer = VoxCPMRenderer()
+    segments = [
+        Segment(text="ดีใจมากเลย ", tone=Tone.HAPPY, intensity=2),
+        Segment(text="ขอบคุณนะ", tone=Tone.HAPPY, intensity=2),
+    ]
+    res = renderer.render(segments)
+    assert len(res.chunks) == 1
+    assert res.chunks[0].body == "ดีใจมากเลย ขอบคุณนะ"

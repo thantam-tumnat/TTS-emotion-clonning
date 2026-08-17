@@ -37,9 +37,19 @@ class RenderRequest(BaseModel):
     engine: Literal["elevenlabs", "gemini", "voxcpm", "siangtts"]
 
 
+class RenderedChunk(BaseModel):
+    """One synthesis unit: a style instruction plus the text it applies to."""
+    text: str  # instruction + body, ready to hand to the engine
+    instruction: Optional[str] = None
+    body: str = ""
+
+
 class RenderResponse(BaseModel):
     text: str  # text ready for TTS / instruction prompt
     prompt: Optional[str] = None  # for engines using separate field (Gemini/VoxCPM summary)
+    # Per-segment units. VoxCPM2 only honours a style parenthetical at the start of
+    # the text it is given, so multi-tone input must be synthesized chunk by chunk.
+    chunks: List[RenderedChunk] = Field(default_factory=list)
 
 
 class SpeakRequest(BaseModel):

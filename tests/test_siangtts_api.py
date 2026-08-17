@@ -2,11 +2,56 @@ import io
 import pytest
 from fastapi.testclient import TestClient
 from app.main import app
+from app.services import siangtts_service as svc
 
 
 @pytest.fixture
 def client():
     return TestClient(app)
+
+
+def test_model_load_failure_raises_instead_of_beeping():
+    """A failed load must surface as an error, not a 440Hz tone.
+
+    This was the original bug: get_synthesizer() swallowed every exception and
+    substituted the mock, so a model that never loaded was indistinguishable from
+    a model producing artifacts.
+    """
+    service = svc.SiangTTSService()
+    service._synthesizer = None
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("The paging file is too small for this operation to complete.")
+
+    svc.settings.siangtts_allow_mock = False
+    original = svc._RealSynthesizer.__init__
+    svc._RealSynthesizer.__init__ = boom
+    try:
+        with pytest.raises(svc.SynthesizerUnavailable) as exc:
+            service.get_synthesizer()
+        assert "paging file" in str(exc.value)
+        assert service.status["loaded"] is False
+    finally:
+        svc._RealSynthesizer.__init__ = original
+
+
+def test_mock_fallback_only_when_explicitly_enabled():
+    service = svc.SiangTTSService()
+    service._synthesizer = None
+
+    def boom(*args, **kwargs):
+        raise RuntimeError("no GPU")
+
+    svc.settings.siangtts_allow_mock = True
+    original = svc._RealSynthesizer.__init__
+    svc._RealSynthesizer.__init__ = boom
+    try:
+        synth = service.get_synthesizer()
+        assert isinstance(synth, svc._MockSynthesizer)
+        assert service.status["using_mock"] is True
+        assert "no GPU" in service.status["load_error"]
+    finally:
+        svc._RealSynthesizer.__init__ = original
 
 
 def test_health_endpoint(client):
