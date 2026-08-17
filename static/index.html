@@ -3,11 +3,11 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Thai TTS Tone Annotation Studio</title>
+  <title>Thai TTS Tone Annotation & Voice Cloning Studio</title>
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css">
+  <link rel="stylesheet" href="/static/style.css?v=2.0.1">
 </head>
 <body>
   <div class="app-container">
@@ -22,8 +22,8 @@
           </svg>
         </div>
         <div>
-          <h1 class="app-title">Thai TTS Tone Annotation Studio</h1>
-          <p class="app-subtitle">เครื่องมือวิเคราะห์โทนเสียงและแก้ไข Audio Tags สำหรับ Text-to-Speech ภาษาไทย</p>
+          <h1 class="app-title">Thai TTS Tone & Voice Cloning Studio</h1>
+          <p class="app-subtitle">วิเคราะห์โทนอารมณ์ + สั่งสคริปต์พูดตามแท็ก + โคลนเสียงด้วย SiangTTS (VoxCPM2 Thai LoRA)</p>
         </div>
       </div>
       <div class="header-meta">
@@ -36,12 +36,12 @@
 
     <!-- Main Workspace -->
     <main class="workspace-grid">
-      <!-- Left Column: Input & Presets -->
+      <!-- Left Column: Input, Presets & Voice Clone -->
       <section class="card input-card">
         <div class="card-header">
           <div class="card-title-group">
             <span class="step-num">1</span>
-            <h2>ข้อความภาษาไทย & Prompt (Input)</h2>
+            <h2>ข้อความภาษาไทย & การตั้งค่า (Input)</h2>
           </div>
           <span id="char-counter" class="char-counter">0 ตัวอักษร</span>
         </div>
@@ -49,19 +49,19 @@
         <div class="preset-section">
           <span class="preset-label">ตัวอย่างข้อความทดสอบ:</span>
           <div class="preset-pills">
+            <button type="button" class="preset-btn" data-preset="calm">☕ [calm] สงบนุ่มนวล</button>
             <button type="button" class="preset-btn" data-preset="shift">😢+😡 เศร้าปนโกรธ</button>
             <button type="button" class="preset-btn" data-preset="sarcastic">😏 ประชดประชัน</button>
             <button type="button" class="preset-btn" data-preset="happy">🎉 ดีใจสุดขีด</button>
-            <button type="button" class="preset-btn" data-preset="calm">☕ สงบนุ่มนวล</button>
             <button type="button" class="preset-btn" data-preset="news">📰 ข่าวสาร/เป็นกลาง</button>
           </div>
         </div>
 
         <div class="textarea-wrapper">
-          <label for="text-input" class="field-label">ข้อความภาษาไทยที่ต้องการแปลง:</label>
+          <label for="text-input" class="field-label">ข้อความภาษาไทย หรือ สคริปต์ที่มีแท็ก [emotion]:</label>
           <textarea 
             id="text-input" 
-            placeholder="พิมพ์ข้อความภาษาไทยที่นี่... เช่น: ขอโทษนะ ฉันไม่ได้ตั้งใจ แต่เธอก็ไม่ฟังฉันเลย" 
+            placeholder="พิมพ์ข้อความภาษาไทย เช่น: [calm] หายใจเข้าลึกๆ ผ่อนคลาย แล้วค่อยๆ ปล่อยวางทุกอย่างลงนะ" 
             rows="5"
             spellcheck="false"
           ></textarea>
@@ -79,32 +79,91 @@
           />
         </div>
 
-        <div class="controls-bar">
-          <div class="engine-select-group">
-            <label for="engine-select">เป้าหมาย TTS Engine:</label>
-            <select id="engine-select" class="custom-select">
-              <option value="elevenlabs">ElevenLabs (Inline Audio Tags)</option>
-              <option value="gemini">Gemini (Prompt + Clean Text)</option>
-            </select>
+        <!-- Voice Cloning & Engine Options -->
+        <div class="voice-config-section">
+          <div class="config-row">
+            <div class="form-group flex-1">
+              <label for="engine-select" class="field-label">เป้าหมาย TTS Engine:</label>
+              <select id="engine-select" class="custom-select">
+                <option value="voxcpm" selected>SiangTTS (VoxCPM2 + Thai LoRA) ⭐</option>
+                <option value="elevenlabs">ElevenLabs (Inline Audio Tags)</option>
+                <option value="gemini">Gemini (Prompt + Clean Text)</option>
+              </select>
+            </div>
+            <div class="form-group flex-1" id="speaker-group">
+              <label for="speaker-select" class="field-label">เลือกเสียงที่โคลนไว้ (Speaker):</label>
+              <select id="speaker-select" class="custom-select">
+                <option value="">-- ไม่ใช้เสียงโคลน (Base Voice) --</option>
+              </select>
+            </div>
           </div>
-          <div class="btn-actions">
-            <button type="button" id="btn-clear" class="btn btn-secondary">ล้างค่า</button>
+
+          <!-- Reference Audio Upload Area -->
+          <div class="upload-voice-area" id="upload-voice-area">
+            <div class="upload-header">
+              <span class="upload-title">🎙️ อัพโหลดไฟล์เสียงเพื่อโคลนเสียงใหม่ (Zero-Shot Clone):</span>
+              <button type="button" id="btn-save-speaker" class="btn btn-sm btn-outline hidden">บันทึกเป็นโปรไฟล์เสียง</button>
+            </div>
+            <div class="drop-zone" id="drop-zone">
+              <input type="file" id="audio-file-input" accept="audio/*" class="file-input-hidden">
+              <div class="drop-zone-content" id="drop-zone-content">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                  <polyline points="17 8 12 3 7 8"></polyline>
+                  <line x1="12" y1="3" x2="12" y2="15"></line>
+                </svg>
+                <span class="drop-text">คลิกเพื่อเลือกไฟล์เสียงตัวอย่าง (.wav, .mp3) หรือลากไฟล์มาวางที่นี่</span>
+                <span class="drop-subtext">แนะนำความยาว 3 - 30 วินาทีเพื่อความเหมือนสูงสุด</span>
+              </div>
+              <div class="file-info-badge hidden" id="file-info-badge">
+                <span id="selected-filename">sample.wav</span>
+                <button type="button" id="btn-remove-file" class="btn-icon-clear" title="ลบไฟล์">✕</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Advanced Parameters Collapsible -->
+          <details class="advanced-details" id="advanced-details">
+            <summary>⚙️ พารามิเตอร์การสังเคราะห์ (Advanced Parameters)</summary>
+            <div class="advanced-grid">
+              <div class="param-item">
+                <label for="param-cfg">CFG Value (LM Guidance): <span id="val-cfg">2.5</span></label>
+                <input type="range" id="param-cfg" min="1.0" max="6.0" step="0.1" value="2.5">
+              </div>
+              <div class="param-item">
+                <label for="param-steps">Inference Timesteps: <span id="val-steps">10</span></label>
+                <input type="range" id="param-steps" min="4" max="30" step="1" value="10">
+              </div>
+            </div>
+          </details>
+        </div>
+
+        <div class="controls-bar">
+          <button type="button" id="btn-clear" class="btn btn-secondary">ล้างค่า</button>
+          <div class="action-buttons-group">
             <button type="button" id="btn-process" class="btn btn-primary">
               <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <polygon points="5 3 19 12 5 21 5 3"></polygon>
               </svg>
-              <span>วิเคราะห์ & สร้างข้อความ</span>
+              <span>วิเคราะห์ & สร้างสคริปต์</span>
+            </button>
+            <button type="button" id="btn-synthesize-direct" class="btn btn-accent">
+              <svg class="btn-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2a3 3 0 0 0-3 3v7a3 3 0 0 0 6 0V5a3 3 0 0 0-3-3Z"></path>
+                <path d="M19 10v2a7 7 0 0 1-14 0v-2"></path>
+              </svg>
+              <span>🎙️ สร้างเสียงพูด (Synthesize)</span>
             </button>
           </div>
         </div>
       </section>
 
-      <!-- Right Column: Output & Text Editor -->
+      <!-- Right Column: Output, Script Editor & Audio Player -->
       <section class="card output-card">
         <div class="card-header">
           <div class="card-title-group">
             <span class="step-num">2</span>
-            <h2>ข้อความพร้อมส่ง TTS (แก้ไขได้ - Editable Output)</h2>
+            <h2>สคริปต์และสตูดิโอเสียง (Output & Audio Studio)</h2>
           </div>
           <div id="model-badge" class="model-badge hidden">
             <span id="model-name">gemini-2.5-flash</span>
@@ -112,11 +171,28 @@
           </div>
         </div>
 
+        <!-- Audio Player Section -->
+        <div id="audio-player-card" class="audio-player-card hidden">
+          <div class="player-header">
+            <div class="player-status">
+              <span class="audio-pulse-dot"></span>
+              <span class="player-title" id="player-title">สังเคราะห์เสียงสำเร็จ (48kHz WAV)</span>
+            </div>
+            <a id="btn-download-audio" href="#" download="synthesized.wav" class="btn btn-sm btn-outline">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+              <span>ดาวน์โหลด WAV</span>
+            </a>
+          </div>
+          <div class="player-controls">
+            <audio id="audio-player" controls class="native-audio-player"></audio>
+          </div>
+        </div>
+
         <!-- Tab Controls -->
         <div class="tab-nav">
           <button type="button" class="tab-btn active" data-tab="editor">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path></svg>
-            Text & Tag Editor
+            สคริปต์ & Instruction Editor
           </button>
           <button type="button" class="tab-btn" data-tab="segments">
             <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 16V8a2 2 0 0 0-1-1.73l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.73l7 4a2 2 0 0 0 2 0l7-4A2 2 0 0 0 21 16z"></path></svg>
@@ -133,7 +209,7 @@
           <!-- Loading State -->
           <div id="loading-state" class="state-container hidden">
             <div class="spinner"></div>
-            <p class="state-text">กำลังวิเคราะห์ข้อความด้วย LLM...</p>
+            <p class="state-text" id="loading-text">กำลังวิเคราะห์ข้อความด้วย LLM...</p>
           </div>
 
           <!-- Empty State -->
@@ -144,37 +220,35 @@
               </svg>
             </div>
             <p class="empty-title">ยังไม่มีข้อความผลลัพธ์</p>
-            <p class="empty-desc">พิมพ์ข้อความภาษาไทย หรือเลือกตัวอย่างด้านซ้าย แล้วกดปุ่ม "วิเคราะห์ & สร้างข้อความ"</p>
+            <p class="empty-desc">พิมพ์ข้อความภาษาไทย หรือเลือกตัวอย่างด้านซ้าย แล้วกดปุ่ม "วิเคราะห์ & สร้างสคริปต์" หรือ "สร้างเสียงพูด"</p>
           </div>
 
           <!-- Tab 1: Editable Text & Tag Editor -->
-          <div id="tab-editor" class="tab-pane active">
+          <div id="tab-editor" class="tab-pane hidden">
             <div class="editor-section">
               <!-- Quick Insert Toolbar -->
               <div class="tag-toolbar">
-                <span class="toolbar-label">คลิกเพื่อแทรก Tag ลงในข้อความ:</span>
+                <span class="toolbar-label">คลิกเพื่อแทรก Tag อารมณ์:</span>
                 <div class="tag-buttons-row">
+                  <button type="button" class="tag-insert-btn tone-calm" data-tag="[calm] ">+ [calm]</button>
                   <button type="button" class="tag-insert-btn tone-sad" data-tag="[sad] ">+ [sad]</button>
                   <button type="button" class="tag-insert-btn tone-angry" data-tag="[angry] ">+ [angry]</button>
                   <button type="button" class="tag-insert-btn tone-happy" data-tag="[happily] ">+ [happily]</button>
                   <button type="button" class="tag-insert-btn tone-excited" data-tag="[excited] ">+ [excited]</button>
-                  <button type="button" class="tag-insert-btn tone-calm" data-tag="[calm] ">+ [calm]</button>
                   <button type="button" class="tag-insert-btn tone-nervous" data-tag="[nervous] ">+ [nervous]</button>
                   <button type="button" class="tag-insert-btn tone-sarcastic" data-tag="[sarcastic] ">+ [sarcastic]</button>
-                  <button type="button" class="tag-insert-btn tone-neutral" data-tag="[very sad] ">+ [very...]</button>
-                  <button type="button" class="tag-insert-btn tone-neutral" data-tag="[slightly sad] ">+ [slightly...]</button>
                 </div>
               </div>
 
               <!-- Main Editable Textarea -->
               <div class="editor-box">
                 <div class="editor-header">
-                  <span class="editor-label">ข้อความที่พร้อมส่งเข้า TTS (สามารถพิมพ์แก้ไขได้โดยตรง):</span>
+                  <span class="editor-label">สคริปต์พร้อมส่งเข้า TTS (สามารถแก้ไขข้อความได้โดยตรง):</span>
                   <div class="editor-actions">
                     <span id="output-char-counter" class="char-counter">0 ตัวอักษร</span>
                     <button type="button" class="btn-copy" id="btn-copy-output" title="คัดลอกข้อความทั้งหมด">
                       <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-                      <span>คัดลอกข้อความ</span>
+                      <span>คัดลอกสคริปต์</span>
                     </button>
                   </div>
                 </div>
@@ -182,14 +256,14 @@
                   id="output-editable-text" 
                   class="output-textarea" 
                   rows="5"
-                  placeholder="ผลลัพธ์ข้อความพร้อม Tag จะปรากฏที่นี่ และคุณสามารถแก้ไขหรือปรับเปลี่ยนคำได้ตามต้องการ..."
+                  placeholder="ผลลัพธ์สคริปต์พร้อม Tag/Instruction จะปรากฏที่นี่..."
                   spellcheck="false"
                 ></textarea>
               </div>
 
               <!-- Live Highlight Preview -->
               <div class="preview-box">
-                <span class="preview-label">Live Visual Tag Preview:</span>
+                <span class="preview-label">Live Visual Tag / Instruction Preview:</span>
                 <div id="live-tag-preview" class="live-preview-content"></div>
               </div>
 
@@ -227,20 +301,20 @@
 
     <!-- Tone Legend Footer -->
     <footer class="tone-legend-card">
-      <div class="legend-title">Tier 1 Tone Dictionary (8 อารมณ์):</div>
+      <div class="legend-title">Tier 1 Tone & Emotion Dictionary (8 อารมณ์):</div>
       <div class="legend-grid">
+        <div class="legend-item"><span class="tone-chip tone-calm">calm</span><span>สงบ / นุ่มนวล / ผ่อนคลาย</span></div>
         <div class="legend-item"><span class="tone-chip tone-neutral">neutral</span><span>เป็นกลาง / บรรยาย</span></div>
-        <div class="legend-item"><span class="tone-chip tone-sad">sad</span><span>เศร้า / เสียใจ</span></div>
-        <div class="legend-item"><span class="tone-chip tone-happy">happy</span><span>ร่าเริง / ดีใจ</span></div>
-        <div class="legend-item"><span class="tone-chip tone-angry">angry</span><span>โกรธ / เสียงแข็ง</span></div>
+        <div class="legend-item"><span class="tone-chip tone-sad">sad</span><span>เศร้า / เสียใจ / ตัดพ้อ</span></div>
+        <div class="legend-item"><span class="tone-chip tone-happy">happy</span><span>ร่าเริง / ดีใจ / ยิ้มแย้ม</span></div>
+        <div class="legend-item"><span class="tone-chip tone-angry">angry</span><span>โกรธ / เสียงแข็ง / ดุดัน</span></div>
         <div class="legend-item"><span class="tone-chip tone-excited">excited</span><span>ตื่นเต้น / กระตือรือร้น</span></div>
-        <div class="legend-item"><span class="tone-chip tone-calm">calm</span><span>สงบ / นุ่มนวล</span></div>
-        <div class="legend-item"><span class="tone-chip tone-nervous">nervous</span><span>ประหม่า / ลังเล</span></div>
+        <div class="legend-item"><span class="tone-chip tone-nervous">nervous</span><span>ประหม่า / ลังเล / กังวล</span></div>
         <div class="legend-item"><span class="tone-chip tone-sarcastic">sarcastic</span><span>ประชด / แดกดัน</span></div>
       </div>
     </footer>
   </div>
 
-  <script src="/static/app.js"></script>
+  <script src="/static/app.js?v=2.0.1"></script>
 </body>
 </html>

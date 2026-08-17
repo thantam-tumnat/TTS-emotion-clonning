@@ -24,6 +24,13 @@ class Settings(BaseSettings):
     reanchor_chars: Optional[int] = None
     segmenter_engine: str = "crfcut"
 
+    # SiangTTS / VoxCPM2 Voice Cloning
+    siangtts_base_model: str = "openbmb/VoxCPM2"
+    siangtts_adapter: str = "dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA"
+    siangtts_device: str = ""
+    siangtts_ref_dir: str = "ref"
+    siangtts_cache_dir: str = "voice_cache"
+
     @field_validator("reanchor_chars", mode="before")
     @classmethod
     def parse_reanchor_chars(cls, v):

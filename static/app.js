@@ -4,12 +4,29 @@ document.addEventListener('DOMContentLoaded', () => {
   const guidanceInput = document.getElementById('guidance-input');
   const charCounter = document.getElementById('char-counter');
   const engineSelect = document.getElementById('engine-select');
+  const speakerSelect = document.getElementById('speaker-select');
+  const speakerGroup = document.getElementById('speaker-group');
+  const uploadVoiceArea = document.getElementById('upload-voice-area');
+  const audioFileInput = document.getElementById('audio-file-input');
+  const dropZone = document.getElementById('drop-zone');
+  const dropZoneContent = document.getElementById('drop-zone-content');
+  const fileInfoBadge = document.getElementById('file-info-badge');
+  const selectedFilename = document.getElementById('selected-filename');
+  const btnRemoveFile = document.getElementById('btn-remove-file');
+  const btnSaveSpeaker = document.getElementById('btn-save-speaker');
+
+  const paramCfg = document.getElementById('param-cfg');
+  const paramSteps = document.getElementById('param-steps');
+  const valCfg = document.getElementById('val-cfg');
+  const valSteps = document.getElementById('val-steps');
+
   const btnProcess = document.getElementById('btn-process');
+  const btnSynthesizeDirect = document.getElementById('btn-synthesize-direct');
   const btnClear = document.getElementById('btn-clear');
   const presetButtons = document.querySelectorAll('.preset-btn');
   const healthStatus = document.getElementById('health-status');
   
-  // DOM Elements - Output / Editor Side
+  // DOM Elements - Output / Editor & Audio Player Side
   const modelBadge = document.getElementById('model-badge');
   const modelName = document.getElementById('model-name');
   const fallbackIndicator = document.getElementById('fallback-indicator');
@@ -18,6 +35,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const tabPanes = document.querySelectorAll('.tab-pane');
   
   const loadingState = document.getElementById('loading-state');
+  const loadingText = document.getElementById('loading-text');
   const emptyState = document.getElementById('empty-state');
   
   const outputEditableText = document.getElementById('output-editable-text');
@@ -34,8 +52,19 @@ document.addEventListener('DOMContentLoaded', () => {
   const btnCopyPrompt = document.getElementById('btn-copy-prompt');
   const tagInsertButtons = document.querySelectorAll('.tag-insert-btn');
 
+  const audioPlayerCard = document.getElementById('audio-player-card');
+  const audioPlayer = document.getElementById('audio-player');
+  const btnDownloadAudio = document.getElementById('btn-download-audio');
+
+  let selectedAudioFile = null;
+  let currentAudioUrl = null;
+
   // Presets Data
   const PRESETS = {
+    calm: {
+      text: '[calm] หายใจเข้าลึกๆ ผ่อนคลาย แล้วค่อยๆ ปล่อยวางทุกอย่างลงนะ',
+      guidance: 'สงบ นุ่มนวล ช้าๆ ผ่อนคลาย'
+    },
     shift: {
       text: 'ขอโทษนะ ฉันไม่ได้ตั้งใจ แต่เธอก็ไม่ฟังฉันเลย',
       guidance: 'ท่อนแรกขอเศร้าขอโทษจากใจ ท่อนหลังตัดพ้อโกรธ'
@@ -48,33 +77,163 @@ document.addEventListener('DOMContentLoaded', () => {
       text: 'ยินดีด้วยนะ! ในที่สุดก็ทำสำเร็จแล้ว สุดยอดไปเลย!',
       guidance: 'ดีใจสุดขีด ร่าเริงมาก'
     },
-    calm: {
-      text: 'หายใจเข้าลึกๆ ผ่อนคลาย แล้วค่อยๆ ปล่อยวางทุกอย่างลงนะ',
-      guidance: 'สงบ นุ่มนวล ช้าๆ'
-    },
     news: {
       text: 'กรมอุตุนิยมวิทยาประกาศเตือน จะมีฝนตกหนักถึงหนักมากในหลายพื้นที่ ประชาชนควรระมัดระวังน้ำท่วมฉับพลัน',
       guidance: 'อ่านข่าว สุภาพ เป็นทางการ เป็นกลาง'
     }
   };
 
-  // Check API Health
-  async function checkHealth() {
+  // API Base URL (auto-detect port or direct file load)
+  const API_BASE = (window.location.protocol === 'file:' || (window.location.port && window.location.port !== '8000'))
+    ? 'http://127.0.0.1:8000'
+    : '';
+
+  // Slider updates
+  paramCfg.addEventListener('input', () => {
+    valCfg.textContent = parseFloat(paramCfg.value).toFixed(1);
+  });
+  paramSteps.addEventListener('input', () => {
+    valSteps.textContent = paramSteps.value;
+  });
+
+  // Check API Health & Fetch Speakers
+  async function checkHealthAndSpeakers() {
     try {
-      const res = await fetch('/health');
+      const res = await fetch(`${API_BASE}/health`);
       if (res.ok) {
+        const data = await res.json();
         healthStatus.className = 'status-indicator online';
-        healthStatus.querySelector('.status-label').textContent = 'API พร้อมใช้งาน (Online)';
+        healthStatus.querySelector('.status-label').textContent = `API พร้อมใช้งาน (${data.speakers_count || 0} voices)`;
       } else {
         throw new Error('Health check failed');
       }
     } catch (e) {
       healthStatus.className = 'status-indicator offline';
-      healthStatus.querySelector('.status-label').textContent = 'ไม่สามารถเชื่อมต่อ API ได้';
+      healthStatus.querySelector('.status-label').textContent = 'ไม่สามารถเชื่อมต่อ API ได้ (กรุณารันเซิร์ฟเวอร์ที่พอร์ต 8000)';
+    }
+
+    loadSpeakersList();
+  }
+
+  async function loadSpeakersList() {
+    try {
+      const res = await fetch(`${API_BASE}/speakers`);
+      if (res.ok) {
+        const data = await res.json();
+        const prevVal = speakerSelect.value;
+        speakerSelect.innerHTML = '<option value="">-- ไม่ใช้เสียงโคลน (Base Voice) --</option>';
+        (data.speakers || []).forEach(spk => {
+          const opt = document.createElement('option');
+          opt.value = spk.id;
+          opt.textContent = `🎙️ ${spk.name} (${spk.filename})`;
+          speakerSelect.appendChild(opt);
+        });
+        if (prevVal) speakerSelect.value = prevVal;
+      }
+    } catch (e) {
+      console.warn('Could not load speakers:', e);
     }
   }
-  checkHealth();
-  setInterval(checkHealth, 30000);
+
+  checkHealthAndSpeakers();
+  setInterval(checkHealthAndSpeakers, 30000);
+
+  // Engine Switch Visibility
+  function updateEngineVisibility() {
+    const eng = engineSelect.value;
+    if (eng === 'voxcpm' || eng === 'siangtts') {
+      speakerGroup.classList.remove('hidden');
+      uploadVoiceArea.classList.remove('hidden');
+    } else {
+      speakerGroup.classList.add('hidden');
+      uploadVoiceArea.classList.add('hidden');
+    }
+  }
+  engineSelect.addEventListener('change', updateEngineVisibility);
+  updateEngineVisibility();
+
+  // File Upload & Drag-and-Drop
+  dropZone.addEventListener('click', () => {
+    audioFileInput.click();
+  });
+
+  audioFileInput.addEventListener('change', (e) => {
+    if (e.target.files && e.target.files[0]) {
+      handleAudioFileSelected(e.target.files[0]);
+    }
+  });
+
+  ['dragenter', 'dragover'].forEach(eventName => {
+    dropZone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.classList.add('drag-over');
+    });
+  });
+
+  ['dragleave', 'drop'].forEach(eventName => {
+    dropZone.addEventListener(eventName, (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      dropZone.classList.remove('drag-over');
+    });
+  });
+
+  dropZone.addEventListener('drop', (e) => {
+    if (e.dataTransfer && e.dataTransfer.files && e.dataTransfer.files[0]) {
+      handleAudioFileSelected(e.dataTransfer.files[0]);
+    }
+  });
+
+  function handleAudioFileSelected(file) {
+    selectedAudioFile = file;
+    selectedFilename.textContent = `🎵 ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
+    dropZoneContent.classList.add('hidden');
+    fileInfoBadge.classList.remove('hidden');
+    btnSaveSpeaker.classList.remove('hidden');
+  }
+
+  btnRemoveFile.addEventListener('click', (e) => {
+    e.stopPropagation();
+    selectedAudioFile = null;
+    audioFileInput.value = '';
+    dropZoneContent.classList.remove('hidden');
+    fileInfoBadge.classList.add('hidden');
+    btnSaveSpeaker.classList.add('hidden');
+  });
+
+  // Save Speaker Profile
+  btnSaveSpeaker.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    if (!selectedAudioFile) return;
+
+    const defaultName = selectedAudioFile.name.replace(/\.[^/.]+$/, "");
+    const speakerName = prompt("ตั้งชื่อโปรไฟล์เสียง (Speaker ID / Name):", defaultName);
+    if (!speakerName) return;
+
+    const formData = new FormData();
+    formData.append('file', selectedAudioFile);
+    formData.append('speaker_id', speakerName);
+
+    try {
+      btnSaveSpeaker.disabled = true;
+      btnSaveSpeaker.textContent = "กำลังบันทึก...";
+      const res = await fetch(`${API_BASE}/speakers`, {
+        method: 'POST',
+        body: formData
+      });
+      if (!res.ok) throw new Error("Upload failed");
+      const result = await res.json();
+      alert(`บันทึกเสียง '${result.name}' สำเร็จ!`);
+      await loadSpeakersList();
+      speakerSelect.value = result.id;
+    } catch (err) {
+      alert(`ไม่สามารถบันทึกเสียงได้: ${err.message}`);
+    } finally {
+      btnSaveSpeaker.disabled = false;
+      btnSaveSpeaker.textContent = "บันทึกเป็นโปรไฟล์เสียง";
+    }
+  });
 
   // Character Counter for Input
   textInput.addEventListener('input', () => {
@@ -130,15 +289,18 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   });
 
-  function showLoading(isLoading) {
+  function showLoading(isLoading, customText = 'กำลังวิเคราะห์ข้อความด้วย LLM...') {
     if (isLoading) {
+      loadingText.textContent = customText;
       loadingState.classList.remove('hidden');
       emptyState.classList.add('hidden');
       tabPanes.forEach(pane => pane.classList.add('hidden'));
       btnProcess.disabled = true;
+      btnSynthesizeDirect.disabled = true;
     } else {
       loadingState.classList.add('hidden');
       btnProcess.disabled = false;
+      btnSynthesizeDirect.disabled = false;
     }
   }
 
@@ -149,6 +311,7 @@ document.addEventListener('DOMContentLoaded', () => {
     modelBadge.classList.add('hidden');
     outputEditableText.value = '';
     liveTagPreview.innerHTML = '';
+    audioPlayerCard.classList.add('hidden');
   }
 
   function formatIntensityStars(intensity) {
@@ -158,8 +321,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function highlightAudioTags(text) {
-    // Replace [tag] with highlighted badge span
-    return text.replace(/(\[[a-zA-Z\s]+\])/g, '<span class="tag-highlight">$1</span>');
+    // Replace [tag] or (Instruction) with highlighted badge span
+    let formatted = text.replace(/(\[[a-zA-Z\s]+\])/g, '<span class="tag-highlight">$1</span>');
+    formatted = formatted.replace(/(\([a-zA-Z\s,.-]+\))/g, '<span class="instruction-highlight">$1</span>');
+    return formatted;
   }
 
   function escapeHtml(str) {
@@ -189,21 +354,21 @@ document.addEventListener('DOMContentLoaded', () => {
     textarea.dispatchEvent(new Event('input'));
   }
 
-  // Process Annotation & Speak
+  // Process Annotation & Render Script
   async function handleAnnotate() {
     const text = textInput.value.trim();
     if (!text) {
-      alert('กรุณากรอกข้อความภาษาไทยก่อนกดวิเคราะห์');
+      alert('กรุณากรอกข้อความภาษาไทย หรือคลิกเลือกตัวอย่าง Preset ด้านบนก่อนกดวิเคราะห์');
       textInput.focus();
       return;
     }
 
     const guidance = guidanceInput.value.trim();
     const engine = engineSelect.value;
-    showLoading(true);
+    showLoading(true, 'กำลังวิเคราะห์ข้อความและจัดเรียงโทนอารมณ์...');
 
     try {
-      const response = await fetch('/speak', {
+      const response = await fetch(`${API_BASE}/speak`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json'
@@ -223,14 +388,99 @@ document.addEventListener('DOMContentLoaded', () => {
       const data = await response.json();
       renderResults(data, engine);
     } catch (err) {
-      alert(`เกิดข้อผิดพลาดในการประมวลผล: ${err.message}`);
+      alert(`เกิดข้อผิดพลาดในการประมวลผล: ${err.message}\n(โปรดตรวจสอบว่าเปิดเซิร์ฟเวอร์ backend หรือยัง)`);
       showEmptyState();
     } finally {
       showLoading(false);
     }
   }
 
+  // Synthesize Speech
+  async function handleSynthesize() {
+    const text = (outputEditableText.value.trim() || textInput.value.trim());
+    if (!text) {
+      alert('กรุณากรอกข้อความภาษาไทยก่อนสังเคราะห์เสียง');
+      textInput.focus();
+      return;
+    }
+
+    const engine = engineSelect.value;
+    const speakerId = speakerSelect.value || null;
+    const cfgValue = parseFloat(paramCfg.value) || 2.5;
+    const timesteps = parseInt(paramSteps.value, 10) || 10;
+    const guidance = guidanceInput.value.trim();
+
+    showLoading(true, '🎙️ กำลังสังเคราะห์เสียงด้วย SiangTTS (VoxCPM2)...');
+
+    try {
+      let response;
+      if (selectedAudioFile) {
+        // Upload custom audio file directly
+        const formData = new FormData();
+        formData.append('text', text);
+        formData.append('file', selectedAudioFile);
+        if (guidance) formData.append('guidance', guidance);
+        formData.append('cfg_value', cfgValue);
+        formData.append('inference_timesteps', timesteps);
+        formData.append('auto_annotate', 'true');
+
+        response = await fetch(`${API_BASE}/synthesize/upload`, {
+          method: 'POST',
+          body: formData
+        });
+      } else {
+        // JSON Synthesize request
+        response = await fetch(`${API_BASE}/synthesize`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            text: text,
+            speaker_id: speakerId,
+            guidance: guidance || null,
+            engine: engine,
+            cfg_value: cfgValue,
+            inference_timesteps: timesteps,
+            auto_annotate: true
+          })
+        });
+      }
+
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || `Synthesis failed: ${response.status}`);
+      }
+
+      const audioBlob = await response.blob();
+      if (currentAudioUrl) {
+        URL.revokeObjectURL(currentAudioUrl);
+      }
+      currentAudioUrl = URL.createObjectURL(audioBlob);
+
+      // Play audio in player
+      audioPlayer.src = currentAudioUrl;
+      btnDownloadAudio.href = currentAudioUrl;
+      btnDownloadAudio.download = `siangtts_${speakerId || 'voice'}_${Date.now()}.wav`;
+      audioPlayerCard.classList.remove('hidden');
+      audioPlayer.play().catch(() => {});
+
+      // Also trigger text annotation render if output was empty
+      if (!outputEditableText.value.trim()) {
+        handleAnnotate();
+      } else {
+        const activeTab = document.querySelector('.tab-btn.active').getAttribute('data-tab');
+        document.getElementById(`tab-${activeTab}`).classList.remove('hidden');
+      }
+    } catch (err) {
+      alert(`เกิดข้อผิดพลาดในการสังเคราะห์เสียง: ${err.message}`);
+    } finally {
+      showLoading(false);
+    }
+  }
+
   function renderResults(data, engine) {
+    emptyState.classList.add('hidden');
     // Show model badge
     modelBadge.classList.remove('hidden');
     modelName.textContent = data.model_used;
@@ -247,7 +497,7 @@ document.addEventListener('DOMContentLoaded', () => {
     updateOutputPreview();
 
     // Populate Gemini Prompt if available
-    if (data.prompt) {
+    if (data.prompt && engine === 'gemini') {
       geminiPromptSection.classList.remove('hidden');
       geminiPromptEditable.value = data.prompt;
     } else {
@@ -276,7 +526,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 3. Raw JSON Tab
     rawJson.textContent = JSON.stringify(data, null, 2);
 
-    // Default to editor tab or preserve current
+    // Default to editor tab
     const activeTab = document.querySelector('.tab-btn.active').getAttribute('data-tab');
     document.getElementById(`tab-${activeTab}`).classList.remove('hidden');
   }
@@ -306,12 +556,13 @@ document.addEventListener('DOMContentLoaded', () => {
   setupCopyBtn(btnCopyPrompt, () => geminiPromptEditable.value);
 
   btnProcess.addEventListener('click', handleAnnotate);
+  btnSynthesizeDirect.addEventListener('click', handleSynthesize);
 
-  // Allow Ctrl+Enter to trigger annotate
+  // Allow Ctrl+Enter to trigger annotate or synthesize
   textInput.addEventListener('keydown', (e) => {
     if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') {
       e.preventDefault();
-      handleAnnotate();
+      handleSynthesize();
     }
   });
   if (guidanceInput) {
