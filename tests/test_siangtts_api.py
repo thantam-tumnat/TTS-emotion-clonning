@@ -130,3 +130,78 @@ def test_speak_endpoint_voxcpm(client):
     assert data["engine"] == "voxcpm"
     assert len(data["segments"]) > 0
     assert "(Calm" in data["text"] or "หายใจเข้าลึกๆ" in data["text"]
+
+
+# ---------------------------------------------------------------------------
+# Auto voice consistency across chunks
+# ---------------------------------------------------------------------------
+
+def _spy_prompt_caches(monkeypatch):
+    """Record the prompt_cache handed to each chunk of a synthesize_many run."""
+    service = svc.siangtts_service
+    synth = service.get_synthesizer()
+    seen = []
+    original = synth.synth
+
+    def spy(text, **kwargs):
+        seen.append(kwargs.get("prompt_cache"))
+        return original(text, **kwargs)
+
+    monkeypatch.setattr(synth, "synth", spy)
+    return service, seen
+
+
+def test_auto_consistency_clones_first_chunk_when_no_speaker(monkeypatch):
+    """Unpinned voice: chunks after the first reuse the first chunk's timbre.
+
+    Without this, VoxCPM2 resamples the speaker per call and a single utterance
+    changes voice mid-sentence.
+    """
+    monkeypatch.setattr(svc.settings, "siangtts_auto_voice_consistency", True, raising=False)
+    service, seen = _spy_prompt_caches(monkeypatch)
+
+    service.synthesize_many(["(happy)หนึ่ง", "(sad)สอง", "(calm)สาม"])
+
+    assert seen[0] is None, "first chunk has nothing to clone from yet"
+    assert seen[1] is not None, "second chunk should reuse the cloned voice"
+    assert seen[1] == seen[2], "every later chunk shares one voice"
+
+
+def test_auto_consistency_can_be_disabled(monkeypatch):
+    monkeypatch.setattr(svc.settings, "siangtts_auto_voice_consistency", False, raising=False)
+    service, seen = _spy_prompt_caches(monkeypatch)
+
+    service.synthesize_many(["(happy)หนึ่ง", "(sad)สอง"])
+
+    assert seen == [None, None]
+
+
+def test_auto_consistency_skipped_for_single_chunk(monkeypatch):
+    """One chunk cannot drift, so it must not pay for a needless clone."""
+    monkeypatch.setattr(svc.settings, "siangtts_auto_voice_consistency", True, raising=False)
+    service, seen = _spy_prompt_caches(monkeypatch)
+
+    service.synthesize_many(["(happy)หนึ่งเดียว"])
+
+    assert seen == [None]
+
+
+def test_explicit_speaker_is_not_overridden(monkeypatch):
+    """A registered speaker stays the reference for every chunk."""
+    monkeypatch.setattr(svc.settings, "siangtts_auto_voice_consistency", True, raising=False)
+    service, seen = _spy_prompt_caches(monkeypatch)
+    service._voices["pinned"] = "pinned_latent"
+
+    try:
+        service.synthesize_many(["(happy)หนึ่ง", "(sad)สอง"], speaker_id="pinned")
+    finally:
+        service._voices.pop("pinned", None)
+
+    assert seen == ["pinned_latent", "pinned_latent"]
+
+
+def test_spoken_words_strips_only_leading_ascii_tag():
+    assert svc._spoken_words("(sad)เล่นโซเชียล") == "เล่นโซเชียล"
+    assert svc._spoken_words("ไม่มีแท็ก") == "ไม่มีแท็ก"
+    # Thai in brackets is content, not direction.
+    assert svc._spoken_words("ราคา (พิเศษ) วันนี้") == "ราคา (พิเศษ) วันนี้"

@@ -21,6 +21,7 @@ from app.config import settings
 from app.segmenter import segment_text
 from app.annotator import annotator
 from app.renderers import get_renderer
+from app.renderers.voxcpm import split_style_chunks
 from app.services.siangtts_service import siangtts_service, SynthesizerUnavailable
 
 
@@ -199,22 +200,26 @@ async def synthesize_endpoint(req: SynthesizeRequest):
     if not text:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    # If text has brackets or auto-annotate requested, prepare rendered text
-    if req.auto_annotate and not text.startswith("("):
-        clauses = segment_text(text)
-        annotated = annotator.annotate(
-            original_text=text,
-            clauses=clauses,
-            guidance=req.guidance,
-            custom_model=req.model
-        )
-        renderer = get_renderer(req.engine if req.engine in ("voxcpm", "siangtts") else "voxcpm")
-        rendered = renderer.render(annotated.segments)
-        # One chunk per tone run, each with its instruction leading, so no style
-        # parenthetical is ever spoken aloud mid-utterance.
-        parts = [c.text for c in rendered.chunks] if rendered.chunks else [rendered.text]
-    else:
-        parts = [text]
+    # Hand-written style tags win: the user has already said where each emotion
+    # starts, so split on them rather than re-annotating (and rather than sending
+    # one blob, which would speak every mid-text tag aloud).
+    parts = split_style_chunks(text)
+    if not parts:
+        if req.auto_annotate:
+            clauses = segment_text(text)
+            annotated = annotator.annotate(
+                original_text=text,
+                clauses=clauses,
+                guidance=req.guidance,
+                custom_model=req.model
+            )
+            renderer = get_renderer(req.engine if req.engine in ("voxcpm", "siangtts") else "voxcpm")
+            rendered = renderer.render(annotated.segments)
+            # One chunk per tone run, each with its instruction leading, so no style
+            # parenthetical is ever spoken aloud mid-utterance.
+            parts = [c.text for c in rendered.chunks] if rendered.chunks else [rendered.text]
+        else:
+            parts = [text]
 
     # Perform synthesis via SiangTTSService
     try:
@@ -253,19 +258,21 @@ async def synthesize_with_upload_endpoint(
     if not clean_text:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    if auto_annotate and not clean_text.startswith("("):
-        clauses = segment_text(clean_text)
-        annotated = annotator.annotate(
-            original_text=clean_text,
-            clauses=clauses,
-            guidance=guidance,
-            custom_model=model
-        )
-        renderer = get_renderer("voxcpm")
-        rendered = renderer.render(annotated.segments)
-        parts = [c.text for c in rendered.chunks] if rendered.chunks else [rendered.text]
-    else:
-        parts = [clean_text]
+    parts = split_style_chunks(clean_text)
+    if not parts:
+        if auto_annotate:
+            clauses = segment_text(clean_text)
+            annotated = annotator.annotate(
+                original_text=clean_text,
+                clauses=clauses,
+                guidance=guidance,
+                custom_model=model
+            )
+            renderer = get_renderer("voxcpm")
+            rendered = renderer.render(annotated.segments)
+            parts = [c.text for c in rendered.chunks] if rendered.chunks else [rendered.text]
+        else:
+            parts = [clean_text]
 
     audio_bytes = await file.read() if file else None
     filename = file.filename if file else None

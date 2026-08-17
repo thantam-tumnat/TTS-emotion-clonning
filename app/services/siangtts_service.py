@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -14,6 +15,14 @@ AUDIO_EXTS = {".wav", ".mp3", ".m4a", ".ogg", ".flac"}
 
 # Mock-only. The real synthesizer reports the model's own rate.
 MOCK_SAMPLE_RATE = 48000
+
+# A leading "(sad)" is direction for the model, not words to transcribe.
+_LEADING_STYLE_TAG_RE = re.compile(r"^\([a-zA-Z][a-zA-Z\s,.\-]*\)\s*")
+
+
+def _spoken_words(chunk: str) -> str:
+    """The part of a chunk that is actually voiced, minus its style instruction."""
+    return _LEADING_STYLE_TAG_RE.sub("", chunk).strip()
 
 
 class SynthesizerUnavailable(RuntimeError):
@@ -421,6 +430,34 @@ class SiangTTSService:
 
         return None, None, None
 
+    def _clone_voice_from_audio(self, synth: Any, wav: Any, sample_rate: int, chunk: str) -> Any:
+        """Encode already-generated audio into a prompt cache.
+
+        Lets a run of chunks keep one voice when the caller pinned no speaker.
+        Returns None if cloning fails -- a drifting voice is better than a failed
+        request, and the caller simply carries on unconditioned.
+        """
+        import soundfile as sf
+
+        tmp_path = None
+        try:
+            with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
+                tmp_path = tf.name
+            sf.write(tmp_path, wav, sample_rate, format="WAV", subtype="PCM_16")
+            return synth.build_voice(tmp_path, _spoken_words(chunk) or None)
+        except Exception as e:
+            print(
+                f"[SiangTTS] Could not clone first chunk for voice consistency: {e}",
+                file=sys.stderr,
+            )
+            return None
+        finally:
+            if tmp_path and os.path.exists(tmp_path):
+                try:
+                    os.remove(tmp_path)
+                except Exception:
+                    pass
+
     def synthesize(
         self,
         text: str,
@@ -476,16 +513,32 @@ class SiangTTSService:
             rendered = []
             gap = np.zeros(int(sample_rate * gap_ms / 1000), dtype="float32")
             for i, chunk in enumerate(chunks):
-                wav = synth.synth(
-                    text=chunk,
-                    ref_audio=ref_audio_path,
-                    prompt_cache=prompt_cache,
-                    cfg_value=cfg_value,
-                    inference_timesteps=inference_timesteps,
+                wav = np.asarray(
+                    synth.synth(
+                        text=chunk,
+                        ref_audio=ref_audio_path,
+                        prompt_cache=prompt_cache,
+                        cfg_value=cfg_value,
+                        inference_timesteps=inference_timesteps,
+                    ),
+                    dtype="float32",
                 )
                 if i:
                     rendered.append(gap)
-                rendered.append(np.asarray(wav, dtype="float32"))
+                rendered.append(wav)
+
+                # Nothing pinned the voice, so every later chunk would be a fresh
+                # speaker. Adopt this first one as the reference for the remainder.
+                if (
+                    settings.siangtts_auto_voice_consistency
+                    and i == 0
+                    and len(chunks) > 1
+                    and prompt_cache is None
+                    and ref_audio_path is None
+                ):
+                    prompt_cache = self._clone_voice_from_audio(
+                        synth, wav, sample_rate, chunk
+                    )
 
             audio = np.concatenate(rendered) if len(rendered) > 1 else rendered[0]
 

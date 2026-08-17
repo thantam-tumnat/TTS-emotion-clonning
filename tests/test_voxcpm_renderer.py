@@ -1,6 +1,6 @@
 import pytest
 from app.models import Segment, Tone
-from app.renderers.voxcpm import VoxCPMRenderer, format_voxcpm_instruction
+from app.renderers.voxcpm import VoxCPMRenderer, format_voxcpm_instruction, split_style_chunks
 from app.renderers import get_renderer
 
 
@@ -85,3 +85,40 @@ def test_voxcpm_renderer_merges_consecutive_same_tone():
     res = renderer.render(segments)
     assert len(res.chunks) == 1
     assert res.chunks[0].body == "ดีใจมากเลย ขอบคุณนะ"
+
+
+# ---------------------------------------------------------------------------
+# split_style_chunks -- hand-written inline style tags
+# ---------------------------------------------------------------------------
+
+def test_split_style_chunks_splits_on_mid_text_tag():
+    """A tag typed mid-text becomes its own chunk instead of being spoken aloud."""
+    text = "(Excited and energetic tone)ของดีมากครับ\n(sad)แต่ของหมดแล้ว"
+    chunks = split_style_chunks(text)
+    assert len(chunks) == 2
+    assert chunks[0] == "(Excited and energetic tone)ของดีมากครับ"
+    assert chunks[1] == "(sad)แต่ของหมดแล้ว"
+
+
+def test_split_style_chunks_returns_empty_without_tags():
+    """No tag means the caller should fall back to LLM annotation."""
+    assert split_style_chunks("สวัสดีครับ วันนี้อากาศดีมาก") == []
+
+
+def test_split_style_chunks_ignores_thai_parentheses():
+    """Thai inside brackets is spoken content, not a style instruction."""
+    assert split_style_chunks("ราคา (พิเศษ) วันนี้เท่านั้น") == []
+
+
+def test_split_style_chunks_keeps_untagged_lead_text():
+    chunks = split_style_chunks("เริ่มก่อน(Angry)แล้วโกรธ")
+    assert chunks == ["เริ่มก่อน", "(Angry)แล้วโกรธ"]
+
+
+def test_split_style_chunks_single_leading_tag_is_one_chunk():
+    text = "(Calm and soothing voice)หายใจเข้าลึกๆ"
+    assert split_style_chunks(text) == [text]
+
+
+def test_split_style_chunks_drops_tag_with_empty_body():
+    assert split_style_chunks("(Angry)   ") == []

@@ -129,20 +129,18 @@
                 <span>โมเดล LLM สำหรับวิเคราะห์อารมณ์ (Gemini Model):</span>
               </label>
               <select id="llm-model-select" class="custom-select">
-                <option value="gemini-2.0-flash" selected>gemini-2.0-flash (⚡ แนะนำ: เร็ว & โควตาสูง)</option>
-                <option value="gemini-2.5-flash">gemini-2.5-flash (✨ ละเอียด ฉลาด)</option>
-                <option value="gemini-2.0-flash-lite">gemini-2.0-flash-lite (🚀 ประหยัดโควตาพิเศษ)</option>
-                <option value="gemini-1.5-flash">gemini-1.5-flash (👍 เสถียร)</option>
-                <option value="gemini-1.5-flash-8b">gemini-1.5-flash-8b (⚡ โมเดลขนาดเล็ก)</option>
-                <option value="gemini-2.5-pro">gemini-2.5-pro (🧠 วิเคราะห์ลึกซึ้ง)</option>
-                <option value="gemini-1.5-pro">gemini-1.5-pro (🧠 Pro เสถียร)</option>
+                <option value="gemini-3.6-flash" selected>gemini-3.6-flash (⚡ แนะนำ: เร็ว & เสถียร)</option>
+                <option value="gemini-3.7-flash">gemini-3.7-flash (✨ รุ่นใหม่ล่าสุด)</option>
+                <option value="gemini-3.5-flash-lite">gemini-3.5-flash-lite (🚀 ประหยัดโควตาพิเศษ)</option>
+                <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite (⚡ โมเดลขนาดเล็ก)</option>
+                <option value="gemini-flash-lite-latest">gemini-flash-lite-latest (🔄 ตามรุ่นล่าสุดอัตโนมัติ)</option>
                 <option value="custom">✏️ ระบุชื่อโมเดลเอง (Custom)...</option>
               </select>
             </div>
           </div>
           <div class="form-group hidden" id="custom-model-group" style="margin-top: 8px;">
             <label for="custom-model-input" class="field-label">ระบุชื่อโมเดลที่ต้องการ:</label>
-            <input type="text" id="custom-model-input" class="custom-input" placeholder="เช่น gemini-2.0-flash-exp หรือชื่อโมเดลอื่นๆ">
+            <input type="text" id="custom-model-input" class="custom-input" placeholder="เช่น gemini-3.6-flash หรือชื่อโมเดลอื่นๆ">
           </div>
 
           <!-- Advanced Parameters Collapsible -->
@@ -189,7 +187,7 @@
             <h2>สคริปต์และสตูดิโอเสียง (Output & Audio Studio)</h2>
           </div>
           <div id="model-badge" class="model-badge hidden">
-            <span id="model-name">gemini-2.0-flash</span>
+            <span id="model-name">gemini-3.6-flash</span>
             <span id="fallback-indicator" class="badge-tag normal">Normal</span>
           </div>
         </div>
@@ -209,8 +207,8 @@
           </div>
           <div id="error-detail-text" class="error-detail-text"></div>
           <div class="error-actions">
-            <button type="button" id="btn-switch-to-2flash" class="btn btn-xs btn-outline">🔄 สลับเป็น gemini-2.0-flash</button>
-            <button type="button" id="btn-switch-to-15flash" class="btn btn-xs btn-outline">🔄 สลับเป็น gemini-1.5-flash</button>
+            <button type="button" id="btn-switch-to-flash" class="btn btn-xs btn-outline">🔄 สลับเป็น gemini-3.6-flash</button>
+            <button type="button" id="btn-switch-to-flash-lite" class="btn btn-xs btn-outline">🔄 สลับเป็น gemini-3.5-flash-lite</button>
             <button type="button" id="btn-view-raw-json" class="btn btn-xs btn-secondary">🔍 ดูข้อมูล JSON ละเอียด</button>
           </div>
         </div>
@@ -303,6 +301,40 @@
                   placeholder="ผลลัพธ์สคริปต์พร้อม Tag/Instruction จะปรากฏที่นี่..."
                   spellcheck="false"
                 ></textarea>
+              </div>
+
+              <!-- Per-Segment Instruction Editor -->
+              <div class="editor-box" id="segmented-editor-box">
+                <div class="editor-header">
+                  <span class="editor-label">สคริปต์แบบแบ่งตามอารมณ์ (Instruction ต่อช่วง):</span>
+                  <div class="editor-actions">
+                    <div class="seg-format-toggle" id="seg-format-toggle">
+                      <button type="button" class="seg-format-btn active" data-format="full">เต็ม</button>
+                      <button type="button" class="seg-format-btn" data-format="short">สั้น</button>
+                    </div>
+                    <span id="segmented-char-counter" class="char-counter">0 ตัวอักษร</span>
+                    <button type="button" class="btn-copy" id="btn-copy-segmented" title="คัดลอกสคริปต์แบบแบ่งช่วง">
+                      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
+                      <span>คัดลอก</span>
+                    </button>
+                  </div>
+                </div>
+                <textarea
+                  id="segmented-editable-text"
+                  class="output-textarea"
+                  rows="4"
+                  placeholder="สคริปต์ที่มี Instruction กำกับแต่ละช่วงอารมณ์จะปรากฏที่นี่..."
+                  spellcheck="false"
+                ></textarea>
+                <label class="seg-use-toggle">
+                  <input type="checkbox" id="chk-use-segmented">
+                  <span>ใช้ช่องนี้ส่งเข้า TTS (แทนช่องบน)</span>
+                </label>
+                <p class="seg-editor-hint">
+                  แทรก instruction กลางข้อความได้เลย เช่น <code>(sad)</code> —
+                  ระบบจะตัดเป็นช่วงๆ ตามวงเล็บแล้วสังเคราะห์ทีละช่วง จึงไม่มีการอ่านวงเล็บออกเสียง
+                  (วงเล็บภาษาไทยถือเป็นเนื้อหาปกติ ไม่ใช่คำสั่ง)
+                </p>
               </div>
 
               <!-- Live Highlight Preview -->

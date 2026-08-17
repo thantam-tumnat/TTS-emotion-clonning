@@ -542,6 +542,66 @@ textarea:focus, .custom-input:focus {
   gap: 10px;
 }
 
+/* Full/short instruction switch on the per-segment editor */
+.seg-format-toggle {
+  display: inline-flex;
+  border: 1px solid var(--border-color, #2a3348);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.seg-format-btn {
+  padding: 3px 10px;
+  font-size: 0.72rem;
+  font-family: var(--font-thai);
+  background: transparent;
+  color: var(--text-muted, #7c8aa5);
+  border: none;
+  cursor: pointer;
+  transition: background 0.15s, color 0.15s;
+}
+
+.seg-format-btn:hover {
+  color: var(--text-secondary, #aab6cc);
+}
+
+.seg-format-btn.active {
+  background: var(--primary-color);
+  color: #fff;
+}
+
+.seg-use-toggle {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 0.75rem;
+  font-family: var(--font-thai);
+  color: var(--text-secondary);
+  cursor: pointer;
+  user-select: none;
+}
+
+.seg-use-toggle input {
+  accent-color: var(--primary-color);
+  cursor: pointer;
+}
+
+.seg-editor-hint code {
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--primary-light);
+  color: var(--primary-color);
+  font-size: 0.95em;
+}
+
+.seg-editor-hint {
+  margin: 0;
+  font-size: 0.7rem;
+  line-height: 1.5;
+  color: var(--text-muted, #7c8aa5);
+  font-family: var(--font-thai);
+}
+
 .output-textarea {
   min-height: 130px;
   font-family: var(--font-thai);

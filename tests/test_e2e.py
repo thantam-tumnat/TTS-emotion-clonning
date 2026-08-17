@@ -80,7 +80,7 @@ def test_annotate_endpoint_gemini_success(mock_get_gemini, mock_segment_text):
 @patch("app.main.segment_text")
 @patch("app.annotator.Annotator.get_gemini_client")
 def test_annotate_endpoint_escalation_success(mock_get_gemini, mock_segment_text):
-    """Primary fails, escalation to gemini-2.5-pro succeeds."""
+    """Primary fails, escalation to the escalate model succeeds."""
     mock_client = MagicMock()
     mock_get_gemini.return_value = mock_client
 
@@ -199,12 +199,12 @@ def test_annotate_endpoint_custom_model(mock_get_gemini, mock_segment_text):
         {"i": 1, "tone": "happy", "intensity": 2},
     ])
 
-    response = client.post("/annotate", json={"text": text, "model": "gemini-2.0-flash"})
+    response = client.post("/annotate", json={"text": text, "model": "gemini-3.6-flash"})
     assert response.status_code == 200
     data = response.json()
-    assert data["model_used"] == "gemini-2.0-flash"
+    assert data["model_used"] == "gemini-3.6-flash"
     assert data["fallback"] is False
-    assert data["attempts"][0]["model"] == "gemini-2.0-flash"
+    assert data["attempts"][0]["model"] == "gemini-3.6-flash"
     assert data["attempts"][0]["status"] == "success"
 
 
@@ -218,7 +218,7 @@ def test_annotate_all_failed_diagnostic_json(mock_get_gemini, mock_segment_text)
     mock_segment_text.return_value = ["สวัสดีครับ ", "วันนี้อากาศดีมาก"]
     mock_client.models.generate_content.side_effect = Exception("429 RESOURCE_EXHAUSTED: Quota exceeded")
 
-    response = client.post("/annotate", json={"text": text, "model": "gemini-2.5-flash"})
+    response = client.post("/annotate", json={"text": text, "model": "gemini-3.5-flash-lite"})
     assert response.status_code == 200
     data = response.json()
     assert data["fallback"] is True

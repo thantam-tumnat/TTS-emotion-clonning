@@ -41,8 +41,8 @@ document.addEventListener('DOMContentLoaded', () => {
   const errorTitle = document.getElementById('error-title');
   const errorDetailText = document.getElementById('error-detail-text');
   const btnCloseError = document.getElementById('btn-close-error');
-  const btnSwitchTo2flash = document.getElementById('btn-switch-to-2flash');
-  const btnSwitchTo15flash = document.getElementById('btn-switch-to-15flash');
+  const btnSwitchToFlash = document.getElementById('btn-switch-to-flash');
+  const btnSwitchToFlashLite = document.getElementById('btn-switch-to-flash-lite');
   const btnViewRawJson = document.getElementById('btn-view-raw-json');
 
   const tabButtons = document.querySelectorAll('.tab-btn');
@@ -55,6 +55,12 @@ document.addEventListener('DOMContentLoaded', () => {
   const outputEditableText = document.getElementById('output-editable-text');
   const outputCharCounter = document.getElementById('output-char-counter');
   const liveTagPreview = document.getElementById('live-tag-preview');
+
+  const segmentedEditableText = document.getElementById('segmented-editable-text');
+  const segmentedCharCounter = document.getElementById('segmented-char-counter');
+  const btnCopySegmented = document.getElementById('btn-copy-segmented');
+  const chkUseSegmented = document.getElementById('chk-use-segmented');
+  const segFormatButtons = document.querySelectorAll('.seg-format-btn');
   
   const geminiPromptSection = document.getElementById('gemini-prompt-section');
   const geminiPromptEditable = document.getElementById('gemini-prompt-editable');
@@ -74,6 +80,9 @@ document.addEventListener('DOMContentLoaded', () => {
 
   let selectedAudioFile = null;
   let currentAudioUrl = null;
+  // Last /speak payload, kept so the full/short toggle can re-render without refetching.
+  let lastRenderData = null;
+  let segFormat = 'full';
 
   // Presets Data
   const PRESETS = {
@@ -286,6 +295,59 @@ document.addEventListener('DOMContentLoaded', () => {
 
   outputEditableText.addEventListener('input', updateOutputPreview);
 
+  // Group consecutive segments sharing a tone, mirroring how the VoxCPM renderer
+  // builds chunks -- so run i lines up with data.chunks[i].
+  function buildToneRuns(segments) {
+    const runs = [];
+    (segments || []).forEach(seg => {
+      const last = runs[runs.length - 1];
+      if (last && last.tone === seg.tone) {
+        last.text += seg.text;
+      } else {
+        runs.push({ tone: seg.tone, intensity: seg.intensity, text: seg.text });
+      }
+    });
+    return runs.map(r => ({ ...r, text: r.text.trim() })).filter(r => r.text);
+  }
+
+  function buildSegmentedText(data, format) {
+    if (!data) return '';
+    const runs = buildToneRuns(data.segments);
+    const chunks = data.chunks || [];
+    return runs.map((run, i) => {
+      const body = (chunks[i] && chunks[i].body) ? chunks[i].body : run.text;
+      if (format === 'short') {
+        if (run.tone === 'neutral') return body;
+        return `(${run.tone.charAt(0).toUpperCase()}${run.tone.slice(1)})${body}`;
+      }
+      const instruction = chunks[i] ? chunks[i].instruction : null;
+      return instruction ? `${instruction}${body}` : body;
+    }).join('');
+  }
+
+  function updateSegmentedPreview() {
+    if (!segmentedEditableText) return;
+    segmentedCharCounter.textContent = `${segmentedEditableText.value.length.toLocaleString()} ตัวอักษร`;
+  }
+
+  function renderSegmentedEditor() {
+    if (!segmentedEditableText) return;
+    segmentedEditableText.value = buildSegmentedText(lastRenderData, segFormat);
+    updateSegmentedPreview();
+  }
+
+  if (segmentedEditableText) {
+    segmentedEditableText.addEventListener('input', updateSegmentedPreview);
+  }
+
+  segFormatButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      segFormat = btn.getAttribute('data-format');
+      segFormatButtons.forEach(b => b.classList.toggle('active', b === btn));
+      renderSegmentedEditor();
+    });
+  });
+
   // Presets click
   presetButtons.forEach(btn => {
     btn.addEventListener('click', () => {
@@ -355,6 +417,11 @@ document.addEventListener('DOMContentLoaded', () => {
     modelBadge.classList.add('hidden');
     outputEditableText.value = '';
     liveTagPreview.innerHTML = '';
+    lastRenderData = null;
+    if (segmentedEditableText) {
+      segmentedEditableText.value = '';
+      updateSegmentedPreview();
+    }
     audioPlayerCard.classList.add('hidden');
     if (errorBanner) errorBanner.classList.add('hidden');
   }
@@ -405,10 +472,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  if (btnSwitchTo2flash) {
-    btnSwitchTo2flash.addEventListener('click', () => {
+  if (btnSwitchToFlash) {
+    btnSwitchToFlash.addEventListener('click', () => {
       if (llmModelSelect) {
-        llmModelSelect.value = 'gemini-2.0-flash';
+        llmModelSelect.value = 'gemini-3.6-flash';
         customModelGroup.classList.add('hidden');
       }
       errorBanner.classList.add('hidden');
@@ -416,10 +483,10 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  if (btnSwitchTo15flash) {
-    btnSwitchTo15flash.addEventListener('click', () => {
+  if (btnSwitchToFlashLite) {
+    btnSwitchToFlashLite.addEventListener('click', () => {
       if (llmModelSelect) {
-        llmModelSelect.value = 'gemini-1.5-flash';
+        llmModelSelect.value = 'gemini-3.5-flash-lite';
         customModelGroup.classList.add('hidden');
       }
       errorBanner.classList.add('hidden');
@@ -490,7 +557,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // Synthesize Speech
   async function handleSynthesize() {
-    const text = (outputEditableText.value.trim() || textInput.value.trim());
+    const segmentedText = segmentedEditableText ? segmentedEditableText.value.trim() : '';
+    const useSegmented = chkUseSegmented && chkUseSegmented.checked && segmentedText;
+    const text = useSegmented
+      ? segmentedText
+      : (outputEditableText.value.trim() || textInput.value.trim());
     if (!text) {
       alert('กรุณากรอกข้อความภาษาไทยก่อนสังเคราะห์เสียง');
       textInput.focus();
@@ -622,6 +693,10 @@ document.addEventListener('DOMContentLoaded', () => {
     outputEditableText.value = data.text;
     updateOutputPreview();
 
+    // Per-segment instruction view, driven by the same payload.
+    lastRenderData = data;
+    renderSegmentedEditor();
+
     // Populate Gemini Prompt if available
     if (data.prompt && engine === 'gemini') {
       geminiPromptSection.classList.remove('hidden');
@@ -683,6 +758,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   setupCopyBtn(btnCopyOutput, () => outputEditableText.value);
+  setupCopyBtn(btnCopySegmented, () => segmentedEditableText.value);
   setupCopyBtn(btnCopyPrompt, () => geminiPromptEditable.value);
   setupCopyBtn(btnCopyJson, () => rawJson.textContent);
 

@@ -11,8 +11,10 @@ class Settings(BaseSettings):
     # Gemini (Google AI Studio)
     gemini_api_key: str = ""
     google_api_key: str = ""
-    gemini_model: str = "gemini-2.0-flash"
-    gemini_escalate_model: str = "gemini-1.5-flash"
+    gemini_model: str = "gemini-3.6-flash"
+    # Escalation deliberately hops to a different model family: the usual primary
+    # failure here is a transient 503 overload, which a sibling model shares.
+    gemini_escalate_model: str = "gemini-3.5-flash-lite"
 
     # Anthropic Claude
     anthropic_api_key: str = ""
@@ -41,6 +43,10 @@ class Settings(BaseSettings):
     # raising. Only ever useful for tests -- a silent fallback in production sounds
     # exactly like a broken model.
     siangtts_allow_mock: bool = False
+    # With no speaker pinned, VoxCPM2 resamples the timbre on every call, so a
+    # multi-chunk utterance changes speaker mid-sentence. Clone the first chunk and
+    # reuse it for the rest so base-voice output stays one person.
+    siangtts_auto_voice_consistency: bool = True
 
     @field_validator("reanchor_chars", mode="before")
     @classmethod

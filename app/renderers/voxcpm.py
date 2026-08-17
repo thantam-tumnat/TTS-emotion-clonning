@@ -1,6 +1,40 @@
+import re
 from typing import List, Optional
 from app.models import Segment, Tone, RenderResponse, RenderedChunk
 from app.renderers.base import BaseRenderer
+
+# A style parenthetical is ASCII-only -- "(sad)", "(Excited and energetic tone)".
+# Requiring that keeps Thai text in brackets treated as spoken content, not a tag.
+STYLE_TAG_RE = re.compile(r"\([a-zA-Z][a-zA-Z\s,.\-]*\)")
+
+
+def split_style_chunks(text: str) -> List[str]:
+    """Split hand-written text into chunks that each *lead* with a style parenthetical.
+
+    VoxCPM2 only honours a parenthetical at position 0, so a tag typed mid-text would
+    otherwise be read aloud. Splitting at every tag turns "(a)one(b)two" into two
+    separately-synthesized chunks, which is what the user meant by writing it.
+
+    Returns [] when the text carries no style tag, so callers can fall back to the
+    LLM annotation path.
+    """
+    matches = list(STYLE_TAG_RE.finditer(text))
+    if not matches:
+        return []
+
+    chunks: List[str] = []
+    # Text before the first tag has no instruction of its own.
+    lead = text[:matches[0].start()].strip()
+    if lead:
+        chunks.append(lead)
+
+    for i, match in enumerate(matches):
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        body = text[match.end():end].strip()
+        if body:
+            chunks.append(f"{match.group(0)}{body}")
+
+    return chunks
 
 VOXCPM_INSTRUCTION_MAP = {
     Tone.NEUTRAL: {
