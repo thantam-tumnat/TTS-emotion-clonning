@@ -83,10 +83,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   };
 
-  // API Base URL (auto-detect port or direct file load)
-  const API_BASE = (window.location.protocol === 'file:' || (window.location.port && window.location.port !== '8000'))
-    ? 'http://127.0.0.1:8000'
-    : '';
+  // API Base URL (Use relative URL for any port/domain when served via HTTP/HTTPS, fallback to localhost:8000 only if opened as a file)
+  const API_BASE = window.location.protocol === 'file:' ? 'http://127.0.0.1:8000' : '';
 
   // Slider updates
   paramCfg.addEventListener('input', () => {
@@ -109,7 +107,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (e) {
       healthStatus.className = 'status-indicator offline';
-      healthStatus.querySelector('.status-label').textContent = 'ไม่สามารถเชื่อมต่อ API ได้ (กรุณารันเซิร์ฟเวอร์ที่พอร์ต 8000)';
+      healthStatus.querySelector('.status-label').textContent = 'ไม่สามารถเชื่อมต่อ API ได้ (โปรดตรวจสอบสถานะเซิร์ฟเวอร์)';
     }
 
     loadSpeakersList();
