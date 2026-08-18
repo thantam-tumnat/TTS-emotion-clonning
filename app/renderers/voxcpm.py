@@ -1,5 +1,5 @@
 import re
-from typing import List, NamedTuple, Optional, Tuple
+from typing import List, NamedTuple, Optional
 from app.models import Segment, Tone, RenderResponse, RenderedChunk
 from app.renderers.base import BaseRenderer
 
@@ -13,6 +13,10 @@ _TONE_BY_NAME = {t.value: t for t in Tone}
 # Users paste text where newlines arrived as the two characters "\" + "n" rather
 # than as real line breaks. Left alone they end up inside the spoken body.
 _LITERAL_ESCAPE_RE = re.compile(r"\[nrt]")
+
+# A line break immediately before a tag -- real, or arrived as the two characters
+# "\" + "n" the same way _LITERAL_ESCAPE_RE handles.
+_BREAK_RE = re.compile(r"(?:\r?\n|\\n)[ \t]*$")
 
 
 class ResolvedTag(NamedTuple):
@@ -73,25 +77,44 @@ def resolve_style_tag(body: str, level: Optional[str] = None) -> ResolvedTag:
     return ResolvedTag(f"({raw})", _family_from_body(raw) or Tone.NEUTRAL, intensity, key, None)
 
 
-def _tagged_spans(text: str) -> List[Tuple[ResolvedTag, str]]:
+class Span(NamedTuple):
+    tag: ResolvedTag
+    body: str
+    break_before: bool   # the source put a line break ahead of this tag
+
+
+class ChunkSpec(NamedTuple):
+    """A chunk plus what the audio assembler needs to place it."""
+    text: str            # instruction + body, ready for the engine
+    tone: str            # Tone value, for the per-emotion level and pause
+    intensity: int
+    break_before: bool
+
+
+def _tagged_spans(text: str) -> List[Span]:
     """Split text into (resolved tag, body) runs at each style tag."""
     matches = list(STYLE_TAG_RE.finditer(text))
     if not matches:
         return []
 
     plain = ResolvedTag(None, Tone.NEUTRAL, 2, "neutral", None)
-    spans: List[Tuple[ResolvedTag, str]] = []
+    spans: List[Span] = []
 
     lead = _clean_body(text[:matches[0].start()])
     if lead:
-        spans.append((plain, lead))
+        spans.append(Span(plain, lead, False))
 
     for i, m in enumerate(matches):
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
         body = _clean_body(text[m.end():end])
         if not body:
             continue
-        spans.append((resolve_style_tag(m.group(1), m.group(2)), body))
+        # Whether the writer put this tag on its own line decides how long a pause
+        # it earns: the ElevenLabs reference leaves ~1.2 s between separately-written
+        # blocks, but that is far too much for a tone change mid-sentence.
+        raw_before = text[matches[i - 1].end():m.start()] if i else text[:m.start()]
+        spans.append(Span(resolve_style_tag(m.group(1), m.group(2)), body,
+                          bool(_BREAK_RE.search(raw_before))))
     return spans
 
 
@@ -105,27 +128,38 @@ def split_style_chunks(text: str) -> List[str]:
     Returns [] when the text carries no style tag, so callers can fall back to the
     LLM annotation path.
     """
+    return [spec.text for spec in split_style_chunk_specs(text)]
+
+
+def split_style_chunk_specs(text: str) -> List[ChunkSpec]:
+    """As ``split_style_chunks``, but keeping the tone and layout of each chunk."""
     return [
-        f"{tag.instruction}{body}" if tag.instruction else body
-        for tag, body in _tagged_spans(text)
+        ChunkSpec(
+            text=f"{span.tag.instruction}{span.body}" if span.tag.instruction else span.body,
+            tone=span.tag.tone.value,
+            intensity=span.tag.intensity,
+            break_before=span.break_before,
+        )
+        for span in _tagged_spans(text)
     ]
 
 
 def parse_tagged_segments(text: str) -> List[Segment]:
     """Read hand-written tags as annotated segments, bypassing the LLM."""
     return [
-        Segment(text=body, tone=tag.tone, intensity=tag.intensity, style=tag.label)
-        for tag, body in _tagged_spans(text)
+        Segment(text=span.body, tone=span.tag.tone, intensity=span.tag.intensity,
+                style=span.tag.label)
+        for span in _tagged_spans(text)
     ]
 
 
 def collect_tag_warnings(text: str) -> List[str]:
     """Tags that parsed cleanly but cannot affect the audio."""
     seen, out = set(), []
-    for tag, _body in _tagged_spans(text):
-        if tag.warning and tag.warning not in seen:
-            seen.add(tag.warning)
-            out.append(tag.warning)
+    for span in _tagged_spans(text):
+        if span.tag.warning and span.tag.warning not in seen:
+            seen.add(span.tag.warning)
+            out.append(span.tag.warning)
     return out
 
 
@@ -271,6 +305,22 @@ def format_voxcpm_instruction(tone: Tone, intensity: int = 2) -> Optional[str]:
     return tone_map.get(intensity)
 
 
+def instruction_for_segment(seg: Segment) -> Optional[str]:
+    """The style parenthetical a segment should actually lead with.
+
+    A hand-written tag carries its exact word in ``style``, and STYLE_VOCABULARY
+    often has a sharper instruction for it than its coarse family does --
+    "appalled" -> "(Appalled and shocked voice, sharp disbelief)" rather than the
+    generic angry line. Falling back to the family alone made /speak preview an
+    instruction that /synthesize never used.
+    """
+    if seg.style:
+        return resolve_style_tag(seg.style, str(seg.intensity)).instruction
+    if seg.tone == Tone.NEUTRAL:
+        return None
+    return format_voxcpm_instruction(seg.tone, seg.intensity)
+
+
 class VoxCPMRenderer(BaseRenderer):
     """
     Renders segments for VoxCPM2 / SiangTTS with natural-language control instructions.
@@ -289,22 +339,23 @@ class VoxCPMRenderer(BaseRenderer):
 
         chunks: List[RenderedChunk] = []
         instructions_used: List[str] = []
-        prev_tone: Optional[Tone] = None
+        prev_key: Optional[tuple] = None
 
         for seg in segments:
-            # Same tone as the previous segment: extend it rather than re-stating.
-            if seg.tone == prev_tone and chunks:
+            instruction = instruction_for_segment(seg)
+            # Key on what actually reaches the model. Keying on `tone` alone merged
+            # "[sad:1] a [sad:3] b" into one chunk at intensity 1, and merged two
+            # different STYLE_VOCABULARY styles that happen to share a family.
+            key = (instruction, seg.tone)
+
+            if key == prev_key and chunks:
                 chunks[-1].body += seg.text
                 chunks[-1].text += seg.text
                 continue
 
-            instruction = (
-                format_voxcpm_instruction(seg.tone, seg.intensity)
-                if seg.tone != Tone.NEUTRAL
-                else None
-            )
             if instruction:
-                instructions_used.append(f"{seg.tone.value} (lvl {seg.intensity})")
+                label = seg.style or seg.tone.value
+                instructions_used.append(f"{label} (lvl {seg.intensity})")
 
             # No space after ')' -- that is the documented VoxCPM2 format.
             chunks.append(
@@ -312,9 +363,10 @@ class VoxCPMRenderer(BaseRenderer):
                     text=f"{instruction}{seg.text}" if instruction else seg.text,
                     instruction=instruction,
                     body=seg.text,
+                    tone=seg.tone.value,
                 )
             )
-            prev_tone = seg.tone
+            prev_key = key
 
         for c in chunks:
             c.body = c.body.strip()

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import io
 import os
+import re
 import sys
 import tempfile
 from pathlib import Path
@@ -18,6 +19,19 @@ MOCK_SAMPLE_RATE = 48000
 
 class SynthesizerUnavailable(RuntimeError):
     """Raised when the real VoxCPM2 model could not be loaded."""
+
+
+_LEADING_STYLE_RE = re.compile(r"^\s*\([^)]*\)\s*")
+
+
+def spoken_len(text: str) -> int:
+    """Characters VoxCPM2 will actually voice.
+
+    The leading style parenthetical is direction, not speech, so counting it would
+    make a chunk with a long instruction look slower than it is -- and rate matching
+    would then stretch it the wrong way.
+    """
+    return len(_LEADING_STYLE_RE.sub("", text or "").strip())
 
 
 def _wav_to_numpy(wav: Any):
@@ -174,6 +188,10 @@ class SiangTTSService:
         self._is_loaded: bool = False
         self._load_error: Optional[str] = None
         self._using_mock: bool = False
+        # The neutral voice unpinned multi-chunk requests are conditioned on. Built
+        # at most once; see _build_seed_voice.
+        self._seed_voice: Any = None
+        self._seed_voice_failed: bool = False
 
     # ------------------------------------------------------------------ #
     # Model loading
@@ -456,28 +474,63 @@ class SiangTTSService:
                 except Exception:
                     pass
 
+    # Filename for the auto seed voice. Leading underscore keeps it out of the
+    # speaker listing, which enumerates ref/ rather than the cache.
+    SEED_VOICE_FILE = "_auto_seed.pt"
+
     def _build_seed_voice(
         self, synth: Any, sample_rate: int, cfg_value: float, inference_timesteps: int
     ) -> Any:
-        """Generate a short neutral line and clone its timbre.
+        """Return the neutral seed voice every unpinned chunk is conditioned on.
 
-        Costs one extra short generation per multi-chunk request, and buys a voice
-        that is the same person for every chunk while carrying no emotion of its own.
+        Built once and then reused, from memory within a process and from
+        ``voice_cache/_auto_seed.pt`` across restarts. Regenerating it per request
+        made every request a slightly different speaker -- two /synthesize calls on
+        the same text came back in different voices -- and spent an extra generation
+        each time to do it.
+
+        Generated at the service defaults rather than the caller's cfg/timesteps, so
+        who the speaker is does not depend on per-request tuning knobs.
+
         Returns None on failure -- an inconsistent voice beats a failed request.
         """
+        if self._seed_voice is not None:
+            return self._seed_voice
+        if self._seed_voice_failed:
+            return None
+
         seed_text = (settings.siangtts_voice_seed_text or "").strip()
         if not seed_text:
             return None
+
+        cache_path = self.cache_dir / self.SEED_VOICE_FILE
+        if cache_path.exists():
+            try:
+                self._seed_voice = synth.load_voice(cache_path)
+                return self._seed_voice
+            except Exception as e:
+                print(f"[SiangTTS] Stale seed voice ({e}); rebuilding.", file=sys.stderr)
+
         try:
-            seed_wav = synth.synth(
-                text=seed_text,
-                cfg_value=cfg_value,
-                inference_timesteps=inference_timesteps,
-            )
-            return self._clone_voice_from_audio(synth, seed_wav, sample_rate)
+            seed_wav = synth.synth(text=seed_text)
+            voice = self._clone_voice_from_audio(synth, seed_wav, sample_rate)
         except Exception as e:
             print(f"[SiangTTS] Seed voice generation failed: {e}", file=sys.stderr)
+            self._seed_voice_failed = True
             return None
+
+        if voice is None:
+            self._seed_voice_failed = True
+            return None
+
+        try:
+            synth.save_voice(voice, cache_path)
+        except Exception as e:
+            # Worth keeping in memory even if it could not be persisted.
+            print(f"[SiangTTS] Could not persist seed voice: {e}", file=sys.stderr)
+
+        self._seed_voice = voice
+        return voice
 
     def synthesize(
         self,
@@ -499,7 +552,7 @@ class SiangTTSService:
             inference_timesteps=inference_timesteps,
         )
 
-    def synthesize_many(
+    def render_chunks(
         self,
         texts: Sequence[str],
         *,
@@ -508,20 +561,35 @@ class SiangTTSService:
         ref_filename: Optional[str] = None,
         cfg_value: float = 2.5,
         inference_timesteps: int = 10,
-        gap_ms: int = 60,
-    ) -> bytes:
-        """Synthesize several chunks against one voice and concatenate them.
+        tones: Optional[Sequence[Optional[str]]] = None,
+        breaks: Optional[Sequence[bool]] = None,
+    ) -> Tuple[List[Any], int]:
+        """Synthesize each chunk against one voice; return raw audio and sample rate.
 
-        Each chunk carries its own leading style instruction, which is how per-segment
-        emotion is expressed -- VoxCPM2 only honours a style parenthetical at the very
-        start of the text it is given.
+        Split out from ``synthesize_many`` so a single generation can be assembled
+        more than one way. Sampling is not deterministic, so an A/B that generated
+        twice would be comparing two different takes rather than two treatments of
+        the same one.
         """
         import numpy as np
-        import soundfile as sf
 
-        chunks = [t.strip() for t in texts if t and t.strip()]
-        if not chunks:
+        from app.services.audio_post import Chunk
+
+        # Filter in lockstep so tones/breaks stay aligned with the surviving text.
+        kept = [
+            (i, t.strip())
+            for i, t in enumerate(texts)
+            if t and t.strip()
+        ]
+        if not kept:
             raise ValueError("No text to synthesize")
+        chunks = [t for _, t in kept]
+
+        def _tone_at(idx: int) -> Optional[str]:
+            return tones[idx] if tones is not None and idx < len(tones) else None
+
+        def _break_at(idx: int) -> bool:
+            return bool(breaks[idx]) if breaks is not None and idx < len(breaks) else False
 
         synth = self.get_synthesizer()
         sample_rate = getattr(synth, "sample_rate", MOCK_SAMPLE_RATE)
@@ -546,9 +614,8 @@ class SiangTTSService:
                     synth, sample_rate, cfg_value, inference_timesteps
                 )
 
-            rendered = []
-            gap = np.zeros(int(sample_rate * gap_ms / 1000), dtype="float32")
-            for i, chunk in enumerate(chunks):
+            rendered: List[Chunk] = []
+            for (src_idx, _), chunk in zip(kept, chunks):
                 wav = np.asarray(
                     synth.synth(
                         text=chunk,
@@ -559,21 +626,68 @@ class SiangTTSService:
                     ),
                     dtype="float32",
                 )
-                if i:
-                    rendered.append(gap)
-                rendered.append(wav)
+                rendered.append(
+                    Chunk(
+                        audio=wav,
+                        tone=_tone_at(src_idx),
+                        break_before=_break_at(src_idx),
+                        text_len=spoken_len(chunk),
+                    )
+                )
 
-            audio = np.concatenate(rendered) if len(rendered) > 1 else rendered[0]
-
-            out_buf = io.BytesIO()
-            sf.write(out_buf, audio, sample_rate, format="WAV", subtype="PCM_16")
-            return out_buf.getvalue()
+            return rendered, sample_rate
         finally:
             if temp_ref_path and os.path.exists(temp_ref_path):
                 try:
                     os.remove(temp_ref_path)
                 except Exception:
                     pass
+
+    def synthesize_many(
+        self,
+        texts: Sequence[str],
+        *,
+        speaker_id: Optional[str] = None,
+        ref_audio_bytes: Optional[bytes] = None,
+        ref_filename: Optional[str] = None,
+        cfg_value: float = 2.5,
+        inference_timesteps: int = 10,
+        tones: Optional[Sequence[Optional[str]]] = None,
+        breaks: Optional[Sequence[bool]] = None,
+        post_process: bool = True,
+    ) -> bytes:
+        """Synthesize several chunks against one voice and join them into one take.
+
+        Each chunk carries its own leading style instruction, which is how per-segment
+        emotion is expressed -- VoxCPM2 only honours a style parenthetical at the very
+        start of the text it is given.
+
+        ``tones`` and ``breaks`` run parallel to ``texts`` and tell the assembler how
+        loud each chunk should sit and how much silence belongs in front of it. Without
+        them the chunks are still trimmed, faded and levelled, just without the
+        per-emotion offsets. ``post_process=False`` returns the bare concatenation,
+        which is what tools/ab_gen.py renders as the "before" take.
+        """
+        import soundfile as sf
+
+        from app.services.audio_post import assemble, butt_join
+
+        rendered, sample_rate = self.render_chunks(
+            texts,
+            speaker_id=speaker_id,
+            ref_audio_bytes=ref_audio_bytes,
+            ref_filename=ref_filename,
+            cfg_value=cfg_value,
+            inference_timesteps=inference_timesteps,
+            tones=tones,
+            breaks=breaks,
+        )
+
+        audio = assemble(rendered, sample_rate) if post_process else butt_join(rendered, sample_rate)
+
+        out_buf = io.BytesIO()
+        sf.write(out_buf, audio, sample_rate, format="WAV", subtype="PCM_16")
+        return out_buf.getvalue()
 
 
 siangtts_service = SiangTTSService()

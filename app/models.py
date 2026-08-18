@@ -52,6 +52,13 @@ class RenderedChunk(BaseModel):
     text: str  # instruction + body, ready to hand to the engine
     instruction: Optional[str] = None
     body: str = ""
+    # Carried through to the audio assembler, which sets this chunk's loudness and
+    # the pause in front of it from the tone. Without it every chunk lands at
+    # whatever level the model happened to pick.
+    tone: Optional[str] = None
+    # True when the source had a line break before this chunk, which earns a longer
+    # pause than an inline tone change does.
+    break_before: bool = False
 
 
 class RenderResponse(BaseModel):

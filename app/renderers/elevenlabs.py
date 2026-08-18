@@ -31,6 +31,36 @@ def format_tag(tone: Tone, intensity: int) -> Optional[str]:
         return f"[{base_tag}] "
 
 
+def _split_for_reanchor(text: str, limit: int) -> List[str]:
+    """Break text into <=limit-char pieces at Thai word boundaries.
+
+    Thai does not space its words, so slicing on a raw character count dropped the
+    tag inside a word -- and, when the cut landed between a consonant and its
+    combining vowel or tone mark, split a single grapheme in half. Packing whole
+    tokens avoids both. A token longer than the limit is emitted on its own rather
+    than being cut.
+    """
+    from pythainlp.tokenize import word_tokenize
+
+    try:
+        tokens = word_tokenize(text, keep_whitespace=True)
+    except Exception:
+        # Never fail a render over tokenization; one un-anchored piece is fine.
+        return [text]
+
+    parts: List[str] = []
+    current = ""
+    for tok in tokens:
+        if current and len(current) + len(tok) > limit:
+            parts.append(current)
+            current = tok
+        else:
+            current += tok
+    if current:
+        parts.append(current)
+    return parts or [text]
+
+
 class ElevenLabsRenderer(BaseRenderer):
     def __init__(self, reanchor_chars: Optional[int] = None):
         self.reanchor_chars = reanchor_chars if reanchor_chars is not None else settings.reanchor_chars
@@ -51,15 +81,8 @@ class ElevenLabsRenderer(BaseRenderer):
             
             # Optional re-anchoring for very long segments if configured
             if self.reanchor_chars and len(seg.text) > self.reanchor_chars and seg.tone != Tone.NEUTRAL:
-                # If segment is longer than reanchor_chars, insert periodic anchors
                 tag_str = format_tag(seg.tone, seg.intensity)
-                text_part = seg.text
-                sub_parts = []
-                while len(text_part) > self.reanchor_chars:
-                    sub_parts.append(text_part[:self.reanchor_chars])
-                    text_part = text_part[self.reanchor_chars:]
-                sub_parts.append(text_part)
-                out.append(f"{tag_str}".join(sub_parts))
+                out.append(f"{tag_str}".join(_split_for_reanchor(seg.text, self.reanchor_chars)))
             else:
                 out.append(seg.text)
 

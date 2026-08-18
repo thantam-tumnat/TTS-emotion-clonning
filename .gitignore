@@ -31,3 +31,10 @@ htmlcov/
 Thumbs.db
 Desktop.ini
 .DS_Store
+
+# Auto-generated neutral seed voice (see SiangTTSService._build_seed_voice).
+# Derived from the local model, regenerated on demand -- not worth committing.
+voice_cache/_auto_seed.pt
+
+# Takes written by tools/ab_gen.py
+takes/

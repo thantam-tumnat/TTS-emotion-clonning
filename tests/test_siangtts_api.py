@@ -252,3 +252,35 @@ def test_seed_voice_skipped_when_speaker_pinned():
         service._voices.pop("pinned", None)
 
     assert spoken == ["(happy)หนึ่ง", "(sad)สอง"]
+
+
+def test_seed_voice_is_built_once_and_reused_across_requests():
+    """Two requests must come back in the same voice, and pay for one seed.
+
+    Regenerating the seed per request made every call a slightly different speaker
+    and spent an extra generation each time to do it.
+    """
+    service = svc.SiangTTSService()
+    service._synthesizer = svc._MockSynthesizer()
+
+    spoken = []
+    built = []
+
+    def record(text, **kw):
+        spoken.append(text)
+        import numpy as np
+        return np.zeros(1000, dtype="float32")
+
+    def build(path, prompt_text=None):
+        built.append(path)
+        return "seed_voice"
+
+    service._synthesizer.synth = record
+    service._synthesizer.build_voice = build
+
+    svc.settings.siangtts_auto_voice_consistency = True
+    service.synthesize_many(["(happy)หนึ่ง", "(sad)สอง"])
+    service.synthesize_many(["(calm)สาม", "(tired)สี่"])
+
+    assert spoken.count(svc.settings.siangtts_voice_seed_text) == 1
+    assert len(built) == 1

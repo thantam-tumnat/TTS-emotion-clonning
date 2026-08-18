@@ -22,11 +22,61 @@ from app.segmenter import segment_text
 from app.annotator import annotator
 from app.renderers import get_renderer
 from app.renderers.voxcpm import (
-    split_style_chunks,
+    split_style_chunk_specs,
     parse_tagged_segments,
     collect_tag_warnings,
 )
 from app.services.siangtts_service import siangtts_service, SynthesizerUnavailable
+
+
+ChunkPlan = tuple[list[str], list[Optional[str]], list[bool]]
+
+
+def _plan_chunks(
+    text: str,
+    *,
+    auto_annotate: bool,
+    guidance: Optional[str],
+    model: Optional[str],
+    engine: str = "voxcpm",
+) -> ChunkPlan:
+    """Decide what to synthesize, and how each piece should be placed.
+
+    Returns texts alongside the tone and layout of each, which the assembler needs
+    to set per-emotion loudness and the pause in front of each chunk. Hand-written
+    style tags win: the user has already said where each emotion starts, so split on
+    them rather than re-annotating (and rather than sending one blob, which would
+    speak every mid-text tag aloud).
+    """
+    specs = split_style_chunk_specs(text)
+    if specs:
+        return (
+            [s.text for s in specs],
+            [s.tone for s in specs],
+            [s.break_before for s in specs],
+        )
+
+    if not auto_annotate:
+        return ([text], [None], [False])
+
+    clauses = segment_text(text)
+    annotated = annotator.annotate(
+        original_text=text,
+        clauses=clauses,
+        guidance=guidance,
+        custom_model=model,
+    )
+    renderer = get_renderer(engine if engine in ("voxcpm", "siangtts") else "voxcpm")
+    rendered = renderer.render(annotated.segments)
+    # One chunk per tone run, each with its instruction leading, so no style
+    # parenthetical is ever spoken aloud mid-utterance.
+    if rendered.chunks:
+        return (
+            [c.text for c in rendered.chunks],
+            [c.tone for c in rendered.chunks],
+            [c.break_before for c in rendered.chunks],
+        )
+    return ([rendered.text], [None], [False])
 
 
 @asynccontextmanager
@@ -227,26 +277,13 @@ async def synthesize_endpoint(req: SynthesizeRequest):
     if not text:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    # Hand-written style tags win: the user has already said where each emotion
-    # starts, so split on them rather than re-annotating (and rather than sending
-    # one blob, which would speak every mid-text tag aloud).
-    parts = split_style_chunks(text)
-    if not parts:
-        if req.auto_annotate:
-            clauses = segment_text(text)
-            annotated = annotator.annotate(
-                original_text=text,
-                clauses=clauses,
-                guidance=req.guidance,
-                custom_model=req.model
-            )
-            renderer = get_renderer(req.engine if req.engine in ("voxcpm", "siangtts") else "voxcpm")
-            rendered = renderer.render(annotated.segments)
-            # One chunk per tone run, each with its instruction leading, so no style
-            # parenthetical is ever spoken aloud mid-utterance.
-            parts = [c.text for c in rendered.chunks] if rendered.chunks else [rendered.text]
-        else:
-            parts = [text]
+    parts, tones, breaks = _plan_chunks(
+        text,
+        auto_annotate=req.auto_annotate,
+        guidance=req.guidance,
+        model=req.model,
+        engine=req.engine,
+    )
 
     # Perform synthesis via SiangTTSService
     try:
@@ -255,6 +292,8 @@ async def synthesize_endpoint(req: SynthesizeRequest):
             speaker_id=req.speaker_id,
             cfg_value=req.cfg_value,
             inference_timesteps=req.inference_timesteps,
+            tones=tones,
+            breaks=breaks,
         )
         return Response(
             content=wav_bytes,
@@ -285,21 +324,12 @@ async def synthesize_with_upload_endpoint(
     if not clean_text:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    parts = split_style_chunks(clean_text)
-    if not parts:
-        if auto_annotate:
-            clauses = segment_text(clean_text)
-            annotated = annotator.annotate(
-                original_text=clean_text,
-                clauses=clauses,
-                guidance=guidance,
-                custom_model=model
-            )
-            renderer = get_renderer("voxcpm")
-            rendered = renderer.render(annotated.segments)
-            parts = [c.text for c in rendered.chunks] if rendered.chunks else [rendered.text]
-        else:
-            parts = [clean_text]
+    parts, tones, breaks = _plan_chunks(
+        clean_text,
+        auto_annotate=auto_annotate,
+        guidance=guidance,
+        model=model,
+    )
 
     audio_bytes = await file.read() if file else None
     filename = file.filename if file else None
@@ -311,6 +341,8 @@ async def synthesize_with_upload_endpoint(
             ref_filename=filename,
             cfg_value=cfg_value,
             inference_timesteps=inference_timesteps,
+            tones=tones,
+            breaks=breaks,
         )
         return Response(
             content=wav_bytes,

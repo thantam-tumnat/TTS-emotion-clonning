@@ -21,7 +21,11 @@ Uploaded Reference Audio / Registered Speaker ────────► 2. VOI
                                                            (VoxCPM2 + dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA)
                                                                  │
                                                                  ▼
-                                                        5. 48kHz WAV Audio Output
+                                                        5. AUDIO ASSEMBLER
+                                                           (trim / level / pace / pause)
+                                                                 │
+                                                                 ▼
+                                                        6. 48kHz WAV Audio Output
 ```
 
 ---
@@ -40,6 +44,55 @@ Uploaded Reference Audio / Registered Speaker ────────► 2. VOI
 | `sarcastic` | `(Sarcastic and mocking tone)` | `[sarcastic]` | ประชด แดกดัน |
 
 Intensity levels for VoxCPM (1: Mild / 2: Standard / 3: Strong).
+
+---
+
+## Audio Assembly & Prosody Targets
+
+Each tone run is synthesized as its own chunk, because VoxCPM2 only honours a style
+parenthetical at position 0. `app/services/audio_post.py` then joins those chunks
+into one take: it trims each chunk's own padding, levels every chunk to the take's
+median and applies a per-emotion loudness offset, nudges each chunk toward a
+per-emotion speaking pace, fades the joins, and places a pause sized by the
+boundary kind.
+
+The targets come from measuring an ElevenLabs take -- one Thai sentence read four
+times as `[sad] [happy] [scared] [tired]`:
+
+| tone | duration vs mean | energy vs mean |
+|---|---|---|
+| `sad` | 1.035x | -2.0 dB |
+| `happy` | 0.927x | -0.5 dB |
+| `scared` | 0.966x | +3.0 dB |
+| `tired` | 1.073x | -1.4 dB |
+
+The headline finding: across all four, its **median F0 moves only 1.75 semitones**.
+ElevenLabs does not change the speaker's pitch to change the emotion -- it changes
+duration, loudness, pitch *range* and pausing. Emotion wording tuned to maximise
+median-F0 separation is therefore optimising the one axis the target barely uses,
+and pitch-shifting a cloned voice is what makes it stop sounding like one person.
+
+Pause lengths depend on how the script was written: `GAP_SAME_TONE_S` (0.20s) within
+a tone run, `GAP_EMOTION_S` (0.45s) at an inline tone change, and `GAP_PARAGRAPH_S`
+(1.20s) when the source put a line break before the tag.
+
+### Measuring a take
+
+```bash
+python tools/prosody_eval.py take.wav --labels sad,happy,scared,tired
+```
+
+Reports duration ratio, energy, F0 spread and F0 offset per utterance, each diffed
+against the ElevenLabs target, plus a voice-identity check (median-F0 spread across
+utterances, budget 1.8 semitones).
+
+```bash
+python tools/ab_gen.py --speaker determination
+```
+
+Renders the reference script once and assembles the same chunks both the old way
+(flat 60 ms butt-join) and the current way, then scores both -- so a change is
+measured against a fixed target rather than judged by ear.
 
 ---
 

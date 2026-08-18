@@ -116,6 +116,10 @@ ANNOTATE_TOOL = {
                         },
                         "tone": {
                             "type": "string",
+                            # Must mirror app.models.Tone exactly. When "scared" and
+                            # "tired" were missing here the Anthropic path could not
+                            # label them at all, and silently emitted a neighbouring
+                            # tone instead.
                             "enum": [
                                 "neutral",
                                 "sad",
@@ -124,7 +128,9 @@ ANNOTATE_TOOL = {
                                 "excited",
                                 "calm",
                                 "nervous",
-                                "sarcastic"
+                                "sarcastic",
+                                "scared",
+                                "tired"
                             ],
                             "description": "The emotional tone"
                         },
