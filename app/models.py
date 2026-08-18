@@ -12,12 +12,17 @@ class Tone(str, Enum):
     CALM = "calm"
     NERVOUS = "nervous"
     SARCASTIC = "sarcastic"
+    SCARED = "scared"
+    TIRED = "tired"
 
 
 class Segment(BaseModel):
     text: str
     tone: Tone
     intensity: int = Field(default=2, ge=1, le=3)
+    # Free-form style word as written, e.g. "appalled". `tone` stays the coarse
+    # family used for colour and for the ElevenLabs/Gemini renderers.
+    style: Optional[str] = None
 
 
 class AnnotateRequest(BaseModel):
@@ -34,6 +39,7 @@ class AnnotateResponse(BaseModel):
     error: Optional[str] = None
     error_detail: Optional[str] = None
     attempts: Optional[list[dict]] = None
+    warnings: List[str] = Field(default_factory=list)
 
 
 class RenderRequest(BaseModel):
@@ -74,6 +80,7 @@ class SpeakResponse(BaseModel):
     error_detail: Optional[str] = None
     attempts: Optional[list[dict]] = None
     chunks: Optional[list[RenderedChunk]] = None
+    warnings: List[str] = Field(default_factory=list)
 
 
 class SpeakerInfo(BaseModel):

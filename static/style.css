@@ -39,6 +39,10 @@
   --tone-nervous-bg: rgba(167, 139, 250, 0.15);
   
   --tone-sarcastic: #f472b6;
+  --tone-scared: #c084fc;
+  --tone-scared-bg: rgba(192, 132, 252, 0.15);
+  --tone-tired: #94a3b8;
+  --tone-tired-bg: rgba(148, 163, 184, 0.15);
   --tone-sarcastic-bg: rgba(244, 114, 182, 0.15);
 
   --font-thai: 'Noto Sans Thai', sans-serif;
@@ -766,6 +770,8 @@ textarea:focus, .custom-input:focus {
 .tone-calm { background: var(--tone-calm-bg); color: var(--tone-calm); border: 1px solid var(--tone-calm); }
 .tone-nervous { background: var(--tone-nervous-bg); color: var(--tone-nervous); border: 1px solid var(--tone-nervous); }
 .tone-sarcastic { background: var(--tone-sarcastic-bg); color: var(--tone-sarcastic); border: 1px solid var(--tone-sarcastic); }
+.tone-scared { background: var(--tone-scared-bg); color: var(--tone-scared); border: 1px solid var(--tone-scared); }
+.tone-tired { background: var(--tone-tired-bg); color: var(--tone-tired); border: 1px solid var(--tone-tired); }
 
 .border-neutral { border-left-color: var(--tone-neutral) !important; }
 .border-sad { border-left-color: var(--tone-sad) !important; }
@@ -775,6 +781,8 @@ textarea:focus, .custom-input:focus {
 .border-calm { border-left-color: var(--tone-calm) !important; }
 .border-nervous { border-left-color: var(--tone-nervous) !important; }
 .border-sarcastic { border-left-color: var(--tone-sarcastic) !important; }
+.border-scared { border-left-color: var(--tone-scared) !important; }
+.border-tired { border-left-color: var(--tone-tired) !important; }
 
 /* JSON Viewer */
 .json-viewer {

@@ -5,6 +5,9 @@ from app.renderers.voxcpm import (
     format_voxcpm_instruction,
     split_style_chunks,
     parse_tagged_segments,
+    collect_tag_warnings,
+    resolve_style_tag,
+    STYLE_VOCABULARY,
 )
 from app.renderers import get_renderer
 
@@ -171,3 +174,113 @@ def test_parse_tagged_segments_empty_without_tags():
 
 def test_thai_in_square_brackets_is_content_not_a_tag():
     assert split_style_chunks("ราคา [พิเศษ] วันนี้") == []
+
+
+# ---------------------------------------------------------------------------
+# Vocabulary beyond the original eight tones
+# ---------------------------------------------------------------------------
+
+@pytest.mark.parametrize("tag,expected", [
+    ("scared", Tone.SCARED),
+    ("tired", Tone.TIRED),
+    ("afraid", Tone.SCARED),
+    ("sleepy", Tone.TIRED),
+    ("anxious", Tone.NERVOUS),
+    ("furious", Tone.ANGRY),
+])
+def test_extended_vocabulary_resolves_to_a_real_tone(tag, expected):
+    """These used to fall through the enum lookup and display as NEUTRAL."""
+    segs = parse_tagged_segments(f"[{tag}]ข้อความ")
+    assert len(segs) == 1
+    assert segs[0].tone is expected
+
+
+@pytest.mark.parametrize("tone", [Tone.SCARED, Tone.TIRED])
+def test_new_tones_have_instructions_at_every_intensity(tone):
+    for level in (1, 2, 3):
+        instr = format_voxcpm_instruction(tone, level)
+        assert instr and instr.startswith("(") and instr.endswith(")")
+
+
+def test_scared_tag_expands_to_full_instruction_not_bare_word():
+    chunks = split_style_chunks("[scared]ข้อความ")
+    assert chunks == [f"{format_voxcpm_instruction(Tone.SCARED, 2)}ข้อความ"]
+    assert chunks[0] != "(scared)ข้อความ"
+
+
+def test_literal_backslash_n_is_not_spoken():
+    """Pasted text often carries "\n" as two characters rather than a line break."""
+    chunks = split_style_chunks("[sad]ข้อความ\n\n")
+    assert chunks == [f"{format_voxcpm_instruction(Tone.SAD, 2)}ข้อความ"]
+    assert "\n" not in chunks[0]
+
+
+def test_unknown_word_still_reaches_the_model_as_direction():
+    """An unrecognised word is passed through verbatim rather than dropped."""
+    chunks = split_style_chunks("[bewildered]ข้อความ")
+    assert chunks == ["(bewildered)ข้อความ"]
+    assert parse_tagged_segments("[bewildered]ข้อความ")[0].tone is Tone.NEUTRAL
+
+
+# ---------------------------------------------------------------------------
+# Open style vocabulary
+# ---------------------------------------------------------------------------
+
+def test_every_vocabulary_entry_yields_an_instruction():
+    """No entry may silently resolve to nothing.
+
+    NEUTRAL is the one exception: it carries no instruction on purpose, because
+    "speak neutrally" is just plain text with no leading parenthetical.
+    """
+    for word in STYLE_VOCABULARY:
+        tag = resolve_style_tag(word)
+        assert tag.warning is None, word
+        assert tag.label == word
+        if tag.tone is Tone.NEUTRAL and tag.instruction is None:
+            continue
+        assert tag.instruction, word
+        assert tag.instruction.startswith("(") and tag.instruction.endswith(")"), word
+
+
+def test_neutral_synonyms_carry_no_instruction():
+    for word in ("normal", "plain", "flat"):
+        tag = resolve_style_tag(word)
+        assert tag.tone is Tone.NEUTRAL
+        assert tag.instruction is None
+    assert split_style_chunks("[normal]ข้อความ") == ["ข้อความ"]
+
+
+def test_style_label_survives_to_the_segment():
+    """The UI shows the word typed; tone stays the coarse colour family."""
+    seg = parse_tagged_segments("[appalled]ข้อความ")[0]
+    assert seg.style == "appalled"
+    assert seg.tone is Tone.ANGRY
+
+
+def test_distinct_styles_get_distinct_instructions():
+    a = resolve_style_tag("thoughtful").instruction
+    b = resolve_style_tag("curious").instruction
+    c = resolve_style_tag("whispering").instruction
+    assert len({a, b, c}) == 3
+
+
+@pytest.mark.parametrize("tag", ["laughs", "sighs", "applause", "gunshot", "sings"])
+def test_unsupported_tags_warn_and_send_no_instruction(tag):
+    """VoxCPM2 swallows these silently, so say so rather than implying they worked."""
+    resolved = resolve_style_tag(tag)
+    assert resolved.warning is not None
+    assert resolved.instruction is None
+
+    text = f"[{tag}]ข้อความ"
+    # Body is spoken plainly -- no dead tag riding along.
+    assert split_style_chunks(text) == ["ข้อความ"]
+    warnings = collect_tag_warnings(text)
+    assert len(warnings) == 1 and tag in warnings[0]
+
+
+def test_supported_tags_produce_no_warnings():
+    assert collect_tag_warnings("[sad]ก[happy]ข[appalled]ค") == []
+
+
+def test_warnings_are_deduplicated():
+    assert len(collect_tag_warnings("[laughs]ก[laughs]ข")) == 1

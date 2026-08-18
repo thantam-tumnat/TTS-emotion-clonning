@@ -11,6 +11,8 @@ GEMINI_TONE_DESCRIPTIONS = {
     Tone.CALM: "สงบ นุ่มนวล พูดช้า",
     Tone.NERVOUS: "ประหม่า ลังเล",
     Tone.SARCASTIC: "ประชด แดกดัน",
+    Tone.SCARED: "หวาดกลัว ตื่นตระหนก",
+    Tone.TIRED: "เหนื่อยล้า อ่อนเพลีย",
 }
 
 INTENSITY_MODIFIERS_THAI = {

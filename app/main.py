@@ -21,7 +21,11 @@ from app.config import settings
 from app.segmenter import segment_text
 from app.annotator import annotator
 from app.renderers import get_renderer
-from app.renderers.voxcpm import split_style_chunks, parse_tagged_segments
+from app.renderers.voxcpm import (
+    split_style_chunks,
+    parse_tagged_segments,
+    collect_tag_warnings,
+)
 from app.services.siangtts_service import siangtts_service, SynthesizerUnavailable
 
 
@@ -97,6 +101,7 @@ def annotate_endpoint(req: AnnotateRequest):
             segments=tagged,
             model_used="manual-tags",
             fallback=False,
+            warnings=collect_tag_warnings(text),
         )
 
     clauses = segment_text(text)
@@ -139,6 +144,7 @@ def speak_endpoint(req: SpeakRequest):
             segments=tagged,
             model_used="manual-tags",
             fallback=False,
+            warnings=collect_tag_warnings(text),
         )
     else:
         clauses = segment_text(text)
@@ -162,7 +168,8 @@ def speak_endpoint(req: SpeakRequest):
         error=annotated.error,
         error_detail=annotated.error_detail,
         attempts=annotated.attempts,
-        chunks=rendered.chunks
+        chunks=rendered.chunks,
+        warnings=annotated.warnings
     )
 
 

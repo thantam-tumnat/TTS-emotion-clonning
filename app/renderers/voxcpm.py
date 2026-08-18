@@ -1,5 +1,5 @@
 import re
-from typing import List, Optional, Tuple
+from typing import List, NamedTuple, Optional, Tuple
 from app.models import Segment, Tone, RenderResponse, RenderedChunk
 from app.renderers.base import BaseRenderer
 
@@ -10,49 +10,88 @@ STYLE_TAG_RE = re.compile(r"[\[(]\s*([A-Za-z][A-Za-z\s,.\-]*?)\s*(?::\s*([123]))
 
 _TONE_BY_NAME = {t.value: t for t in Tone}
 
+# Users paste text where newlines arrived as the two characters "\" + "n" rather
+# than as real line breaks. Left alone they end up inside the spoken body.
+_LITERAL_ESCAPE_RE = re.compile(r"\[nrt]")
 
-def _tone_from_body(body: str) -> Optional[Tone]:
-    """Best-effort tone for display, e.g. '(Sad and melancholic voice...)' -> SAD."""
+
+class ResolvedTag(NamedTuple):
+    instruction: Optional[str]   # what actually leads the text sent to VoxCPM2
+    tone: Tone                   # family, for colour and the other renderers
+    intensity: int
+    label: str                   # what the user typed, for display
+    warning: Optional[str]       # set when the tag cannot do anything
+
+
+def _clean_body(text: str) -> str:
+    return _LITERAL_ESCAPE_RE.sub(" ", text).strip()
+
+
+def _family_from_body(body: str) -> Optional[Tone]:
+    """Best-effort family for free-form direction, e.g. 'Sad and...' -> SAD."""
     for word in re.findall(r"[a-z]+", body.lower())[:2]:
         if word in _TONE_BY_NAME:
             return _TONE_BY_NAME[word]
+        entry = STYLE_VOCABULARY.get(word)
+        if entry is not None:
+            return entry[1]
     return None
 
 
-def resolve_style_tag(body: str, level: Optional[str] = None) -> Tuple[Optional[str], Tone, int]:
-    """Turn a raw tag body into (instruction, tone, intensity).
+def resolve_style_tag(body: str, level: Optional[str] = None) -> ResolvedTag:
+    """Turn a raw tag word into everything the pipeline needs from it.
 
     A bare tone name expands to this module's canonical instruction rather than
     being passed through: measured against a pinned speaker, "(sad)"/"(happy)" gave
-    dF0 -15.0 where the full phrasing gave +28.6. Free-form English direction is
-    kept verbatim so hand-written prompts still reach the model untouched.
+    dF0 -15.0 where the full phrasing gave +28.6.
     """
-    body = body.strip()
+    raw = body.strip()
+    key = raw.lower()
     intensity = int(level) if level else 2
-    tone = _TONE_BY_NAME.get(body.lower())
+
+    tone = _TONE_BY_NAME.get(key)
     if tone is not None:
-        return format_voxcpm_instruction(tone, intensity), tone, intensity
-    return f"({body})", _tone_from_body(body) or Tone.NEUTRAL, intensity
+        return ResolvedTag(format_voxcpm_instruction(tone, intensity), tone, intensity, key, None)
+
+    entry = STYLE_VOCABULARY.get(key)
+    if entry is not None:
+        instruction, family = entry
+        return ResolvedTag(
+            instruction or format_voxcpm_instruction(family, intensity),
+            family, intensity, key, None,
+        )
+
+    if key in UNSUPPORTED_TAGS:
+        # Send no instruction at all. VoxCPM2 swallows an unknown tag silently --
+        # verified by transcribing its output -- so passing it through would just
+        # produce plain speech while implying the tag did something.
+        return ResolvedTag(
+            None, Tone.NEUTRAL, intensity, key,
+            f"[{raw}] is a {UNSUPPORTED_TAGS[key]}; VoxCPM2 cannot produce it and will ignore the tag.",
+        )
+
+    return ResolvedTag(f"({raw})", _family_from_body(raw) or Tone.NEUTRAL, intensity, key, None)
 
 
-def _tagged_spans(text: str) -> List[Tuple[Optional[str], Tone, int, str]]:
-    """Split text into (instruction, tone, intensity, body) runs at each style tag."""
+def _tagged_spans(text: str) -> List[Tuple[ResolvedTag, str]]:
+    """Split text into (resolved tag, body) runs at each style tag."""
     matches = list(STYLE_TAG_RE.finditer(text))
     if not matches:
         return []
 
-    spans: List[Tuple[Optional[str], Tone, int, str]] = []
-    lead = text[:matches[0].start()].strip()
+    plain = ResolvedTag(None, Tone.NEUTRAL, 2, "neutral", None)
+    spans: List[Tuple[ResolvedTag, str]] = []
+
+    lead = _clean_body(text[:matches[0].start()])
     if lead:
-        spans.append((None, Tone.NEUTRAL, 2, lead))
+        spans.append((plain, lead))
 
     for i, m in enumerate(matches):
         end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        body = text[m.end():end].strip()
+        body = _clean_body(text[m.end():end])
         if not body:
             continue
-        instruction, tone, intensity = resolve_style_tag(m.group(1), m.group(2))
-        spans.append((instruction, tone, intensity, body))
+        spans.append((resolve_style_tag(m.group(1), m.group(2)), body))
     return spans
 
 
@@ -67,22 +106,27 @@ def split_style_chunks(text: str) -> List[str]:
     LLM annotation path.
     """
     return [
-        f"{instruction}{body}" if instruction else body
-        for instruction, _tone, _lvl, body in _tagged_spans(text)
+        f"{tag.instruction}{body}" if tag.instruction else body
+        for tag, body in _tagged_spans(text)
     ]
 
 
 def parse_tagged_segments(text: str) -> List[Segment]:
-    """Read hand-written tags as annotated segments, bypassing the LLM.
-
-    Lets explicitly tagged input show up in the Segments panel as what the user
-    actually wrote instead of coming back as one NEUTRAL blob with the raw markers
-    still embedded in the spoken text.
-    """
+    """Read hand-written tags as annotated segments, bypassing the LLM."""
     return [
-        Segment(text=body, tone=tone, intensity=intensity)
-        for _instruction, tone, intensity, body in _tagged_spans(text)
+        Segment(text=body, tone=tag.tone, intensity=tag.intensity, style=tag.label)
+        for tag, body in _tagged_spans(text)
     ]
+
+
+def collect_tag_warnings(text: str) -> List[str]:
+    """Tags that parsed cleanly but cannot affect the audio."""
+    seen, out = set(), []
+    for tag, _body in _tagged_spans(text):
+        if tag.warning and tag.warning not in seen:
+            seen.add(tag.warning)
+            out.append(tag.warning)
+    return out
 
 
 # Wording is load-bearing and was chosen by measurement, not taste. Against a pinned
@@ -131,6 +175,92 @@ VOXCPM_INSTRUCTION_MAP = {
         2: "(Sarcastic and mocking tone)",
         3: "(Heavy sarcastic and cynical tone)",
     },
+    Tone.SCARED: {
+        1: "(Slightly uneasy and wary voice)",
+        2: "(Scared and fearful voice, trembling breath)",
+        3: "(Terrified and panicked voice, gasping and shaking)",
+    },
+    Tone.TIRED: {
+        1: "(Slightly weary voice)",
+        2: "(Tired and weary voice, low energy, slow pace)",
+        3: "(Exhausted and drained voice, heavy sighs, very slow)",
+    },
+}
+
+# ---------------------------------------------------------------------------
+# Open style vocabulary
+#
+# The Tone enum stays small on purpose: it is the LLM's classification label
+# space, and every member must be mirrored across six files. Hand-written tags
+# do not need that constraint -- VoxCPM2 takes free-form natural language -- so
+# extra styles live here alone, each carrying a full instruction plus a "family"
+# Tone used only for colour and for the ElevenLabs/Gemini renderers.
+#
+# Instructions stay in the short descriptive register that measured best
+# (dF0 +28.6 / spread +42.4); appending explicit prosody diluted it to +4.4.
+# ---------------------------------------------------------------------------
+
+STYLE_VOCABULARY = {
+    # -- direct synonyms of an existing tone -------------------------------
+    "afraid": (None, Tone.SCARED), "fearful": (None, Tone.SCARED),
+    "frightened": (None, Tone.SCARED), "terrified": (None, Tone.SCARED),
+    "panicked": (None, Tone.SCARED),
+    "sleepy": (None, Tone.TIRED), "exhausted": (None, Tone.TIRED),
+    "weary": (None, Tone.TIRED), "drained": (None, Tone.TIRED),
+    "anxious": (None, Tone.NERVOUS), "worried": (None, Tone.NERVOUS),
+    "hesitant": (None, Tone.NERVOUS),
+    "joyful": (None, Tone.HAPPY), "cheerful": (None, Tone.HAPPY),
+    "glad": (None, Tone.HAPPY),
+    "furious": (None, Tone.ANGRY), "mad": (None, Tone.ANGRY),
+    "sorrowful": (None, Tone.SAD), "depressed": (None, Tone.SAD),
+    "melancholic": (None, Tone.SAD),
+    "relaxed": (None, Tone.CALM), "gentle": (None, Tone.CALM),
+    "soothing": (None, Tone.CALM),
+    "thrilled": (None, Tone.EXCITED), "eager": (None, Tone.EXCITED),
+    "energetic": (None, Tone.EXCITED),
+    "mocking": (None, Tone.SARCASTIC), "cynical": (None, Tone.SARCASTIC),
+    "normal": (None, Tone.NEUTRAL), "plain": (None, Tone.NEUTRAL),
+    "flat": (None, Tone.NEUTRAL),
+
+    # -- distinct styles with their own direction --------------------------
+    "annoyed": ("(Annoyed and irritated voice, clipped delivery)", Tone.ANGRY),
+    "appalled": ("(Appalled and shocked voice, sharp disbelief)", Tone.ANGRY),
+    "disappointed": ("(Disappointed voice, quiet and let down)", Tone.SAD),
+    "crying": ("(Crying voice, broken and tearful, trembling)", Tone.SAD),
+    "surprised": ("(Surprised voice, sudden rising pitch)", Tone.EXCITED),
+    "curious": ("(Curious and inquisitive voice, questioning tone)", Tone.EXCITED),
+    "thoughtful": ("(Thoughtful voice, measured and reflective, unhurried)", Tone.CALM),
+    "mischievous": ("(Mischievous voice, playful and teasing)", Tone.SARCASTIC),
+    "playful": ("(Playful and light voice, teasing lilt)", Tone.HAPPY),
+    "whispering": ("(Whispering voice, very soft and breathy)", Tone.CALM),
+    "shouting": ("(Shouting voice, very loud and projected)", Tone.ANGRY),
+    "confident": ("(Confident and assured voice, steady and firm)", Tone.NEUTRAL),
+    "serious": ("(Serious and grave voice, deliberate delivery)", Tone.NEUTRAL),
+    "warm": ("(Warm and friendly voice, gentle smile)", Tone.HAPPY),
+    "romantic": ("(Warm intimate voice, soft and affectionate)", Tone.CALM),
+    "proud": ("(Proud voice, bright and self-assured)", Tone.HAPPY),
+    "apologetic": ("(Apologetic voice, soft and regretful)", Tone.SAD),
+    "urgent": ("(Urgent voice, fast and pressing)", Tone.EXCITED),
+    "bored": ("(Bored voice, flat and disinterested, slow)", Tone.TIRED),
+    "disgusted": ("(Disgusted voice, recoiling distaste)", Tone.ANGRY),
+}
+STYLE_VOCABULARY["whispers"] = STYLE_VOCABULARY["whispering"]
+STYLE_VOCABULARY["shouts"] = STYLE_VOCABULARY["shouting"]
+
+# VoxCPM2 has no mechanism for these. Verified by transcribing its output: the
+# tag is silently absorbed -- never spoken, but never realised either. Naming
+# them lets the caller say so instead of returning audio that quietly ignored it.
+UNSUPPORTED_TAGS = {
+    "laughs": "non-verbal sound", "laugh": "non-verbal sound",
+    "giggles": "non-verbal sound", "chuckles": "non-verbal sound",
+    "wheezing": "non-verbal sound", "sighs": "non-verbal sound",
+    "exhales": "non-verbal sound", "inhales": "non-verbal sound",
+    "snorts": "non-verbal sound", "swallows": "non-verbal sound",
+    "gulps": "non-verbal sound", "clears throat": "non-verbal sound",
+    "applause": "sound effect", "clapping": "sound effect",
+    "gunshot": "sound effect", "explosion": "sound effect",
+    "woo": "sound effect", "sings": "singing",
+    "short pause": "timing", "long pause": "timing",
 }
 
 

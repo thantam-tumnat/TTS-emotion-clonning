@@ -716,7 +716,7 @@ document.addEventListener('DOMContentLoaded', () => {
           <div class="segment-meta">
             <div class="segment-meta-left">
               <span class="seg-index">#${idx + 1}</span>
-              <span class="tone-chip tone-${seg.tone}">${seg.tone}</span>
+              <span class="tone-chip tone-${seg.tone}">${seg.style || seg.tone}</span>
             </div>
             <span class="intensity-stars">${formatIntensityStars(seg.intensity)}</span>
           </div>
