@@ -148,9 +148,57 @@ def parse_tagged_segments(text: str) -> List[Segment]:
     """Read hand-written tags as annotated segments, bypassing the LLM."""
     return [
         Segment(text=span.body, tone=span.tag.tone, intensity=span.tag.intensity,
-                style=span.tag.label)
+                style=span.tag.label, break_before=span.break_before)
         for span in _tagged_spans(text)
     ]
+
+
+
+def build_script(segments: List[Segment]) -> str:
+    """The short, editable form of an annotated script: "[sad] ... [happy] ...".
+
+    This is what the studio shows in its editable box and what gets sent back to
+    /synthesize, so it has to round-trip. The single-shot ``text`` rendering cannot:
+    it carries only the *first* instruction followed by every body concatenated, so
+    feeding it back collapsed a four-emotion script into one tone.
+
+    Intensity is written only when it is not the default, and a segment that started
+    a new line keeps its line break, because that is what earns the longer pause.
+    """
+    parts: List[str] = []
+    prev_key = None
+
+    for seg in segments:
+        body = seg.text.strip()
+        if not body:
+            continue
+
+        label = seg.style or seg.tone.value
+        key = (label, seg.intensity, seg.tone)
+
+        if key == prev_key and parts:
+            parts.append(f" {body}")
+            continue
+
+        plain = seg.tone == Tone.NEUTRAL and label.lower() in _PLAIN_LABELS
+        if plain:
+            tag = ""
+        elif seg.intensity == 2:
+            tag = f"[{label}] "
+        else:
+            tag = f"[{label}:{seg.intensity}] "
+
+        if not parts:
+            sep = ""
+        elif seg.break_before:
+            sep = "\n"
+        else:
+            sep = " "
+
+        parts.append(f"{sep}{tag}{body}")
+        prev_key = key
+
+    return "".join(parts).strip()
 
 
 def collect_tag_warnings(text: str) -> List[str]:
@@ -245,6 +293,8 @@ STYLE_VOCABULARY = {
     "hesitant": (None, Tone.NERVOUS),
     "joyful": (None, Tone.HAPPY), "cheerful": (None, Tone.HAPPY),
     "glad": (None, Tone.HAPPY),
+    # The studio's tag button inserts the ElevenLabs spelling.
+    "happily": (None, Tone.HAPPY),
     "furious": (None, Tone.ANGRY), "mad": (None, Tone.ANGRY),
     "sorrowful": (None, Tone.SAD), "depressed": (None, Tone.SAD),
     "melancholic": (None, Tone.SAD),
@@ -280,6 +330,12 @@ STYLE_VOCABULARY = {
 }
 STYLE_VOCABULARY["whispers"] = STYLE_VOCABULARY["whispering"]
 STYLE_VOCABULARY["shouts"] = STYLE_VOCABULARY["shouting"]
+# Words that mean "no direction". A segment carrying one of these gets no tag in the
+# short script form, so an untagged opening line stays untagged.
+_PLAIN_LABELS = {"neutral"} | {
+    word for word, (instruction, family) in STYLE_VOCABULARY.items()
+    if instruction is None and family is Tone.NEUTRAL
+}
 
 # VoxCPM2 has no mechanism for these. Verified by transcribing its output: the
 # tag is silently absorbed -- never spoken, but never realised either. Naming
@@ -364,6 +420,7 @@ class VoxCPMRenderer(BaseRenderer):
                     instruction=instruction,
                     body=seg.text,
                     tone=seg.tone.value,
+                    break_before=seg.break_before,
                 )
             )
             prev_key = key
@@ -382,5 +439,6 @@ class VoxCPMRenderer(BaseRenderer):
         return RenderResponse(
             text=rendered_text.strip(),
             prompt=", ".join(instructions_used) if instructions_used else "neutral",
+            script=build_script(segments),
             chunks=chunks,
         )

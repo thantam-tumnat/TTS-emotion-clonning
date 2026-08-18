@@ -219,6 +219,7 @@ def speak_endpoint(req: SpeakRequest):
         error_detail=annotated.error_detail,
         attempts=annotated.attempts,
         chunks=rendered.chunks,
+        script=rendered.script,
         warnings=annotated.warnings
     )
 

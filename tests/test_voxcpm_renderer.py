@@ -7,6 +7,7 @@ from app.renderers.voxcpm import (
     parse_tagged_segments,
     collect_tag_warnings,
     resolve_style_tag,
+    split_style_chunk_specs,
     STYLE_VOCABULARY,
 )
 from app.renderers import get_renderer
@@ -284,3 +285,70 @@ def test_supported_tags_produce_no_warnings():
 
 def test_warnings_are_deduplicated():
     assert len(collect_tag_warnings("[laughs]ก[laughs]ข")) == 1
+
+
+# ---------------------------------------------------------------------------
+# Short script form (what the studio's editable box holds)
+# ---------------------------------------------------------------------------
+
+def test_script_uses_short_tags_not_instructions():
+    """The editable box shows '[sad] ...', not '(Sad and melancholic voice...)...'."""
+    res = VoxCPMRenderer().render(parse_tagged_segments("[sad] หนึ่ง [happy] สอง"))
+    assert res.script == "[sad] หนึ่ง [happy] สอง"
+    assert "(" not in res.script
+
+
+def test_script_round_trips_every_emotion():
+    """The regression this exists for.
+
+    data.text carries only the FIRST instruction followed by every body, so feeding
+    it back to /synthesize collapsed a four-emotion script into one tone.
+    """
+    source = "[sad] หนึ่ง\n[happy] สอง [scared]สาม\n[tired]สี่"
+    res = VoxCPMRenderer().render(parse_tagged_segments(source))
+
+    assert [s.tone for s in split_style_chunk_specs(res.script)] == [
+        "sad", "happy", "scared", "tired",
+    ]
+    # data.text, by contrast, cannot round-trip -- it is a single-shot rendering.
+    assert len(split_style_chunk_specs(res.text)) == 1
+
+
+def test_script_preserves_line_breaks_that_earn_the_longer_pause():
+    source = "[sad] หนึ่ง\n[happy] สอง [scared]สาม"
+    res = VoxCPMRenderer().render(parse_tagged_segments(source))
+    assert [s.break_before for s in split_style_chunk_specs(res.script)] == [
+        False, True, False,
+    ]
+
+
+def test_script_leaves_an_untagged_opening_untagged():
+    res = VoxCPMRenderer().render(parse_tagged_segments("นำเรื่อง [sad] เศร้า"))
+    assert res.script == "นำเรื่อง [sad] เศร้า"
+
+
+def test_script_writes_intensity_only_when_it_is_not_the_default():
+    segs = [
+        Segment(text="ก", tone=Tone.SAD, intensity=2, style="sad"),
+        Segment(text="ข", tone=Tone.SAD, intensity=3, style="sad"),
+    ]
+    assert VoxCPMRenderer().render(segs).script == "[sad] ก [sad:3] ข"
+
+
+def test_script_keeps_the_specific_style_word():
+    segs = [Segment(text="ก", tone=Tone.ANGRY, intensity=2, style="appalled")]
+    assert VoxCPMRenderer().render(segs).script == "[appalled] ก"
+
+
+def test_script_from_llm_segments_has_no_style_words():
+    """The LLM path sets tone but never style, so the tone name is the tag."""
+    segs = [
+        Segment(text="ก", tone=Tone.NEUTRAL, intensity=2),
+        Segment(text="ข", tone=Tone.EXCITED, intensity=2),
+    ]
+    assert VoxCPMRenderer().render(segs).script == "ก [excited] ข"
+
+
+def test_happily_button_tag_resolves_to_the_full_happy_instruction():
+    """The studio inserts the ElevenLabs spelling; a bare '(happily)' measured weak."""
+    assert resolve_style_tag("happily").instruction == format_voxcpm_instruction(Tone.HAPPY, 2)

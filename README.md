@@ -130,6 +130,7 @@ py -m pytest -v
 ## Web Studio Features
 
 - **Interactive Script & Emotion Editor**: Real-time parsing of bracket tags like `[calm] ...` into audio instructions.
+- **Editable script stays in short tag form**: the main textarea holds `[sad] ... [happy] ...` (the `script` field of `/speak`), not the expanded VoxCPM2 instruction. That form is what the box sends back to `/synthesize`, and it is the only one that round-trips — `text` is a single-shot rendering carrying just the *first* instruction, so re-submitting it collapsed a multi-emotion script into one tone.
 - **Voice Cloning & Speaker Manager**:
   - Select from pre-cached registered voices in `ref/` & `voice_cache/`.
   - Drag-and-drop / Upload any reference audio clip (`.wav`, `.mp3`) for zero-shot voice cloning.

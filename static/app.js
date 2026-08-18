@@ -689,8 +689,11 @@ document.addEventListener('DOMContentLoaded', () => {
       fallbackIndicator.textContent = 'Normal';
     }
 
-    // 1. Populate Editable Output Textarea
-    outputEditableText.value = data.text;
+    // 1. Populate Editable Output Textarea.
+    // The short "[sad] ... [happy] ..." form, not data.text: data.text is a
+    // single-shot rendering carrying only the FIRST instruction, so editing and
+    // re-submitting it collapsed a multi-emotion script into one tone.
+    outputEditableText.value = data.script || data.text;
     updateOutputPreview();
 
     // Per-segment instruction view, driven by the same payload.

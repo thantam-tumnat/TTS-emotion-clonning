@@ -23,6 +23,10 @@ class Segment(BaseModel):
     # Free-form style word as written, e.g. "appalled". `tone` stays the coarse
     # family used for colour and for the ElevenLabs/Gemini renderers.
     style: Optional[str] = None
+    # The source put a line break before this segment's tag, which earns a longer
+    # pause than an inline tone change. Kept on the segment so the short script form
+    # can round-trip it.
+    break_before: bool = False
 
 
 class AnnotateRequest(BaseModel):
@@ -64,6 +68,11 @@ class RenderedChunk(BaseModel):
 class RenderResponse(BaseModel):
     text: str  # text ready for TTS / instruction prompt
     prompt: Optional[str] = None  # for engines using separate field (Gemini/VoxCPM summary)
+    # The short, editable form: "[sad] ... [happy] ...". This is what the studio puts
+    # in the editable box, because `text` is a single-shot rendering that carries only
+    # the FIRST instruction -- sending that back collapsed a multi-emotion script into
+    # one tone.
+    script: Optional[str] = None
     # Per-segment units. VoxCPM2 only honours a style parenthetical at the start of
     # the text it is given, so multi-tone input must be synthesized chunk by chunk.
     chunks: List[RenderedChunk] = Field(default_factory=list)
@@ -87,6 +96,7 @@ class SpeakResponse(BaseModel):
     error_detail: Optional[str] = None
     attempts: Optional[list[dict]] = None
     chunks: Optional[list[RenderedChunk]] = None
+    script: Optional[str] = None
     warnings: List[str] = Field(default_factory=list)
 
 
