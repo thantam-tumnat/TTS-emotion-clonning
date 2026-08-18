@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import io
 import os
-import re
 import sys
 import tempfile
 from pathlib import Path
@@ -15,14 +14,6 @@ AUDIO_EXTS = {".wav", ".mp3", ".m4a", ".ogg", ".flac"}
 
 # Mock-only. The real synthesizer reports the model's own rate.
 MOCK_SAMPLE_RATE = 48000
-
-# A leading "(sad)" is direction for the model, not words to transcribe.
-_LEADING_STYLE_TAG_RE = re.compile(r"^\([a-zA-Z][a-zA-Z\s,.\-]*\)\s*")
-
-
-def _spoken_words(chunk: str) -> str:
-    """The part of a chunk that is actually voiced, minus its style instruction."""
-    return _LEADING_STYLE_TAG_RE.sub("", chunk).strip()
 
 
 class SynthesizerUnavailable(RuntimeError):
@@ -430,12 +421,19 @@ class SiangTTSService:
 
         return None, None, None
 
-    def _clone_voice_from_audio(self, synth: Any, wav: Any, sample_rate: int, chunk: str) -> Any:
-        """Encode already-generated audio into a prompt cache.
+    def _clone_voice_from_audio(self, synth: Any, wav: Any, sample_rate: int) -> Any:
+        """Encode already-generated audio into a timbre-only prompt cache.
 
         Lets a run of chunks keep one voice when the caller pinned no speaker.
         Returns None if cloning fails -- a drifting voice is better than a failed
         request, and the caller simply carries on unconditioned.
+
+        Deliberately clones in *reference* mode (no transcript). Passing one would
+        select VoxCPM2's continuation mode, which reproduces every vocal nuance of
+        the source -- including its emotion. That made chunk 2 inherit chunk 1's
+        mood, collapsing [sad] -> [happy] to a measured -4.9 Hz median-F0 change
+        where a pinned speaker gets +59.5 Hz. Timbre is what we want to carry over;
+        prosody must stay free for the next chunk's style tag to steer.
         """
         import soundfile as sf
 
@@ -444,7 +442,7 @@ class SiangTTSService:
             with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as tf:
                 tmp_path = tf.name
             sf.write(tmp_path, wav, sample_rate, format="WAV", subtype="PCM_16")
-            return synth.build_voice(tmp_path, _spoken_words(chunk) or None)
+            return synth.build_voice(tmp_path)
         except Exception as e:
             print(
                 f"[SiangTTS] Could not clone first chunk for voice consistency: {e}",
@@ -457,6 +455,29 @@ class SiangTTSService:
                     os.remove(tmp_path)
                 except Exception:
                     pass
+
+    def _build_seed_voice(
+        self, synth: Any, sample_rate: int, cfg_value: float, inference_timesteps: int
+    ) -> Any:
+        """Generate a short neutral line and clone its timbre.
+
+        Costs one extra short generation per multi-chunk request, and buys a voice
+        that is the same person for every chunk while carrying no emotion of its own.
+        Returns None on failure -- an inconsistent voice beats a failed request.
+        """
+        seed_text = (settings.siangtts_voice_seed_text or "").strip()
+        if not seed_text:
+            return None
+        try:
+            seed_wav = synth.synth(
+                text=seed_text,
+                cfg_value=cfg_value,
+                inference_timesteps=inference_timesteps,
+            )
+            return self._clone_voice_from_audio(synth, seed_wav, sample_rate)
+        except Exception as e:
+            print(f"[SiangTTS] Seed voice generation failed: {e}", file=sys.stderr)
+            return None
 
     def synthesize(
         self,
@@ -510,6 +531,21 @@ class SiangTTSService:
         )
 
         try:
+            # Nothing pinned the voice, so each chunk would otherwise come back a
+            # different speaker. Mint one neutral seed voice up front and condition
+            # every chunk on it. Seeding from a *neutral* line rather than from
+            # chunk 1 is what keeps the style tags independent: cloning chunk 1
+            # carried its emotion into chunk 2 and flattened the contrast.
+            if (
+                settings.siangtts_auto_voice_consistency
+                and len(chunks) > 1
+                and prompt_cache is None
+                and ref_audio_path is None
+            ):
+                prompt_cache = self._build_seed_voice(
+                    synth, sample_rate, cfg_value, inference_timesteps
+                )
+
             rendered = []
             gap = np.zeros(int(sample_rate * gap_ms / 1000), dtype="float32")
             for i, chunk in enumerate(chunks):
@@ -526,19 +562,6 @@ class SiangTTSService:
                 if i:
                     rendered.append(gap)
                 rendered.append(wav)
-
-                # Nothing pinned the voice, so every later chunk would be a fresh
-                # speaker. Adopt this first one as the reference for the remainder.
-                if (
-                    settings.siangtts_auto_voice_consistency
-                    and i == 0
-                    and len(chunks) > 1
-                    and prompt_cache is None
-                    and ref_audio_path is None
-                ):
-                    prompt_cache = self._clone_voice_from_audio(
-                        synth, wav, sample_rate, chunk
-                    )
 
             audio = np.concatenate(rendered) if len(rendered) > 1 else rendered[0]
 

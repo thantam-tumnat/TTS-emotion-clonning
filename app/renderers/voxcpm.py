@@ -1,41 +1,95 @@
 import re
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from app.models import Segment, Tone, RenderResponse, RenderedChunk
 from app.renderers.base import BaseRenderer
 
-# A style parenthetical is ASCII-only -- "(sad)", "(Excited and energetic tone)".
-# Requiring that keeps Thai text in brackets treated as spoken content, not a tag.
-STYLE_TAG_RE = re.compile(r"\([a-zA-Z][a-zA-Z\s,.\-]*\)")
+# A style tag is ASCII-only and may use either bracket style -- the UI documents
+# "[sad]" while VoxCPM2's own format is "(sad)". Requiring ASCII keeps Thai inside
+# brackets treated as spoken content, not direction. An optional ":N" sets intensity.
+STYLE_TAG_RE = re.compile(r"[\[(]\s*([A-Za-z][A-Za-z\s,.\-]*?)\s*(?::\s*([123]))?\s*[\])]")
+
+_TONE_BY_NAME = {t.value: t for t in Tone}
+
+
+def _tone_from_body(body: str) -> Optional[Tone]:
+    """Best-effort tone for display, e.g. '(Sad and melancholic voice...)' -> SAD."""
+    for word in re.findall(r"[a-z]+", body.lower())[:2]:
+        if word in _TONE_BY_NAME:
+            return _TONE_BY_NAME[word]
+    return None
+
+
+def resolve_style_tag(body: str, level: Optional[str] = None) -> Tuple[Optional[str], Tone, int]:
+    """Turn a raw tag body into (instruction, tone, intensity).
+
+    A bare tone name expands to this module's canonical instruction rather than
+    being passed through: measured against a pinned speaker, "(sad)"/"(happy)" gave
+    dF0 -15.0 where the full phrasing gave +28.6. Free-form English direction is
+    kept verbatim so hand-written prompts still reach the model untouched.
+    """
+    body = body.strip()
+    intensity = int(level) if level else 2
+    tone = _TONE_BY_NAME.get(body.lower())
+    if tone is not None:
+        return format_voxcpm_instruction(tone, intensity), tone, intensity
+    return f"({body})", _tone_from_body(body) or Tone.NEUTRAL, intensity
+
+
+def _tagged_spans(text: str) -> List[Tuple[Optional[str], Tone, int, str]]:
+    """Split text into (instruction, tone, intensity, body) runs at each style tag."""
+    matches = list(STYLE_TAG_RE.finditer(text))
+    if not matches:
+        return []
+
+    spans: List[Tuple[Optional[str], Tone, int, str]] = []
+    lead = text[:matches[0].start()].strip()
+    if lead:
+        spans.append((None, Tone.NEUTRAL, 2, lead))
+
+    for i, m in enumerate(matches):
+        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
+        body = text[m.end():end].strip()
+        if not body:
+            continue
+        instruction, tone, intensity = resolve_style_tag(m.group(1), m.group(2))
+        spans.append((instruction, tone, intensity, body))
+    return spans
 
 
 def split_style_chunks(text: str) -> List[str]:
-    """Split hand-written text into chunks that each *lead* with a style parenthetical.
+    """Split hand-written text into chunks that each *lead* with a style instruction.
 
     VoxCPM2 only honours a parenthetical at position 0, so a tag typed mid-text would
-    otherwise be read aloud. Splitting at every tag turns "(a)one(b)two" into two
+    otherwise be read aloud. Splitting at every tag turns "[a]one[b]two" into two
     separately-synthesized chunks, which is what the user meant by writing it.
 
     Returns [] when the text carries no style tag, so callers can fall back to the
     LLM annotation path.
     """
-    matches = list(STYLE_TAG_RE.finditer(text))
-    if not matches:
-        return []
+    return [
+        f"{instruction}{body}" if instruction else body
+        for instruction, _tone, _lvl, body in _tagged_spans(text)
+    ]
 
-    chunks: List[str] = []
-    # Text before the first tag has no instruction of its own.
-    lead = text[:matches[0].start()].strip()
-    if lead:
-        chunks.append(lead)
 
-    for i, match in enumerate(matches):
-        end = matches[i + 1].start() if i + 1 < len(matches) else len(text)
-        body = text[match.end():end].strip()
-        if body:
-            chunks.append(f"{match.group(0)}{body}")
+def parse_tagged_segments(text: str) -> List[Segment]:
+    """Read hand-written tags as annotated segments, bypassing the LLM.
 
-    return chunks
+    Lets explicitly tagged input show up in the Segments panel as what the user
+    actually wrote instead of coming back as one NEUTRAL blob with the raw markers
+    still embedded in the spoken text.
+    """
+    return [
+        Segment(text=body, tone=tone, intensity=intensity)
+        for _instruction, tone, intensity, body in _tagged_spans(text)
+    ]
 
+
+# Wording is load-bearing and was chosen by measurement, not taste. Against a pinned
+# speaker over 4 reps, these gave happy-vs-sad dF0 +28.6Hz / pitch-spread +42.4.
+# Appending explicit prosody ("bright high pitch, lively quick pace") DILUTED it to
+# +4.4 / -2.2, and bare "(happy)" / "(sad)" tags were worse still at -15.0 / -6.1.
+# Re-measure before rewording.
 VOXCPM_INSTRUCTION_MAP = {
     Tone.NEUTRAL: {
         1: None,

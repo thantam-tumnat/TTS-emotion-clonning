@@ -21,7 +21,7 @@ from app.config import settings
 from app.segmenter import segment_text
 from app.annotator import annotator
 from app.renderers import get_renderer
-from app.renderers.voxcpm import split_style_chunks
+from app.renderers.voxcpm import split_style_chunks, parse_tagged_segments
 from app.services.siangtts_service import siangtts_service, SynthesizerUnavailable
 
 
@@ -88,6 +88,17 @@ def annotate_endpoint(req: AnnotateRequest):
     if not text:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
+    # Hand-written tags are already an annotation -- re-deriving them with the LLM
+    # would both cost a call and leave the raw markers sitting in the spoken text.
+    tagged = parse_tagged_segments(text)
+    if tagged:
+        return AnnotateResponse(
+            original=text,
+            segments=tagged,
+            model_used="manual-tags",
+            fallback=False,
+        )
+
     clauses = segment_text(text)
     response = annotator.annotate(
         original_text=text,
@@ -121,14 +132,23 @@ def speak_endpoint(req: SpeakRequest):
     if not text:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    clauses = segment_text(text)
-    annotated = annotator.annotate(
-        original_text=text,
-        clauses=clauses,
-        guidance=req.guidance,
-        custom_model=req.model
-    )
-    
+    tagged = parse_tagged_segments(text)
+    if tagged:
+        annotated = AnnotateResponse(
+            original=text,
+            segments=tagged,
+            model_used="manual-tags",
+            fallback=False,
+        )
+    else:
+        clauses = segment_text(text)
+        annotated = annotator.annotate(
+            original_text=text,
+            clauses=clauses,
+            guidance=req.guidance,
+            custom_model=req.model
+        )
+
     renderer = get_renderer(req.engine)
     rendered = renderer.render(annotated.segments)
 

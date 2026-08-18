@@ -1047,6 +1047,15 @@ textarea:focus, .custom-input:focus {
   accent-color: var(--primary-color);
 }
 
+.param-hint {
+  display: block;
+  margin-top: 4px;
+  font-size: 0.7rem;
+  line-height: 1.4;
+  color: var(--text-secondary);
+  opacity: 0.8;
+}
+
 /* Instruction Highlights */
 .instruction-highlight {
   background: rgba(45, 212, 191, 0.18);

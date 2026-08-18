@@ -200,8 +200,55 @@ def test_explicit_speaker_is_not_overridden(monkeypatch):
     assert seen == ["pinned_latent", "pinned_latent"]
 
 
-def test_spoken_words_strips_only_leading_ascii_tag():
-    assert svc._spoken_words("(sad)เล่นโซเชียล") == "เล่นโซเชียล"
-    assert svc._spoken_words("ไม่มีแท็ก") == "ไม่มีแท็ก"
-    # Thai in brackets is content, not direction.
-    assert svc._spoken_words("ราคา (พิเศษ) วันนี้") == "ราคา (พิเศษ) วันนี้"
+def test_multi_chunk_seeds_one_neutral_voice_for_every_chunk():
+    """No chunk may be cloned from another, or it inherits that chunk's emotion.
+
+    Cloning chunk 1 collapsed [sad]->[happy] to a measured -4.9Hz median-F0 change.
+    Seeding from a neutral line instead keeps each style tag independent.
+    """
+    service = svc.SiangTTSService()
+    service._synthesizer = svc._MockSynthesizer()
+
+    spoken, caches = [], []
+
+    def record(text, *, ref_audio=None, prompt_cache=None, **kw):
+        spoken.append(text)
+        caches.append(prompt_cache)
+        import numpy as np
+        return np.zeros(1000, dtype="float32")
+
+    service._synthesizer.synth = record
+    service._synthesizer.build_voice = lambda path, prompt_text=None: "seed_voice"
+
+    svc.settings.siangtts_auto_voice_consistency = True
+    service.synthesize_many(["(happy)หนึ่ง", "(sad)สอง"])
+
+    # The seed line is generated first and is never part of the output chunks.
+    assert spoken[0] == svc.settings.siangtts_voice_seed_text
+    assert spoken[1:] == ["(happy)หนึ่ง", "(sad)สอง"]
+    # Both real chunks ride the same neutral seed -- including the first one.
+    assert caches[1] == "seed_voice"
+    assert caches[2] == "seed_voice"
+
+
+def test_seed_voice_skipped_when_speaker_pinned():
+    """A pinned speaker already fixes the timbre; no seed generation needed."""
+    service = svc.SiangTTSService()
+    service._synthesizer = svc._MockSynthesizer()
+    service._voices["pinned"] = "pinned_latent"
+
+    spoken = []
+
+    def record(text, *, ref_audio=None, prompt_cache=None, **kw):
+        spoken.append(text)
+        import numpy as np
+        return np.zeros(1000, dtype="float32")
+
+    service._synthesizer.synth = record
+    svc.settings.siangtts_auto_voice_consistency = True
+    try:
+        service.synthesize_many(["(happy)หนึ่ง", "(sad)สอง"], speaker_id="pinned")
+    finally:
+        service._voices.pop("pinned", None)
+
+    assert spoken == ["(happy)หนึ่ง", "(sad)สอง"]

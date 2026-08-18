@@ -44,9 +44,13 @@ class Settings(BaseSettings):
     # exactly like a broken model.
     siangtts_allow_mock: bool = False
     # With no speaker pinned, VoxCPM2 resamples the timbre on every call, so a
-    # multi-chunk utterance changes speaker mid-sentence. Clone the first chunk and
-    # reuse it for the rest so base-voice output stays one person.
+    # multi-chunk utterance changes speaker mid-sentence. Generate a short neutral
+    # seed line, clone its timbre, and condition every chunk on that -- including the
+    # first, so no chunk inherits another chunk's emotion.
     siangtts_auto_voice_consistency: bool = True
+    # Short, emotionally flat, gender-neutral Thai used only to mint that seed voice.
+    # Never spoken in the output.
+    siangtts_voice_seed_text: str = "วันนี้อากาศปกติ อุณหภูมิยี่สิบห้าองศา"
 
     @field_validator("reanchor_chars", mode="before")
     @classmethod
