@@ -447,7 +447,14 @@ class Annotator:
 
     def list_available_models(self, refresh: bool = False) -> dict:
         """Fetch all available models from configured providers (Gemini, Anthropic, OpenAI/9arm)."""
-        if getattr(self, "_cached_models", None) is not None and not refresh:
+        if refresh:
+            import app.config as app_cfg
+            app_cfg.settings = app_cfg.Settings()
+            self._openai_client = None
+            self._gemini_client = None
+            self._anthropic_client = None
+            self._cached_models = None
+        elif getattr(self, "_cached_models", None) is not None:
             return self._cached_models
 
         providers: dict[str, Any] = {}
