@@ -236,7 +236,7 @@ def build_script(segments: List[Segment]) -> str:
     prev_key = None
 
     for seg in segments:
-        body = seg.text.strip()
+        body = (seg.spoken_text or seg.text).strip()
         if not body:
             continue
 
@@ -475,14 +475,15 @@ class VoxCPMRenderer(BaseRenderer):
 
         for seg in segments:
             instruction = instruction_for_segment(seg)
+            spoken = seg.spoken_text if seg.spoken_text is not None else seg.text
             # Key on what actually reaches the model. Keying on `tone` alone merged
             # "[sad:1] a [sad:3] b" into one chunk at intensity 1, and merged two
             # different STYLE_VOCABULARY styles that happen to share a family.
             key = (instruction, seg.tone)
 
             if key == prev_key and chunks:
-                chunks[-1].body += seg.text
-                chunks[-1].text += seg.text
+                chunks[-1].body += spoken
+                chunks[-1].text += spoken
                 continue
 
             if instruction:
@@ -492,9 +493,9 @@ class VoxCPMRenderer(BaseRenderer):
             # No space after ')' -- that is the documented VoxCPM2 format.
             chunks.append(
                 RenderedChunk(
-                    text=f"{instruction}{seg.text}" if instruction else seg.text,
+                    text=f"{instruction}{spoken}" if instruction else spoken,
                     instruction=instruction,
-                    body=seg.text,
+                    body=spoken,
                     tone=seg.tone.value,
                     break_before=seg.break_before,
                 )

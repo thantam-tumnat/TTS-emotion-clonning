@@ -84,3 +84,52 @@ def test_validator_max_segments_cap():
     segments = validate_and_build_segments(original, clauses, raw_labels, max_segments=10)
     assert len(segments) <= 10
     assert "".join(s.text for s in segments) == original
+
+
+def test_is_safe_spoken_text():
+    from app.validator import is_safe_spoken_text
+
+    # Safe punctuation additions
+    assert is_safe_spoken_text("สวัสดีครับ", "สวัสดีครับ...")
+    assert is_safe_spoken_text("สวัสดีครับ ", "สวัสดีครับ!")
+    assert is_safe_spoken_text("ทำไมล่ะ", "ทำไมล่ะ?!")
+    assert is_safe_spoken_text("ไม่นะ", "ไม่นะ—")
+    assert is_safe_spoken_text("จริงเหรอ", "จริง...เหรอ?")
+
+    # Unsafe alterations (words changed, added, or deleted)
+    assert not is_safe_spoken_text("สวัสดีครับ", "สวัสดีจ้า!")
+    assert not is_safe_spoken_text("สวัสดีครับ", "สวัสดี")
+    assert not is_safe_spoken_text("สวัสดีครับ", "สวัสดีครับผม")
+    assert not is_safe_spoken_text("สวัสดีครับ", "")
+    assert not is_safe_spoken_text("สวัสดีครับ", None)
+
+
+def test_validator_accepts_safe_spoken_text_and_merges():
+    original = "ขอโทษนะ ฉันไม่ได้ตั้งใจ แต่เธอก็ไม่ฟังฉันเลย"
+    clauses = ["ขอโทษนะ ", "ฉันไม่ได้ตั้งใจ ", "แต่เธอก็ไม่ฟังฉันเลย"]
+    raw_labels = [
+        {"i": 0, "tone": "sad", "intensity": 2, "spoken_text": "ขอโทษนะ... "},
+        {"i": 1, "tone": "sad", "intensity": 2, "spoken_text": "ฉันไม่ได้ตั้งใจ... "},
+        {"i": 2, "tone": "angry", "intensity": 2, "spoken_text": "แต่เธอก็ไม่ฟังฉันเลย!"}
+    ]
+    segments = validate_and_build_segments(original, clauses, raw_labels)
+    assert len(segments) == 2
+    assert segments[0].text == "ขอโทษนะ ฉันไม่ได้ตั้งใจ "
+    assert segments[0].spoken_text == "ขอโทษนะ... ฉันไม่ได้ตั้งใจ... "
+    assert segments[1].text == "แต่เธอก็ไม่ฟังฉันเลย"
+    assert segments[1].spoken_text == "แต่เธอก็ไม่ฟังฉันเลย!"
+
+
+def test_validator_rejects_altered_spoken_text_safely():
+    original = "สวัสดีครับ วันนี้อากาศดี"
+    clauses = ["สวัสดีครับ ", "วันนี้อากาศดี"]
+    raw_labels = [
+        {"i": 0, "tone": "happy", "intensity": 2, "spoken_text": "สวัสดีจ้าเพื่อนๆ!"},  # Altered!
+        {"i": 1, "tone": "happy", "intensity": 2, "spoken_text": "วันนี้อากาศดี!"}       # Safe
+    ]
+    segments = validate_and_build_segments(original, clauses, raw_labels)
+    assert len(segments) == 1  # Merged (both happy)
+    assert segments[0].text == "สวัสดีครับ วันนี้อากาศดี"
+    # The first clause's spoken_text was rejected and fell back to original clause text "สวัสดีครับ "
+    assert segments[0].spoken_text == "สวัสดีครับ วันนี้อากาศดี!"
+

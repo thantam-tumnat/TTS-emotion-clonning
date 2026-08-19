@@ -23,6 +23,8 @@ class Segment(BaseModel):
     # Free-form style word as written, e.g. "appalled". `tone` stays the coarse
     # family used for colour and for the ElevenLabs/Gemini renderers.
     style: Optional[str] = None
+    # Text with prosodic punctuation marks added for expressive TTS delivery
+    spoken_text: Optional[str] = None
     # The source put a line break before this segment's tag, which earns a longer
     # pause than an inline tone change. Kept on the segment so the short script form
     # can round-trip it.
@@ -146,6 +148,7 @@ class LLMClauseLabel(BaseModel):
     i: int
     tone: Tone
     intensity: int = Field(default=2, ge=1, le=3)
+    spoken_text: Optional[str] = None
 
 
 class LLMAnnotationResult(BaseModel):

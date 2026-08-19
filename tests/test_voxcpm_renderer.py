@@ -418,3 +418,17 @@ def test_somber_and_gloomy_resolve_to_proper_instruction():
     assert len(segs) == 1
     assert segs[0].tone == Tone.SAD
 
+
+def test_voxcpm_renderer_uses_spoken_text():
+    renderer = VoxCPMRenderer()
+    segments = [
+        Segment(text="ฉันบอกแล้ว ", spoken_text="ฉันบอกแล้ว! ", tone=Tone.ANGRY, intensity=2),
+        Segment(text="ทำไมไม่ฟัง", spoken_text="ทำไมไม่ฟัง?!", tone=Tone.ANGRY, intensity=2),
+    ]
+    res = renderer.render(segments)
+    assert len(res.chunks) == 1
+    assert res.chunks[0].body == "ฉันบอกแล้ว! ทำไมไม่ฟัง?!"
+    assert "ฉันบอกแล้ว! ทำไมไม่ฟัง?!" in res.text
+    assert res.script == "[angry] ฉันบอกแล้ว! ทำไมไม่ฟัง?!"
+
+

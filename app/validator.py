@@ -1,4 +1,5 @@
-from typing import List, Tuple, Any
+import re
+from typing import List, Tuple, Any, Optional
 from app.models import Segment, Tone
 from app.merger import merge_segments
 
@@ -6,6 +7,22 @@ from app.merger import merge_segments
 class ValidationError(Exception):
     """Exception raised when validation fails and escalation is required."""
     pass
+
+
+def is_safe_spoken_text(original: str, spoken: Optional[str]) -> bool:
+    """
+    Verifies that spoken_text preserves all original Thai/English words
+    and only adds prosodic punctuation marks (!, ?, ..., —, etc.).
+    Returns False if any words were modified, removed, or hallucinated.
+    """
+    if not spoken or not isinstance(spoken, str) or not spoken.strip():
+        return False
+
+    # Strip whitespace and common prosodic/formatting punctuation from both
+    clean_orig = re.sub(r"[\s!?.…—\-,~:;'\"()\[\]]", "", original)
+    clean_spoken = re.sub(r"[\s!?.…—\-,~:;'\"()\[\]]", "", spoken)
+
+    return clean_orig == clean_spoken
 
 
 def validate_and_build_segments(
@@ -35,10 +52,12 @@ def validate_and_build_segments(
             i = item.get("i")
             tone_val = item.get("tone")
             intensity_val = item.get("intensity")
+            spoken_val = item.get("spoken_text")
         elif hasattr(item, "i"):
             i = getattr(item, "i")
             tone_val = getattr(item, "tone")
             intensity_val = getattr(item, "intensity")
+            spoken_val = getattr(item, "spoken_text", None)
         else:
             raise ValidationError("Invalid label item format")
 
@@ -48,7 +67,7 @@ def validate_and_build_segments(
         if i in label_map:
             raise ValidationError(f"Duplicate label index: {i}")
 
-        label_map[i] = (tone_val, intensity_val)
+        label_map[i] = (tone_val, intensity_val, spoken_val)
 
     # Check completeness (all indices 0..N-1 must be present)
     if len(label_map) != num_clauses or any(i not in label_map for i in range(num_clauses)):
@@ -56,7 +75,7 @@ def validate_and_build_segments(
 
     raw_segments: List[Segment] = []
     for i in range(num_clauses):
-        tone_val, intensity_val = label_map[i]
+        tone_val, intensity_val, spoken_val = label_map[i]
 
         # 2. Tone validation (fallback invalid to NEUTRAL)
         try:
@@ -77,23 +96,35 @@ def validate_and_build_segments(
         except (ValueError, TypeError):
             intensity = 2
 
+        # 4. Spoken text validation (safe prosodic cues check)
+        original_clause = clauses[i]
+        spoken_text = None
+        if is_safe_spoken_text(original_clause, spoken_val):
+            clean = str(spoken_val).strip()
+            if clean:
+                if original_clause.endswith(" ") or str(spoken_val).endswith(" "):
+                    spoken_text = clean + " "
+                else:
+                    spoken_text = clean
+
         raw_segments.append(Segment(
-            text=clauses[i],
+            text=original_clause,
+            spoken_text=spoken_text,
             tone=tone,
             intensity=intensity
         ))
 
-    # 4. Text reconstruction invariant check
+    # 5. Text reconstruction invariant check
     reconstructed = "".join(seg.text for seg in raw_segments)
     if reconstructed != original_text:
         raise ValidationError(f"Reconstructed text mismatch: '{reconstructed}' != '{original_text}'")
 
-    # 5. Remove empty segments
+    # 6. Remove empty segments
     non_empty_segments = [seg for seg in raw_segments if seg.text]
     if not non_empty_segments and original_text:
         non_empty_segments = [Segment(text=original_text, tone=Tone.NEUTRAL, intensity=2)]
 
-    # 6. Merge adjacent segments of same tone & enforce max_segments
+    # 7. Merge adjacent segments of same tone & enforce max_segments
     final_segments = merge_segments(non_empty_segments, max_segments=max_segments)
 
     return final_segments

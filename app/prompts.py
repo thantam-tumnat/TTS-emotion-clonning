@@ -2,10 +2,10 @@
 Prompts and few-shot examples for Thai TTS Tone Annotation.
 """
 
-SYSTEM_PROMPT = """คุณคือผู้เชี่ยวชาญด้านการวิเคราะห์อารมณ์และน้ำเสียงของข้อความภาษาไทยเพื่อใช้ในการสังเคราะห์เสียงอ่าน (TTS Tone Annotation)
+SYSTEM_PROMPT = """คุณคือผู้เชี่ยวชาญด้านการวิเคราะห์อารมณ์และน้ำเสียงของข้อความภาษาไทยเพื่อใช้ในการสังเคราะห์เสียงอ่าน (TTS Tone Annotation & Prosody Vocal Director)
 
 ภารกิจของคุณ:
-รับรายการข้อความย่อย (clauses) ที่ตัดไว้พร้อม index และระบุน้ำเสียง (tone) และระดับความเข้มข้น (intensity) สำหรับแต่ละ index ผ่านเครื่องมือ annotate_clauses
+รับรายการข้อความย่อย (clauses) ที่ตัดไว้พร้อม index และระบุน้ำเสียง (tone), ระดับความเข้มข้น (intensity), และข้อความกำกับจังหวะ (spoken_text) สำหรับแต่ละ index ผ่านเครื่องมือ annotate_clauses
 
 กฎเหล็กในการวิเคราะห์:
 1. ต้องระบุ label ให้ครบทุก index ที่ได้รับอย่างแม่นยำ ไม่ขาดและไม่เกิน
@@ -28,9 +28,15 @@ SYSTEM_PROMPT = """คุณคือผู้เชี่ยวชาญด้�
    - 2 = ปกติ / ชัดเจน (moderate - ค่ามาตรฐาน)
    - 3 = รุนแรง / มาก (very / strongly)
    ใช้ 2 เป็นค่าปกติ ใช้ 1 หรือ 3 เฉพาะเมื่อบริบทระบุความชัดเจนอย่างมากเท่านั้น
+7. การสร้าง spoken_text (Prosodic Punctuation สำหรับควบคุมจังหวะเสียง TTS):
+   - angry, excited, scared: เติม ! หรือ !! ท้ายประโยคเพื่อเพิ่มพลังเสียงและ attack
+   - sad, tired, nervous, calm: เติม ... หรือ — ท้ายประโยคหรือระหว่างคำเพื่อทอดเสียง ลากเสียง หรือ micro-pause
+   - sarcastic, surprised: เติม ? หรือ ?! เพื่อบังคับยกปลายเสียงสูง
+   - neutral: ใช้ข้อความเดิมตามธรรมชาติ
+   **กฎเหล็กของ spoken_text:** ต้องรักษาคำเดิมทุกคำ 100% ห้ามแก้ไขคำ ห้ามลบคำ ห้ามเพิ่มคำใหม่ อนุญาตให้เติมเฉพาะเครื่องหมายวรรคตอน (!, ?, ..., —, ?!) เพื่อช่วยกำกับจังหวะเท่านั้น
 
 คำเตือนด้านความปลอดภัย:
-ห้ามส่งข้อความกลับมาในผลลัพธ์โดยเด็ดขาด ให้ส่งกลับมาเฉพาะ index (i), tone, และ intensity เท่านั้น"""
+ให้ส่งกลับมาเฉพาะข้อมูลโครงสร้าง JSON index (i), tone, intensity, และ spoken_text ตาม schema เท่านั้น"""
 
 FEW_SHOT_EXAMPLES = [
     {
@@ -43,8 +49,8 @@ FEW_SHOT_EXAMPLES = [
         },
         "output": {
             "labels": [
-                {"i": 0, "tone": "sad", "intensity": 2},
-                {"i": 1, "tone": "sad", "intensity": 2}
+                {"i": 0, "tone": "sad", "intensity": 2, "spoken_text": "ฉันคิดถึงเธอเหลือเกิน... "},
+                {"i": 1, "tone": "sad", "intensity": 2, "spoken_text": "ทำไมเรื่องมันต้องจบลงแบบนี้ด้วย..."}
             ]
         }
     },
@@ -59,9 +65,9 @@ FEW_SHOT_EXAMPLES = [
         },
         "output": {
             "labels": [
-                {"i": 0, "tone": "sad", "intensity": 2},
-                {"i": 1, "tone": "sad", "intensity": 2},
-                {"i": 2, "tone": "angry", "intensity": 2}
+                {"i": 0, "tone": "sad", "intensity": 2, "spoken_text": "ขอโทษนะ... "},
+                {"i": 1, "tone": "sad", "intensity": 2, "spoken_text": "ฉันไม่ได้ตั้งใจ... "},
+                {"i": 2, "tone": "angry", "intensity": 2, "spoken_text": "แต่เธอก็ไม่ฟังฉันเลย!"}
             ]
         }
     },
@@ -76,9 +82,9 @@ FEW_SHOT_EXAMPLES = [
         },
         "output": {
             "labels": [
-                {"i": 0, "tone": "neutral", "intensity": 2},
-                {"i": 1, "tone": "neutral", "intensity": 2},
-                {"i": 2, "tone": "neutral", "intensity": 2}
+                {"i": 0, "tone": "neutral", "intensity": 2, "spoken_text": "กรมอุตุนิยมวิทยาประกาศเตือน "},
+                {"i": 1, "tone": "neutral", "intensity": 2, "spoken_text": "จะมีฝนตกหนักถึงหนักมากในหลายพื้นที่ "},
+                {"i": 2, "tone": "neutral", "intensity": 2, "spoken_text": "ประชาชนควรระมัดระวังน้ำท่วมฉับพลัน"}
             ]
         }
     },
@@ -92,8 +98,8 @@ FEW_SHOT_EXAMPLES = [
         },
         "output": {
             "labels": [
-                {"i": 0, "tone": "sarcastic", "intensity": 2},
-                {"i": 1, "tone": "sarcastic", "intensity": 2}
+                {"i": 0, "tone": "sarcastic", "intensity": 2, "spoken_text": "แหม... เก่งจังเลยนะ?! "},
+                {"i": 1, "tone": "sarcastic", "intensity": 2, "spoken_text": "ทำพังหมดทั้งห้องแล้วเนี่ย!"}
             ]
         }
     }
@@ -101,7 +107,7 @@ FEW_SHOT_EXAMPLES = [
 
 ANNOTATE_TOOL = {
     "name": "annotate_clauses",
-    "description": "Annotate emotional tone and intensity for each clause index.",
+    "description": "Annotate emotional tone, intensity, and prosodic spoken text for each clause index.",
     "input_schema": {
         "type": "object",
         "properties": {
@@ -116,10 +122,7 @@ ANNOTATE_TOOL = {
                         },
                         "tone": {
                             "type": "string",
-                            # Must mirror app.models.Tone exactly. When "scared" and
-                            # "tired" were missing here the Anthropic path could not
-                            # label them at all, and silently emitted a neighbouring
-                            # tone instead.
+                            # Must mirror app.models.Tone exactly.
                             "enum": [
                                 "neutral",
                                 "sad",
@@ -138,6 +141,10 @@ ANNOTATE_TOOL = {
                             "type": "integer",
                             "enum": [1, 2, 3],
                             "description": "Intensity level (1=slightly, 2=standard, 3=very)"
+                        },
+                        "spoken_text": {
+                            "type": "string",
+                            "description": "The clause text with prosodic punctuation marks (!, ?, ..., —) added to guide TTS expression. All original words must be preserved exactly."
                         }
                     },
                     "required": ["i", "tone", "intensity"],
