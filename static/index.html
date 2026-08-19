@@ -122,6 +122,27 @@
             </div>
           </div>
 
+          <!-- LoRA Mode Selection Toggle -->
+          <div class="form-group" id="lora-mode-group" style="margin-top: 12px;">
+            <label class="field-label">
+              <span>โหมด LoRA สำหรับสร้างเสียง (Thai LoRA Mode):</span>
+            </label>
+            <div class="lora-mode-toggle">
+              <label class="lora-toggle-opt active" id="opt-lora-on">
+                <input type="radio" name="lora_mode_radio" value="on" checked>
+                <span>✨ Thai LoRA (ON)</span>
+              </label>
+              <label class="lora-toggle-opt" id="opt-lora-off">
+                <input type="radio" name="lora_mode_radio" value="off">
+                <span>🚫 LoRA OFF (Base)</span>
+              </label>
+              <label class="lora-toggle-opt" id="opt-lora-both">
+                <input type="radio" name="lora_mode_radio" value="both">
+                <span>⚡ Gen ทั้ง 2 เสียง (A/B Compare)</span>
+              </label>
+            </div>
+          </div>
+
           <!-- LLM Model Selector for Emotion Annotation -->
           <div class="config-row" style="margin-top: 12px;">
             <div class="form-group flex-1">
@@ -216,18 +237,56 @@
 
         <!-- Audio Player Section -->
         <div id="audio-player-card" class="audio-player-card hidden">
-          <div class="player-header">
-            <div class="player-status">
-              <span class="audio-pulse-dot"></span>
-              <span class="player-title" id="player-title">สังเคราะห์เสียงสำเร็จ (48kHz WAV)</span>
+          <!-- Single Player View -->
+          <div id="single-player-container">
+            <div class="player-header">
+              <div class="player-status">
+                <span class="audio-pulse-dot"></span>
+                <span class="player-title" id="player-title">สังเคราะห์เสียงสำเร็จ (48kHz WAV)</span>
+              </div>
+              <a id="btn-download-audio" href="#" download="synthesized.wav" class="btn btn-sm btn-outline">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                <span id="btn-download-text">ดาวน์โหลด WAV</span>
+              </a>
             </div>
-            <a id="btn-download-audio" href="#" download="synthesized.wav" class="btn btn-sm btn-outline">
-              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-              <span>ดาวน์โหลด WAV</span>
-            </a>
+            <div class="player-controls">
+              <audio id="audio-player" controls class="native-audio-player"></audio>
+            </div>
           </div>
-          <div class="player-controls">
-            <audio id="audio-player" controls class="native-audio-player"></audio>
+
+          <!-- Dual Player View (for A/B Compare) -->
+          <div id="dual-player-container" class="dual-player-container hidden">
+            <div class="dual-player-box lora-on-box">
+              <div class="player-header">
+                <div class="player-status">
+                  <span class="audio-pulse-dot dot-green"></span>
+                  <span class="player-title title-green" id="title-lora-on">✨ Thai LoRA (ON)</span>
+                </div>
+                <a id="btn-download-lora-on" href="#" download="lora_on.wav" class="btn btn-sm btn-outline">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                  <span>ดาวน์โหลด (LoRA ON)</span>
+                </a>
+              </div>
+              <div class="player-controls">
+                <audio id="audio-player-lora-on" controls class="native-audio-player"></audio>
+              </div>
+            </div>
+
+            <div class="dual-player-box lora-off-box">
+              <div class="player-header">
+                <div class="player-status">
+                  <span class="audio-pulse-dot dot-blue"></span>
+                  <span class="player-title title-blue" id="title-lora-off">🚫 LoRA OFF (Base Model)</span>
+                </div>
+                <a id="btn-download-lora-off" href="#" download="lora_off.wav" class="btn btn-sm btn-outline">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                  <span>ดาวน์โหลด (LoRA OFF)</span>
+                </a>
+              </div>
+              <div class="player-controls">
+                <audio id="audio-player-lora-off" controls class="native-audio-player"></audio>
+              </div>
+            </div>
           </div>
         </div>
 

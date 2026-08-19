@@ -132,6 +132,9 @@ class SynthesizeRequest(BaseModel):
     cfg_value: float = Field(default=2.5, ge=1.0, le=10.0)
     inference_timesteps: int = Field(default=10, ge=4, le=50)
     auto_annotate: bool = True
+    lora_mode: Optional[Literal["on", "off", "legacy"]] = Field(
+        default="on", description="LoRA mode: 'on' (Thai optimized), 'off' (Base model), or 'legacy' (shipped 2.0/2.0)"
+    )
 
 
 class LLMClauseItem(BaseModel):

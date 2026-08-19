@@ -75,14 +75,44 @@ document.addEventListener('DOMContentLoaded', () => {
   const tagInsertButtons = document.querySelectorAll('.tag-insert-btn');
 
   const audioPlayerCard = document.getElementById('audio-player-card');
+  const singlePlayerContainer = document.getElementById('single-player-container');
+  const dualPlayerContainer = document.getElementById('dual-player-container');
   const audioPlayer = document.getElementById('audio-player');
   const btnDownloadAudio = document.getElementById('btn-download-audio');
+  const audioPlayerLoraOn = document.getElementById('audio-player-lora-on');
+  const audioPlayerLoraOff = document.getElementById('audio-player-lora-off');
+  const btnDownloadLoraOn = document.getElementById('btn-download-lora-on');
+  const btnDownloadLoraOff = document.getElementById('btn-download-lora-off');
+
+  const loraToggleOptions = document.querySelectorAll('.lora-toggle-opt');
+  const loraRadioInputs = document.querySelectorAll('input[name="lora_mode_radio"]');
 
   let selectedAudioFile = null;
   let currentAudioUrl = null;
+  let currentAudioUrlOn = null;
+  let currentAudioUrlOff = null;
   // Last /speak payload, kept so the full/short toggle can re-render without refetching.
   let lastRenderData = null;
   let segFormat = 'full';
+
+  function getTimestamp() {
+    const now = new Date();
+    const pad = (n) => String(n).padStart(2, '0');
+    return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  }
+
+  function getSelectedLoraMode() {
+    const checked = document.querySelector('input[name="lora_mode_radio"]:checked');
+    return checked ? checked.value : 'on';
+  }
+
+  loraRadioInputs.forEach(input => {
+    input.addEventListener('change', () => {
+      loraToggleOptions.forEach(opt => opt.classList.remove('active'));
+      const parent = input.closest('.lora-toggle-opt');
+      if (parent) parent.classList.add('active');
+    });
+  });
 
   // Presets Data
   const PRESETS = {
@@ -423,6 +453,11 @@ document.addEventListener('DOMContentLoaded', () => {
       updateSegmentedPreview();
     }
     audioPlayerCard.classList.add('hidden');
+    if (singlePlayerContainer) singlePlayerContainer.classList.remove('hidden');
+    if (dualPlayerContainer) dualPlayerContainer.classList.add('hidden');
+    if (audioPlayer) audioPlayer.pause();
+    if (audioPlayerLoraOn) audioPlayerLoraOn.pause();
+    if (audioPlayerLoraOff) audioPlayerLoraOff.pause();
     if (errorBanner) errorBanner.classList.add('hidden');
   }
 
@@ -555,6 +590,54 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Synthesis Helper
+  async function fetchSynthesisBlob({ text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode }) {
+    if (selectedAudioFile) {
+      const formData = new FormData();
+      formData.append('text', text);
+      formData.append('file', selectedAudioFile);
+      if (guidance) formData.append('guidance', guidance);
+      if (model) formData.append('model', model);
+      formData.append('cfg_value', cfgValue);
+      formData.append('inference_timesteps', timesteps);
+      formData.append('auto_annotate', 'true');
+      formData.append('lora_mode', loraMode);
+
+      const response = await fetch(`${API_BASE}/synthesize/upload`, {
+        method: 'POST',
+        body: formData
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || `Synthesis failed: ${response.status}`);
+      }
+      return await response.blob();
+    } else {
+      const response = await fetch(`${API_BASE}/synthesize`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          text: text,
+          speaker_id: speakerId,
+          guidance: guidance || null,
+          engine: engine,
+          model: model,
+          cfg_value: cfgValue,
+          inference_timesteps: timesteps,
+          auto_annotate: true,
+          lora_mode: loraMode
+        })
+      });
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.detail || `Synthesis failed: ${response.status}`);
+      }
+      return await response.blob();
+    }
+  }
+
   // Synthesize Speech
   async function handleSynthesize() {
     const segmentedText = segmentedEditableText ? segmentedEditableText.value.trim() : '';
@@ -574,70 +657,77 @@ document.addEventListener('DOMContentLoaded', () => {
     const timesteps = parseInt(paramSteps.value, 10) || 10;
     const guidance = guidanceInput.value.trim();
     const model = getSelectedModel();
-
-    showLoading(true, '🎙️ กำลังสังเคราะห์เสียงด้วย SiangTTS (VoxCPM2)...');
+    const loraMode = getSelectedLoraMode();
+    const ts = getTimestamp();
+    const spkPrefix = speakerId ? `${speakerId}_` : '';
 
     try {
-      let response;
-      if (selectedAudioFile) {
-        // Upload custom audio file directly
-        const formData = new FormData();
-        formData.append('text', text);
-        formData.append('file', selectedAudioFile);
-        if (guidance) formData.append('guidance', guidance);
-        if (model) formData.append('model', model);
-        formData.append('cfg_value', cfgValue);
-        formData.append('inference_timesteps', timesteps);
-        formData.append('auto_annotate', 'true');
+      if (loraMode === 'both') {
+        showLoading(true, '⚡ กำลังสร้าง 2 เสียงเปรียบเทียบ (LoRA ON & LoRA OFF)...');
 
-        response = await fetch(`${API_BASE}/synthesize/upload`, {
-          method: 'POST',
-          body: formData
-        });
+        // Synthesize both sequentially or in parallel
+        const [blobOn, blobOff] = await Promise.all([
+          fetchSynthesisBlob({ text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'on' }),
+          fetchSynthesisBlob({ text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'off' })
+        ]);
+
+        if (currentAudioUrlOn) URL.revokeObjectURL(currentAudioUrlOn);
+        if (currentAudioUrlOff) URL.revokeObjectURL(currentAudioUrlOff);
+        currentAudioUrlOn = URL.createObjectURL(blobOn);
+        currentAudioUrlOff = URL.createObjectURL(blobOff);
+
+        audioPlayerLoraOn.src = currentAudioUrlOn;
+        btnDownloadLoraOn.href = currentAudioUrlOn;
+        btnDownloadLoraOn.download = `${ts}_${spkPrefix}lora_on.wav`;
+
+        audioPlayerLoraOff.src = currentAudioUrlOff;
+        btnDownloadLoraOff.href = currentAudioUrlOff;
+        btnDownloadLoraOff.download = `${ts}_${spkPrefix}lora_off.wav`;
+
+        singlePlayerContainer.classList.add('hidden');
+        dualPlayerContainer.classList.remove('hidden');
+        audioPlayerCard.classList.remove('hidden');
+
+        audioPlayerLoraOn.play().catch(() => {});
       } else {
-        // JSON Synthesize request
-        response = await fetch(`${API_BASE}/synthesize`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            text: text,
-            speaker_id: speakerId,
-            guidance: guidance || null,
-            engine: engine,
-            model: model,
-            cfg_value: cfgValue,
-            inference_timesteps: timesteps,
-            auto_annotate: true
-          })
+        const modeLabel = loraMode === 'off' ? 'LoRA OFF (Base)' : 'Thai LoRA (ON)';
+        showLoading(true, `🎙️ กำลังสังเคราะห์เสียงด้วย SiangTTS [${modeLabel}]...`);
+
+        const audioBlob = await fetchSynthesisBlob({
+          text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode
         });
-      }
 
-      if (!response.ok) {
-        const errData = await response.json().catch(() => ({}));
-        throw new Error(errData.detail || `Synthesis failed: ${response.status}`);
-      }
+        if (currentAudioUrl) {
+          URL.revokeObjectURL(currentAudioUrl);
+        }
+        currentAudioUrl = URL.createObjectURL(audioBlob);
 
-      const audioBlob = await response.blob();
-      if (currentAudioUrl) {
-        URL.revokeObjectURL(currentAudioUrl);
-      }
-      currentAudioUrl = URL.createObjectURL(audioBlob);
+        const loraTag = loraMode === 'off' ? 'lora_off' : 'lora_on';
+        const filename = `${ts}_${spkPrefix}${loraTag}.wav`;
 
-      // Play audio in player
-      audioPlayer.src = currentAudioUrl;
-      btnDownloadAudio.href = currentAudioUrl;
-      btnDownloadAudio.download = `siangtts_${speakerId || 'voice'}_${Date.now()}.wav`;
-      audioPlayerCard.classList.remove('hidden');
-      audioPlayer.play().catch(() => {});
+        audioPlayer.src = currentAudioUrl;
+        btnDownloadAudio.href = currentAudioUrl;
+        btnDownloadAudio.download = filename;
+        const playerTitle = document.getElementById('player-title');
+        if (playerTitle) {
+          playerTitle.textContent = `สังเคราะห์เสียงสำเร็จ [${modeLabel}] (48kHz WAV)`;
+        }
+
+        dualPlayerContainer.classList.add('hidden');
+        singlePlayerContainer.classList.remove('hidden');
+        audioPlayerCard.classList.remove('hidden');
+
+        audioPlayer.play().catch(() => {});
+      }
 
       // Also trigger text annotation render if output was empty
       if (!outputEditableText.value.trim()) {
         handleAnnotate();
       } else {
-        const activeTab = document.querySelector('.tab-btn.active').getAttribute('data-tab');
-        document.getElementById(`tab-${activeTab}`).classList.remove('hidden');
+        const activeBtn = document.querySelector('.tab-btn.active');
+        const activeTab = activeBtn ? activeBtn.getAttribute('data-tab') : 'editor';
+        const tabEl = document.getElementById(`tab-${activeTab}`);
+        if (tabEl) tabEl.classList.remove('hidden');
       }
     } catch (err) {
       if (errorBanner) {

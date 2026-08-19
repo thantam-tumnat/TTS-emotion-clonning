@@ -763,6 +763,7 @@ class SiangTTSService:
         ref_filename: Optional[str] = None,
         cfg_value: float = 2.5,
         inference_timesteps: int = 10,
+        lora_mode: Optional[str] = "on",
     ) -> bytes:
         """Synthesize a single utterance. Returns WAV bytes."""
         return self.synthesize_many(
@@ -772,6 +773,7 @@ class SiangTTSService:
             ref_filename=ref_filename,
             cfg_value=cfg_value,
             inference_timesteps=inference_timesteps,
+            lora_mode=lora_mode,
         )
 
     def render_chunks(
@@ -785,6 +787,7 @@ class SiangTTSService:
         inference_timesteps: int = 10,
         tones: Optional[Sequence[Optional[str]]] = None,
         breaks: Optional[Sequence[bool]] = None,
+        lora_mode: Optional[str] = "on",
     ) -> Tuple[List[Any], int]:
         """Synthesize each chunk against one voice; return raw audio and sample rate.
 
@@ -817,6 +820,20 @@ class SiangTTSService:
 
         synth = self.get_synthesizer()
         sample_rate = getattr(synth, "sample_rate", MOCK_SAMPLE_RATE)
+
+        # Apply LoRA strength based on lora_mode if loaded
+        tts_model = getattr(synth, "tts_model", None)
+        if tts_model is not None and getattr(synth, "lora_loaded", False):
+            if lora_mode == "off":
+                set_lora_strength(tts_model, 0.0, 0.0)
+            elif lora_mode == "legacy":
+                set_lora_strength(tts_model, 2.0, 2.0)
+            else:
+                set_lora_strength(
+                    tts_model,
+                    settings.siangtts_lora_lm_scale,
+                    settings.siangtts_lora_dit_scale,
+                )
 
         prompt_cache, ref_audio_path, temp_ref_path = self._resolve_voice(
             speaker_id, ref_audio_bytes, ref_filename
@@ -890,6 +907,7 @@ class SiangTTSService:
         tones: Optional[Sequence[Optional[str]]] = None,
         breaks: Optional[Sequence[bool]] = None,
         post_process: bool = True,
+        lora_mode: Optional[str] = "on",
     ) -> bytes:
         """Synthesize several chunks against one voice and join them into one take.
 
@@ -916,6 +934,7 @@ class SiangTTSService:
             inference_timesteps=inference_timesteps,
             tones=tones,
             breaks=breaks,
+            lora_mode=lora_mode,
         )
 
         audio = assemble(rendered, sample_rate) if post_process else butt_join(rendered, sample_rate)

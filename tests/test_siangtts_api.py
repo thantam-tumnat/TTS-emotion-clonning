@@ -97,10 +97,27 @@ def test_synthesize_endpoint_json(client):
         "engine": "voxcpm",
         "cfg_value": 2.5,
         "inference_timesteps": 10,
-        "auto_annotate": True
+        "auto_annotate": True,
+        "lora_mode": "on",
     })
     assert res.status_code == 200
     assert res.headers["content-type"] == "audio/wav"
+    assert "lora_on.wav" in res.headers.get("content-disposition", "")
+    assert len(res.content) > 0
+
+
+def test_synthesize_endpoint_lora_off(client):
+    res = client.post("/synthesize", json={
+        "text": "Hello this is a test without lora",
+        "engine": "voxcpm",
+        "cfg_value": 2.5,
+        "inference_timesteps": 10,
+        "auto_annotate": False,
+        "lora_mode": "off",
+    })
+    assert res.status_code == 200
+    assert res.headers["content-type"] == "audio/wav"
+    assert "lora_off.wav" in res.headers.get("content-disposition", "")
     assert len(res.content) > 0
 
 
@@ -111,11 +128,13 @@ def test_synthesize_endpoint_with_upload(client):
         "text": "[calm] หายใจเข้าลึกๆ ผ่อนคลาย",
         "cfg_value": "2.5",
         "inference_timesteps": "10",
-        "auto_annotate": "false"
+        "auto_annotate": "false",
+        "lora_mode": "off",
     }
     res = client.post("/synthesize/upload", files=files, data=data)
     assert res.status_code == 200
     assert res.headers["content-type"] == "audio/wav"
+    assert "lora_off.wav" in res.headers.get("content-disposition", "")
     assert len(res.content) > 0
 
 

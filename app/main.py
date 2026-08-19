@@ -1,4 +1,5 @@
 import os
+from datetime import datetime
 from contextlib import asynccontextmanager
 from typing import Optional
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Response
@@ -303,7 +304,7 @@ async def synthesize_endpoint(req: SynthesizeRequest):
     """
     Synthesizes speech using SiangTTS (VoxCPM2) or mapped engines.
     If auto_annotate is True, extracts emotions and injects control instructions automatically.
-    Returns 48kHz WAV audio stream.
+    Returns 48kHz WAV audio stream with timestamped filename.
     """
     text = req.text.strip()
     if not text:
@@ -317,6 +318,12 @@ async def synthesize_endpoint(req: SynthesizeRequest):
         engine=req.engine,
     )
 
+    lora_mode = req.lora_mode or "on"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    lora_tag = "lora_off" if lora_mode == "off" else "lora_on"
+    spk_tag = f"{req.speaker_id}_" if req.speaker_id else ""
+    filename = f"{ts}_{spk_tag}{lora_tag}.wav"
+
     # Perform synthesis via SiangTTSService
     try:
         wav_bytes = siangtts_service.synthesize_many(
@@ -326,11 +333,12 @@ async def synthesize_endpoint(req: SynthesizeRequest):
             inference_timesteps=req.inference_timesteps,
             tones=tones,
             breaks=breaks,
+            lora_mode=lora_mode,
         )
         return Response(
             content=wav_bytes,
             media_type="audio/wav",
-            headers={"Content-Disposition": 'inline; filename="synthesized.wav"'},
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
         )
     except SynthesizerUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -347,10 +355,11 @@ async def synthesize_with_upload_endpoint(
     cfg_value: float = Form(2.5),
     inference_timesteps: int = Form(10),
     auto_annotate: bool = Form(True),
+    lora_mode: Optional[str] = Form("on"),
 ):
     """
     Synthesizes speech with a direct one-off uploaded reference audio file.
-    Returns 48kHz WAV audio stream.
+    Returns 48kHz WAV audio stream with timestamped filename.
     """
     clean_text = text.strip()
     if not clean_text:
@@ -364,22 +373,28 @@ async def synthesize_with_upload_endpoint(
     )
 
     audio_bytes = await file.read() if file else None
-    filename = file.filename if file else None
+    ref_filename = file.filename if file else None
+
+    active_lora_mode = lora_mode or "on"
+    ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+    lora_tag = "lora_off" if active_lora_mode == "off" else "lora_on"
+    filename = f"{ts}_custom_{lora_tag}.wav"
 
     try:
         wav_bytes = siangtts_service.synthesize_many(
             parts,
             ref_audio_bytes=audio_bytes,
-            ref_filename=filename,
+            ref_filename=ref_filename,
             cfg_value=cfg_value,
             inference_timesteps=inference_timesteps,
             tones=tones,
             breaks=breaks,
+            lora_mode=active_lora_mode,
         )
         return Response(
             content=wav_bytes,
             media_type="audio/wav",
-            headers={"Content-Disposition": 'inline; filename="synthesized_custom.wav"'},
+            headers={"Content-Disposition": f'inline; filename="{filename}"'},
         )
     except SynthesizerUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
