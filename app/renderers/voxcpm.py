@@ -64,7 +64,12 @@ def clear_dynamic_style_cache():
     _DYNAMIC_STYLE_CACHE.clear()
 
 
-def resolve_style_tag(body: str, level: Optional[str] = None, use_llm: bool = False) -> ResolvedTag:
+def resolve_style_tag(
+    body: str,
+    level: Optional[str] = None,
+    use_llm: bool = False,
+    custom_model: Optional[str] = None
+) -> ResolvedTag:
     """Turn a raw tag word into everything the pipeline needs from it.
 
     A bare tone name expands to this module's canonical instruction rather than
@@ -107,7 +112,7 @@ def resolve_style_tag(body: str, level: Optional[str] = None, use_llm: bool = Fa
     if use_llm:
         try:
             from app.annotator import annotator
-            llm_res = annotator.convert_style_tag(raw, intensity)
+            llm_res = annotator.convert_style_tag(raw, intensity, custom_model=custom_model)
             if llm_res and llm_res.get("instruction"):
                 resolved = ResolvedTag(
                     instruction=llm_res["instruction"],
@@ -153,7 +158,7 @@ class ChunkSpec(NamedTuple):
     break_before: bool
 
 
-def _tagged_spans(text: str) -> List[Span]:
+def _tagged_spans(text: str, use_llm: bool = False, custom_model: Optional[str] = None) -> List[Span]:
     """Split text into (resolved tag, body) runs at each style tag."""
     matches = list(STYLE_TAG_RE.finditer(text))
     if not matches:
@@ -175,12 +180,12 @@ def _tagged_spans(text: str) -> List[Span]:
         # it earns: the ElevenLabs reference leaves ~1.2 s between separately-written
         # blocks, but that is far too much for a tone change mid-sentence.
         raw_before = text[matches[i - 1].end():m.start()] if i else text[:m.start()]
-        spans.append(Span(resolve_style_tag(m.group(1), m.group(2)), body,
+        spans.append(Span(resolve_style_tag(m.group(1), m.group(2), use_llm=use_llm, custom_model=custom_model), body,
                           bool(_BREAK_RE.search(raw_before))))
     return spans
 
 
-def split_style_chunks(text: str) -> List[str]:
+def split_style_chunks(text: str, use_llm: bool = False, custom_model: Optional[str] = None) -> List[str]:
     """Split hand-written text into chunks that each *lead* with a style instruction.
 
     VoxCPM2 only honours a parenthetical at position 0, so a tag typed mid-text would
@@ -190,10 +195,10 @@ def split_style_chunks(text: str) -> List[str]:
     Returns [] when the text carries no style tag, so callers can fall back to the
     LLM annotation path.
     """
-    return [spec.text for spec in split_style_chunk_specs(text)]
+    return [spec.text for spec in split_style_chunk_specs(text, use_llm=use_llm, custom_model=custom_model)]
 
 
-def split_style_chunk_specs(text: str) -> List[ChunkSpec]:
+def split_style_chunk_specs(text: str, use_llm: bool = False, custom_model: Optional[str] = None) -> List[ChunkSpec]:
     """As ``split_style_chunks``, but keeping the tone and layout of each chunk."""
     return [
         ChunkSpec(
@@ -202,16 +207,16 @@ def split_style_chunk_specs(text: str) -> List[ChunkSpec]:
             intensity=span.tag.intensity,
             break_before=span.break_before,
         )
-        for span in _tagged_spans(text)
+        for span in _tagged_spans(text, use_llm=use_llm, custom_model=custom_model)
     ]
 
 
-def parse_tagged_segments(text: str) -> List[Segment]:
-    """Read hand-written tags as annotated segments, bypassing the LLM."""
+def parse_tagged_segments(text: str, use_llm: bool = False, custom_model: Optional[str] = None) -> List[Segment]:
+    """Read hand-written tags as annotated segments, expanding free-form tags with LLM if use_llm=True."""
     return [
         Segment(text=span.body, tone=span.tag.tone, intensity=span.tag.intensity,
                 style=span.tag.label, break_before=span.break_before)
-        for span in _tagged_spans(text)
+        for span in _tagged_spans(text, use_llm=use_llm, custom_model=custom_model)
     ]
 
 

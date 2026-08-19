@@ -56,7 +56,7 @@ def _plan_chunks(
     them rather than re-annotating (and rather than sending one blob, which would
     speak every mid-text tag aloud).
     """
-    specs = split_style_chunk_specs(text)
+    specs = split_style_chunk_specs(text, use_llm=True, custom_model=model)
     if specs:
         return (
             [s.text for s in specs],
@@ -167,12 +167,12 @@ def annotate_endpoint(req: AnnotateRequest):
 
     # Hand-written tags are already an annotation -- re-deriving them with the LLM
     # would both cost a call and leave the raw markers sitting in the spoken text.
-    tagged = parse_tagged_segments(text)
+    tagged = parse_tagged_segments(text, use_llm=True, custom_model=req.model)
     if tagged:
         return AnnotateResponse(
             original=text,
             segments=tagged,
-            model_used="manual-tags",
+            model_used=req.model or "manual-tags",
             fallback=False,
             warnings=collect_tag_warnings(text),
         )
@@ -210,12 +210,12 @@ def speak_endpoint(req: SpeakRequest):
     if not text:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    tagged = parse_tagged_segments(text)
+    tagged = parse_tagged_segments(text, use_llm=True, custom_model=req.model)
     if tagged:
         annotated = AnnotateResponse(
             original=text,
             segments=tagged,
-            model_used="manual-tags",
+            model_used=req.model or "manual-tags",
             fallback=False,
             warnings=collect_tag_warnings(text),
         )
