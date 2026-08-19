@@ -58,7 +58,7 @@ def test_annotate_endpoint_gemini_success(mock_get_gemini, mock_segment_text):
         {"i": 2, "tone": "angry", "intensity": 2},
     ])
 
-    response = client.post("/annotate", json={"text": text})
+    response = client.post("/annotate", json={"text": text, "model": "gemini-3.6-flash"})
     assert response.status_code == 200
     data = response.json()
     assert data["original"] == text
@@ -95,7 +95,7 @@ def test_annotate_endpoint_escalation_success(mock_get_gemini, mock_segment_text
         ])
     ]
 
-    response = client.post("/annotate", json={"text": text})
+    response = client.post("/annotate", json={"text": text, "model": "gemini-3.6-flash"})
     assert response.status_code == 200
     data = response.json()
     assert data["fallback"] is False
@@ -119,7 +119,7 @@ def test_annotate_endpoint_fallback_on_all_failures(mock_get_gemini, mock_segmen
         Exception("Pro failed")
     ]
 
-    response = client.post("/annotate", json={"text": text})
+    response = client.post("/annotate", json={"text": text, "model": "gemini-3.6-flash"})
     assert response.status_code == 200
     data = response.json()
     assert data["fallback"] is True
@@ -178,7 +178,7 @@ def test_speak_endpoint(mock_get_gemini, mock_segment_text):
         {"i": 2, "tone": "angry", "intensity": 2},
     ])
 
-    response = client.post("/speak", json={"text": text, "engine": "elevenlabs"})
+    response = client.post("/speak", json={"text": text, "engine": "elevenlabs", "model": "gemini-3.6-flash"})
     assert response.status_code == 200
     data = response.json()
     assert data["engine"] == "elevenlabs"
@@ -227,3 +227,33 @@ def test_annotate_all_failed_diagnostic_json(mock_get_gemini, mock_segment_text)
     assert "429 RESOURCE_EXHAUSTED" in data["error_detail"]
     assert len(data["attempts"]) >= 1
     assert data["attempts"][0]["status"] == "failed"
+
+
+@patch("app.main.segment_text")
+@patch("app.annotator.Annotator.get_openai_client")
+def test_annotate_endpoint_openai_qwen(mock_get_openai, mock_segment_text):
+    mock_client = MagicMock()
+    mock_get_openai.return_value = mock_client
+
+    text = "สวัสดีครับ วันนี้อากาศดีมาก"
+    mock_segment_text.return_value = ["สวัสดีครับ ", "วันนี้อากาศดีมาก"]
+
+    mock_choice = MagicMock()
+    mock_choice.message.content = json.dumps({
+        "labels": [
+            {"i": 0, "tone": "happy", "intensity": 2},
+            {"i": 1, "tone": "happy", "intensity": 2},
+        ]
+    })
+    mock_resp = MagicMock()
+    mock_resp.choices = [mock_choice]
+    mock_client.chat.completions.create.return_value = mock_resp
+
+    response = client.post("/annotate", json={"text": text, "model": "qwen3.8-27b-fp8"})
+    assert response.status_code == 200
+    data = response.json()
+    assert data["model_used"] == "qwen3.8-27b-fp8"
+    assert data["fallback"] is False
+    assert len(data["segments"]) == 1
+    assert data["segments"][0]["tone"] == "happy"
+

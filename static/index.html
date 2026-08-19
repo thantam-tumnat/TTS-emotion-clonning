@@ -122,23 +122,28 @@
             </div>
           </div>
 
-          <!-- LoRA Mode Selection Toggle -->
+          <!-- LoRA & Emotion Mode Multi-Selection Toggle -->
           <div class="form-group" id="lora-mode-group" style="margin-top: 12px;">
-            <label class="field-label">
-              <span>โหมด LoRA สำหรับสร้างเสียง (Thai LoRA Mode):</span>
-            </label>
-            <div class="lora-mode-toggle">
-              <label class="lora-toggle-opt active" id="opt-lora-on">
-                <input type="radio" name="lora_mode_radio" value="on" checked>
+            <div class="field-label-row">
+              <label class="field-label" style="margin-bottom: 0;">
+                <span>โหมดสร้างเสียง (เลือกรูปแบบที่ต้องการสร้าง - ติ๊กเลือกได้หลายแบบ):</span>
+              </label>
+            </div>
+            <div class="lora-mode-toggle" id="lora-mode-toggle">
+              <label class="lora-toggle-opt active opt-lora-on" id="opt-lora-on">
+                <input type="checkbox" name="lora_mode_check" value="lora_on" checked>
+                <span class="chk-badge">✓</span>
                 <span>✨ Thai LoRA (ON)</span>
               </label>
-              <label class="lora-toggle-opt" id="opt-lora-off">
-                <input type="radio" name="lora_mode_radio" value="off">
+              <label class="lora-toggle-opt opt-lora-off" id="opt-lora-off">
+                <input type="checkbox" name="lora_mode_check" value="lora_off">
+                <span class="chk-badge">✓</span>
                 <span>🚫 LoRA OFF (Base)</span>
               </label>
-              <label class="lora-toggle-opt" id="opt-lora-both">
-                <input type="radio" name="lora_mode_radio" value="both">
-                <span>⚡ Gen ทั้ง 2 เสียง (A/B Compare)</span>
+              <label class="lora-toggle-opt opt-no-emotion" id="opt-no-emotion">
+                <input type="checkbox" name="lora_mode_check" value="no_emotion">
+                <span class="chk-badge">✓</span>
+                <span>😐 ไม่ใส่อารมณ์ (เสียงเรียบ)</span>
               </label>
             </div>
           </div>
@@ -251,32 +256,16 @@
 
         <!-- Audio Player Section -->
         <div id="audio-player-card" class="audio-player-card hidden">
-          <!-- Single Player View -->
-          <div id="single-player-container">
-            <div class="player-header">
-              <div class="player-status">
-                <span class="audio-pulse-dot"></span>
-                <span class="player-title" id="player-title">สังเคราะห์เสียงสำเร็จ (48kHz WAV)</span>
-              </div>
-              <a id="btn-download-audio" href="#" download="synthesized.wav" class="btn btn-sm btn-outline">
-                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
-                <span id="btn-download-text">ดาวน์โหลด WAV</span>
-              </a>
-            </div>
-            <div class="player-controls">
-              <audio id="audio-player" controls class="native-audio-player"></audio>
-            </div>
-          </div>
-
-          <!-- Dual Player View (for A/B Compare) -->
-          <div id="dual-player-container" class="dual-player-container hidden">
-            <div class="dual-player-box lora-on-box">
+          <!-- Multi-Player Dedicated Cards Container -->
+          <div id="multi-player-container" class="multi-player-container">
+            <!-- Player Box 1: Thai LoRA ON -->
+            <div id="player-box-lora-on" class="player-card-box lora-on-box hidden">
               <div class="player-header">
                 <div class="player-status">
                   <span class="audio-pulse-dot dot-green"></span>
                   <span class="player-title title-green" id="title-lora-on">✨ Thai LoRA (ON)</span>
                 </div>
-                <a id="btn-download-lora-on" href="#" download="lora_on.wav" class="btn btn-sm btn-outline">
+                <a id="btn-download-lora-on" href="#" download="lora_on.wav" class="btn btn-sm btn-outline btn-outline-green">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                   <span>ดาวน์โหลด (LoRA ON)</span>
                 </a>
@@ -286,19 +275,37 @@
               </div>
             </div>
 
-            <div class="dual-player-box lora-off-box">
+            <!-- Player Box 2: LoRA OFF (Base) -->
+            <div id="player-box-lora-off" class="player-card-box lora-off-box hidden">
               <div class="player-header">
                 <div class="player-status">
                   <span class="audio-pulse-dot dot-blue"></span>
                   <span class="player-title title-blue" id="title-lora-off">🚫 LoRA OFF (Base Model)</span>
                 </div>
-                <a id="btn-download-lora-off" href="#" download="lora_off.wav" class="btn btn-sm btn-outline">
+                <a id="btn-download-lora-off" href="#" download="lora_off.wav" class="btn btn-sm btn-outline btn-outline-blue">
                   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
                   <span>ดาวน์โหลด (LoRA OFF)</span>
                 </a>
               </div>
               <div class="player-controls">
                 <audio id="audio-player-lora-off" controls class="native-audio-player"></audio>
+              </div>
+            </div>
+
+            <!-- Player Box 3: No Emotion -->
+            <div id="player-box-no-emotion" class="player-card-box no-emotion-box hidden">
+              <div class="player-header">
+                <div class="player-status">
+                  <span class="audio-pulse-dot dot-amber"></span>
+                  <span class="player-title title-amber" id="title-no-emotion">😐 เสียงเรียบ / ไม่ใส่อารมณ์ (No Emotion)</span>
+                </div>
+                <a id="btn-download-no-emotion" href="#" download="no_emotion.wav" class="btn btn-sm btn-outline btn-outline-amber">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                  <span>ดาวน์โหลด (เสียงเรียบ)</span>
+                </a>
+              </div>
+              <div class="player-controls">
+                <audio id="audio-player-no-emotion" controls class="native-audio-player"></audio>
               </div>
             </div>
           </div>

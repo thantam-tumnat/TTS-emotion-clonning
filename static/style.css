@@ -1238,12 +1238,12 @@ textarea:focus, .custom-input:focus {
   to { opacity: 1; transform: translateY(0); }
 }
 
-/* LoRA Mode Toggle */
+/* LoRA & Emotion Mode Multi-Selection Toggle */
 .lora-mode-toggle {
   display: flex;
-  gap: 6px;
+  gap: 8px;
   background: var(--bg-card-sub);
-  padding: 4px;
+  padding: 6px;
   border-radius: var(--radius-sm);
   border: 1px solid var(--border-color);
   flex-wrap: wrap;
@@ -1251,63 +1251,111 @@ textarea:focus, .custom-input:focus {
 
 .lora-toggle-opt {
   flex: 1;
-  min-width: 110px;
+  min-width: 120px;
   display: flex;
   align-items: center;
   justify-content: center;
-  padding: 7px 10px;
+  gap: 6px;
+  padding: 8px 12px;
   border-radius: var(--radius-xs);
   cursor: pointer;
-  font-size: 0.82rem;
+  font-size: 0.84rem;
   font-weight: 500;
   color: var(--text-secondary);
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid transparent;
   transition: all 0.2s ease;
   user-select: none;
   text-align: center;
 }
 
+.lora-toggle-opt input[type="checkbox"],
 .lora-toggle-opt input[type="radio"] {
   display: none;
 }
 
+.lora-toggle-opt .chk-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 16px;
+  height: 16px;
+  border-radius: 3px;
+  font-size: 11px;
+  font-weight: bold;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  background: rgba(0, 0, 0, 0.3);
+  color: transparent;
+  transition: all 0.2s ease;
+}
+
 .lora-toggle-opt:hover {
   color: var(--text-primary);
-  background: rgba(255, 255, 255, 0.05);
+  background: rgba(255, 255, 255, 0.08);
 }
 
 .lora-toggle-opt.active {
-  background: var(--primary-color);
   color: #ffffff;
   font-weight: 600;
-  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.2);
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.25);
 }
 
-/* Dual Player Styles */
-.dual-player-container {
+.lora-toggle-opt.active .chk-badge {
+  background: #ffffff;
+  border-color: #ffffff;
+  color: #0f172a;
+}
+
+.lora-toggle-opt.opt-lora-on.active {
+  background: linear-gradient(135deg, rgba(16, 185, 129, 0.8), rgba(5, 150, 105, 0.9));
+  border-color: #10b981;
+}
+
+.lora-toggle-opt.opt-lora-off.active {
+  background: linear-gradient(135deg, rgba(56, 189, 248, 0.8), rgba(2, 132, 199, 0.9));
+  border-color: #38bdf8;
+}
+
+.lora-toggle-opt.opt-no-emotion.active {
+  background: linear-gradient(135deg, rgba(245, 158, 11, 0.8), rgba(217, 119, 6, 0.9));
+  border-color: #f59e0b;
+}
+
+/* Dedicated Multi-Player Container & Cards */
+.multi-player-container {
   display: flex;
   flex-direction: column;
-  gap: 12px;
+  gap: 14px;
+  margin-top: 4px;
 }
 
-.dual-player-container.hidden {
-  display: none;
-}
-
-.dual-player-box {
-  background: rgba(0, 0, 0, 0.2);
+.player-card-box {
+  background: rgba(15, 23, 42, 0.65);
   border-radius: var(--radius-sm);
-  padding: 10px 12px;
+  padding: 12px 14px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 10px;
+  transition: all 0.2s ease;
 }
 
-.dual-player-box.lora-on-box {
-  border: 1px solid rgba(16, 185, 129, 0.35);
+.player-card-box.hidden {
+  display: none !important;
 }
 
-.dual-player-box.lora-off-box {
-  border: 1px solid rgba(56, 189, 248, 0.35);
+.player-card-box.lora-on-box {
+  border: 1px solid rgba(16, 185, 129, 0.4);
+  box-shadow: 0 2px 8px rgba(16, 185, 129, 0.08);
+}
+
+.player-card-box.lora-off-box {
+  border: 1px solid rgba(56, 189, 248, 0.4);
+  box-shadow: 0 2px 8px rgba(56, 189, 248, 0.08);
+}
+
+.player-card-box.no-emotion-box {
+  border: 1px solid rgba(245, 158, 11, 0.4);
+  box-shadow: 0 2px 8px rgba(245, 158, 11, 0.08);
 }
 
 .dot-green {
@@ -1320,12 +1368,51 @@ textarea:focus, .custom-input:focus {
   box-shadow: 0 0 8px #38bdf8;
 }
 
+.dot-amber {
+  background: #f59e0b;
+  box-shadow: 0 0 8px #f59e0b;
+}
+
 .title-green {
   color: #34d399 !important;
 }
 
 .title-blue {
   color: #38bdf8 !important;
+}
+
+.title-amber {
+  color: #fbbf24 !important;
+}
+
+.btn-outline-green {
+  border-color: rgba(16, 185, 129, 0.4);
+  color: #34d399;
+}
+.btn-outline-green:hover {
+  background: rgba(16, 185, 129, 0.15);
+  border-color: #10b981;
+  color: #ffffff;
+}
+
+.btn-outline-blue {
+  border-color: rgba(56, 189, 248, 0.4);
+  color: #38bdf8;
+}
+.btn-outline-blue:hover {
+  background: rgba(56, 189, 248, 0.15);
+  border-color: #38bdf8;
+  color: #ffffff;
+}
+
+.btn-outline-amber {
+  border-color: rgba(245, 158, 11, 0.4);
+  color: #fbbf24;
+}
+.btn-outline-amber:hover {
+  background: rgba(245, 158, 11, 0.15);
+  border-color: #f59e0b;
+  color: #ffffff;
 }
 
 /* Field Label Row with Action Button */

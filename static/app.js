@@ -75,22 +75,27 @@ document.addEventListener('DOMContentLoaded', () => {
   const tagInsertButtons = document.querySelectorAll('.tag-insert-btn');
 
   const audioPlayerCard = document.getElementById('audio-player-card');
-  const singlePlayerContainer = document.getElementById('single-player-container');
-  const dualPlayerContainer = document.getElementById('dual-player-container');
-  const audioPlayer = document.getElementById('audio-player');
-  const btnDownloadAudio = document.getElementById('btn-download-audio');
+  const multiPlayerContainer = document.getElementById('multi-player-container');
+  
+  const playerBoxLoraOn = document.getElementById('player-box-lora-on');
   const audioPlayerLoraOn = document.getElementById('audio-player-lora-on');
-  const audioPlayerLoraOff = document.getElementById('audio-player-lora-off');
   const btnDownloadLoraOn = document.getElementById('btn-download-lora-on');
+
+  const playerBoxLoraOff = document.getElementById('player-box-lora-off');
+  const audioPlayerLoraOff = document.getElementById('audio-player-lora-off');
   const btnDownloadLoraOff = document.getElementById('btn-download-lora-off');
 
+  const playerBoxNoEmotion = document.getElementById('player-box-no-emotion');
+  const audioPlayerNoEmotion = document.getElementById('audio-player-no-emotion');
+  const btnDownloadNoEmotion = document.getElementById('btn-download-no-emotion');
+
   const loraToggleOptions = document.querySelectorAll('.lora-toggle-opt');
-  const loraRadioInputs = document.querySelectorAll('input[name="lora_mode_radio"]');
+  const loraCheckInputs = document.querySelectorAll('input[name="lora_mode_check"]');
 
   let selectedAudioFile = null;
-  let currentAudioUrl = null;
   let currentAudioUrlOn = null;
   let currentAudioUrlOff = null;
+  let currentAudioUrlNoEmotion = null;
   // Last /speak payload, kept so the full/short toggle can re-render without refetching.
   let lastRenderData = null;
   let segFormat = 'full';
@@ -101,16 +106,23 @@ document.addEventListener('DOMContentLoaded', () => {
     return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
   }
 
-  function getSelectedLoraMode() {
-    const checked = document.querySelector('input[name="lora_mode_radio"]:checked');
-    return checked ? checked.value : 'on';
+  function getSelectedGenModes() {
+    const checked = [...document.querySelectorAll('input[name="lora_mode_check"]:checked')].map(el => el.value);
+    return checked.length > 0 ? checked : ['lora_on'];
   }
 
-  loraRadioInputs.forEach(input => {
+  loraCheckInputs.forEach(input => {
     input.addEventListener('change', () => {
-      loraToggleOptions.forEach(opt => opt.classList.remove('active'));
-      const parent = input.closest('.lora-toggle-opt');
-      if (parent) parent.classList.add('active');
+      const checkedBoxes = document.querySelectorAll('input[name="lora_mode_check"]:checked');
+      if (checkedBoxes.length === 0) {
+        input.checked = true;
+      }
+      loraCheckInputs.forEach(inp => {
+        const parent = inp.closest('.lora-toggle-opt');
+        if (parent) {
+          parent.classList.toggle('active', inp.checked);
+        }
+      });
     });
   });
 
@@ -547,11 +559,12 @@ document.addEventListener('DOMContentLoaded', () => {
       updateSegmentedPreview();
     }
     audioPlayerCard.classList.add('hidden');
-    if (singlePlayerContainer) singlePlayerContainer.classList.remove('hidden');
-    if (dualPlayerContainer) dualPlayerContainer.classList.add('hidden');
-    if (audioPlayer) audioPlayer.pause();
-    if (audioPlayerLoraOn) audioPlayerLoraOn.pause();
-    if (audioPlayerLoraOff) audioPlayerLoraOff.pause();
+    if (playerBoxLoraOn) playerBoxLoraOn.classList.add('hidden');
+    if (playerBoxLoraOff) playerBoxLoraOff.classList.add('hidden');
+    if (playerBoxNoEmotion) playerBoxNoEmotion.classList.add('hidden');
+    if (audioPlayerLoraOn) { audioPlayerLoraOn.pause(); audioPlayerLoraOn.currentTime = 0; }
+    if (audioPlayerLoraOff) { audioPlayerLoraOff.pause(); audioPlayerLoraOff.currentTime = 0; }
+    if (audioPlayerNoEmotion) { audioPlayerNoEmotion.pause(); audioPlayerNoEmotion.currentTime = 0; }
     if (errorBanner) errorBanner.classList.add('hidden');
   }
 
@@ -684,8 +697,18 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // Helper to strip style/emotion tags
+  function stripEmotionTags(str) {
+    if (!str) return '';
+    return str
+      .replace(/\[\s*[A-Za-z][A-Za-z\s,.\-]*?(?::\s*[123])?\s*\]/g, '')
+      .replace(/\(\s*[A-Za-z][A-Za-z\s,.\-]*?(?::\s*[123])?\s*\)/g, '')
+      .replace(/\s+/g, ' ')
+      .trim();
+  }
+
   // Synthesis Helper
-  async function fetchSynthesisBlob({ text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode }) {
+  async function fetchSynthesisBlob({ text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode, autoAnnotate = true }) {
     if (selectedAudioFile) {
       const formData = new FormData();
       formData.append('text', text);
@@ -694,7 +717,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (model) formData.append('model', model);
       formData.append('cfg_value', cfgValue);
       formData.append('inference_timesteps', timesteps);
-      formData.append('auto_annotate', 'true');
+      formData.append('auto_annotate', autoAnnotate ? 'true' : 'false');
       formData.append('lora_mode', loraMode);
 
       const response = await fetch(`${API_BASE}/synthesize/upload`, {
@@ -720,7 +743,7 @@ document.addEventListener('DOMContentLoaded', () => {
           model: model,
           cfg_value: cfgValue,
           inference_timesteps: timesteps,
-          auto_annotate: true,
+          auto_annotate: autoAnnotate,
           lora_mode: loraMode
         })
       });
@@ -751,67 +774,99 @@ document.addEventListener('DOMContentLoaded', () => {
     const timesteps = parseInt(paramSteps.value, 10) || 10;
     const guidance = guidanceInput.value.trim();
     const model = getSelectedModel();
-    const loraMode = getSelectedLoraMode();
+    const selectedModes = getSelectedGenModes();
     const ts = getTimestamp();
     const spkPrefix = speakerId ? `${speakerId}_` : '';
 
+    const modeLabels = {
+      lora_on: 'Thai LoRA (ON)',
+      lora_off: 'LoRA OFF (Base)',
+      no_emotion: 'ไม่ใส่อารมณ์ (เสียงเรียบ)'
+    };
+
     try {
-      if (loraMode === 'both') {
-        showLoading(true, '⚡ กำลังสร้าง 2 เสียงเปรียบเทียบ (LoRA ON & LoRA OFF)...');
-
-        // Synthesize both sequentially or in parallel
-        const [blobOn, blobOff] = await Promise.all([
-          fetchSynthesisBlob({ text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'on' }),
-          fetchSynthesisBlob({ text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'off' })
-        ]);
-
-        if (currentAudioUrlOn) URL.revokeObjectURL(currentAudioUrlOn);
-        if (currentAudioUrlOff) URL.revokeObjectURL(currentAudioUrlOff);
-        currentAudioUrlOn = URL.createObjectURL(blobOn);
-        currentAudioUrlOff = URL.createObjectURL(blobOff);
-
-        audioPlayerLoraOn.src = currentAudioUrlOn;
-        btnDownloadLoraOn.href = currentAudioUrlOn;
-        btnDownloadLoraOn.download = `${ts}_${spkPrefix}lora_on.wav`;
-
-        audioPlayerLoraOff.src = currentAudioUrlOff;
-        btnDownloadLoraOff.href = currentAudioUrlOff;
-        btnDownloadLoraOff.download = `${ts}_${spkPrefix}lora_off.wav`;
-
-        singlePlayerContainer.classList.add('hidden');
-        dualPlayerContainer.classList.remove('hidden');
-        audioPlayerCard.classList.remove('hidden');
-
-        audioPlayerLoraOn.play().catch(() => {});
+      const modeNames = selectedModes.map(m => modeLabels[m] || m).join(', ');
+      if (selectedModes.length > 1) {
+        showLoading(true, `⚡ กำลังสร้าง ${selectedModes.length} รูปแบบพร้อมกัน (${modeNames})...`);
       } else {
-        const modeLabel = loraMode === 'off' ? 'LoRA OFF (Base)' : 'Thai LoRA (ON)';
-        showLoading(true, `🎙️ กำลังสังเคราะห์เสียงด้วย SiangTTS [${modeLabel}]...`);
+        showLoading(true, `🎙️ กำลังสังเคราะห์เสียงด้วย SiangTTS [${modeNames}]...`);
+      }
 
-        const audioBlob = await fetchSynthesisBlob({
-          text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode
-        });
-
-        if (currentAudioUrl) {
-          URL.revokeObjectURL(currentAudioUrl);
+      // Execute synthesis for all selected modes concurrently
+      const tasks = selectedModes.map(async (mode) => {
+        let blob;
+        if (mode === 'lora_on') {
+          blob = await fetchSynthesisBlob({
+            text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'on', autoAnnotate: true
+          });
+        } else if (mode === 'lora_off') {
+          blob = await fetchSynthesisBlob({
+            text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'off', autoAnnotate: true
+          });
+        } else if (mode === 'no_emotion') {
+          const plainText = stripEmotionTags(text) || text;
+          blob = await fetchSynthesisBlob({
+            text: plainText, speakerId, guidance: null, engine, model, cfgValue, timesteps, loraMode: 'on', autoAnnotate: false
+          });
         }
-        currentAudioUrl = URL.createObjectURL(audioBlob);
+        return { mode, blob };
+      });
 
-        const loraTag = loraMode === 'off' ? 'lora_off' : 'lora_on';
-        const filename = `${ts}_${spkPrefix}${loraTag}.wav`;
+      const results = await Promise.all(tasks);
 
-        audioPlayer.src = currentAudioUrl;
-        btnDownloadAudio.href = currentAudioUrl;
-        btnDownloadAudio.download = filename;
-        const playerTitle = document.getElementById('player-title');
-        if (playerTitle) {
-          playerTitle.textContent = `สังเคราะห์เสียงสำเร็จ [${modeLabel}] (48kHz WAV)`;
+      // Hide all player boxes initially
+      if (playerBoxLoraOn) playerBoxLoraOn.classList.add('hidden');
+      if (playerBoxLoraOff) playerBoxLoraOff.classList.add('hidden');
+      if (playerBoxNoEmotion) playerBoxNoEmotion.classList.add('hidden');
+
+      let firstAudioToPlay = null;
+
+      results.forEach(({ mode, blob }) => {
+        if (mode === 'lora_on') {
+          if (currentAudioUrlOn) URL.revokeObjectURL(currentAudioUrlOn);
+          currentAudioUrlOn = URL.createObjectURL(blob);
+          if (audioPlayerLoraOn) {
+            audioPlayerLoraOn.src = currentAudioUrlOn;
+            if (!firstAudioToPlay) firstAudioToPlay = audioPlayerLoraOn;
+          }
+          if (btnDownloadLoraOn) {
+            btnDownloadLoraOn.href = currentAudioUrlOn;
+            btnDownloadLoraOn.download = `${ts}_${spkPrefix}lora_on.wav`;
+          }
+          if (playerBoxLoraOn) playerBoxLoraOn.classList.remove('hidden');
+        } else if (mode === 'lora_off') {
+          if (currentAudioUrlOff) URL.revokeObjectURL(currentAudioUrlOff);
+          currentAudioUrlOff = URL.createObjectURL(blob);
+          if (audioPlayerLoraOff) {
+            audioPlayerLoraOff.src = currentAudioUrlOff;
+            if (!firstAudioToPlay) firstAudioToPlay = audioPlayerLoraOff;
+          }
+          if (btnDownloadLoraOff) {
+            btnDownloadLoraOff.href = currentAudioUrlOff;
+            btnDownloadLoraOff.download = `${ts}_${spkPrefix}lora_off.wav`;
+          }
+          if (playerBoxLoraOff) playerBoxLoraOff.classList.remove('hidden');
+        } else if (mode === 'no_emotion') {
+          if (currentAudioUrlNoEmotion) URL.revokeObjectURL(currentAudioUrlNoEmotion);
+          currentAudioUrlNoEmotion = URL.createObjectURL(blob);
+          if (audioPlayerNoEmotion) {
+            audioPlayerNoEmotion.src = currentAudioUrlNoEmotion;
+            if (!firstAudioToPlay) firstAudioToPlay = audioPlayerNoEmotion;
+          }
+          if (btnDownloadNoEmotion) {
+            btnDownloadNoEmotion.href = currentAudioUrlNoEmotion;
+            btnDownloadNoEmotion.download = `${ts}_${spkPrefix}no_emotion.wav`;
+          }
+          if (playerBoxNoEmotion) playerBoxNoEmotion.classList.remove('hidden');
         }
+      });
 
-        dualPlayerContainer.classList.add('hidden');
-        singlePlayerContainer.classList.remove('hidden');
+      if (audioPlayerCard) {
         audioPlayerCard.classList.remove('hidden');
+      }
 
-        audioPlayer.play().catch(() => {});
+      if (firstAudioToPlay) {
+        firstAudioToPlay.play().catch(() => {});
       }
 
       // Also trigger text annotation render if output was empty

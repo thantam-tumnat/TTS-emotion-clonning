@@ -133,8 +133,14 @@ def health_check():
         "service": "thai-tts-tone-annotation",
         "version": "2.0.0",
         "provider": settings.llm_provider,
-        "default_model": settings.gemini_model if settings.llm_provider == "gemini" else settings.llm_model,
-        "escalate_model": settings.gemini_escalate_model if settings.llm_provider == "gemini" else settings.llm_escalate_model,
+        "default_model": (
+            settings.openai_model if settings.llm_provider == "openai"
+            else (settings.gemini_model if settings.llm_provider == "gemini" else settings.llm_model)
+        ),
+        "escalate_model": (
+            settings.openai_escalate_model if settings.llm_provider == "openai"
+            else (settings.gemini_escalate_model if settings.llm_provider == "gemini" else settings.llm_escalate_model)
+        ),
         "speakers_count": len(siangtts_service.list_speakers()),
         "synthesizer": siangtts_service.status,
     }
