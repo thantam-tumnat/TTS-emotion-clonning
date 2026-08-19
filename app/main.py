@@ -16,6 +16,8 @@ from app.models import (
     SpeakResponse,
     SpeakerListResponse,
     SynthesizeRequest,
+    PronunciationResponse,
+    PronunciationUpdateRequest,
 )
 from app.config import settings
 from app.segmenter import segment_text
@@ -27,6 +29,11 @@ from app.renderers.voxcpm import (
     collect_tag_warnings,
 )
 from app.services.siangtts_service import siangtts_service, SynthesizerUnavailable
+from app.services.pronunciation import (
+    dictionary_path,
+    load_dictionary,
+    save_dictionary,
+)
 
 
 ChunkPlan = tuple[list[str], list[Optional[str]], list[bool]]
@@ -222,6 +229,30 @@ def speak_endpoint(req: SpeakRequest):
         script=rendered.script,
         warnings=annotated.warnings
     )
+
+
+# ---------------------------------------------------------------------------
+# Custom Pronunciation Dictionary
+# ---------------------------------------------------------------------------
+
+@app.get("/pronunciation", response_model=PronunciationResponse)
+def get_pronunciation_endpoint():
+    """Current pronunciation overrides, e.g. {"ไฟล์": "ฟาย"}."""
+    return PronunciationResponse(entries=load_dictionary(), path=str(dictionary_path()))
+
+
+@app.put("/pronunciation", response_model=PronunciationResponse)
+def put_pronunciation_endpoint(req: PronunciationUpdateRequest):
+    """Replace the pronunciation overrides.
+
+    Takes effect on the next synthesis -- the file is re-read whenever its mtime
+    changes, so no restart is needed.
+    """
+    try:
+        saved = save_dictionary(req.entries)
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Could not write dictionary: {e}")
+    return PronunciationResponse(entries=saved, path=str(dictionary_path()))
 
 
 # ---------------------------------------------------------------------------

@@ -47,6 +47,45 @@ Intensity levels for VoxCPM (1: Mild / 2: Standard / 3: Strong).
 
 ---
 
+## Custom Pronunciation Dictionary
+
+`pronunciation.json` respells words for the synthesizer only — the script shown in
+the studio and returned by the API keeps the original spelling.
+
+```json
+{
+  "ไฟล์": "ฟาย"
+}
+```
+
+The usual reason is a Thai loanword written with a silent consonant (การันต์):
+`ไฟล์` should read as ฟาย `/faː j/`, and reading the base word ไฟ `/faj/` instead
+says "fire".
+
+**Matching is on word boundaries, never substrings.** This matters: `โปรไฟล์` is
+genuinely `/proː faj/` with the *short* vowel, so a find-and-replace of `ไฟล์`
+would mispronounce it while fixing `ไฟล์`. PyThaiNLP tokenizes the two apart, and
+the longest key wins, so `ไฟล์เอกสาร` can override `ไฟล์`. If the text cannot be
+tokenized losslessly it is passed through untouched.
+
+Edits are picked up on the next synthesis — the file is re-read when its mtime
+changes, no restart needed. Also editable over the API:
+
+```bash
+curl -X PUT localhost:8000/pronunciation -H "Content-Type: application/json" -d "{\"entries\":{\"ไฟล์\":\"ฟาย\"}}"
+```
+
+`GET /pronunciation` returns the current entries and the file path.
+
+> **Measured caveat for `ไฟล์` specifically.** Whisper transcription of 4 takes each
+> found the model already reads `ไฟล์` correctly 3 of 4 times, and respelling it to
+> `ฟาย` produced the same 3-of-4 result — the two are homophones, so the respelling
+> cannot change the phonetics. The residual error looks like generation variance, not
+> a text problem, and is more likely to respond to `cfg_value`. The dictionary earns
+> its keep on words the model genuinely does not know: names, brands, acronyms.
+
+---
+
 ## Audio Assembly & Prosody Targets
 
 Each tone run is synthesized as its own chunk, because VoxCPM2 only honours a style
@@ -111,6 +150,14 @@ GEMINI_API_KEY=your_gemini_api_key
 LLM_PROVIDER=gemini
 SIANGTTS_BASE_MODEL=openbmb/VoxCPM2
 SIANGTTS_ADAPTER=dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA
+# How hard the Thai LoRA is applied, per side of the model (2.0 = as shipped).
+# The DiT side defaults to 0: at full strength it flattens the style tags, and
+# "[angry]" came out quieter and lower-pitched than a neutral read. The LM side
+# stays at full strength and is what carries the Thai. Measured with
+# tools/expr_sweep.py; set SIANGTTS_LORA_DIT_SCALE=2.0 to restore the adapter's
+# shipped behaviour if you prefer its pronunciation.
+SIANGTTS_LORA_LM_SCALE=2.0
+SIANGTTS_LORA_DIT_SCALE=0.0
 ```
 
 ### 3. Run FastAPI Server & Web Studio

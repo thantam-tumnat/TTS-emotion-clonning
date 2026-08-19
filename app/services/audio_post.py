@@ -72,6 +72,23 @@ MAX_STRETCH = 0.15
 
 OUTPUT_PEAK = 0.95
 
+# How much of each chunk's own level is corrected away before the per-tone target is
+# applied. At 1.0 -- what this did originally -- every chunk is flattened to the
+# take's median and the only surviving loudness difference is TONE_ENERGY_DB, which
+# caps the whole take's dynamic range at the 5 dB between "angry" and "sad" no matter
+# what the model delivered. That was the right call while the model's own level
+# differences were accidental; with the Thai LoRA off the DiT side it renders anger
+# 1.2 dB up and sadness 3.2 dB down on its own, and those are worth keeping.
+#
+# Measured on a real five-emotion take, correction vs the resulting angry-to-sad
+# spread: 1.0 -> 4.84 dB, 0.7 -> 5.65 dB, 0.5 -> 6.19 dB. The cost is that the
+# model's *weak* emotions pass through too -- it renders "happy" about a dB quieter
+# than neutral, and at 0.5 that lands 3.3 dB down against a -0.5 dB reference. 0.7
+# holds sad and scared within half a dB of the ElevenLabs reference while widening
+# the contrast that was the complaint. Fixing happy properly means fixing it at the
+# model, not here.
+ENERGY_MATCH = 0.7
+
 
 class Chunk(NamedTuple):
     """One synthesized tone run, plus what the assembler needs to place it."""
@@ -318,9 +335,10 @@ def assemble_with_spans(
 ) -> Tuple[np.ndarray, List[Span]]:
     """Trim, level, pace and join tone chunks, reporting where each landed.
 
-    Energy matching levels every chunk to the take's own median and then imposes
-    the measured per-tone offset, so the loudness differences a listener hears are
-    the intended ones rather than model noise. Rate matching corrects each chunk
+    Energy matching pulls each chunk part-way toward the take's own median and then
+    imposes the measured per-tone offset, so the loudness differences a listener
+    hears are mostly intended ones without discarding the model's own; see
+    ENERGY_MATCH for why that correction is partial rather than total. Rate matching corrects each chunk
     from the pace it was actually rendered at toward its target, bounded to +/-15%
     so it stays transparent. See _match_rate for why that correction is closed-loop.
     """
@@ -349,7 +367,7 @@ def assemble_with_spans(
                 if level <= 1e-6:
                     levelled.append(c)
                     continue
-                correction = 20 * math.log10(baseline / level)
+                correction = 20 * math.log10(baseline / level) * ENERGY_MATCH
                 target = TONE_ENERGY_DB.get(c.tone or "neutral", 0.0)
                 levelled.append(c._replace(audio=apply_gain_db(c.audio, correction + target)))
             prepared = levelled

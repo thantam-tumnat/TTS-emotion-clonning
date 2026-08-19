@@ -100,6 +100,18 @@ class SpeakResponse(BaseModel):
     warnings: List[str] = Field(default_factory=list)
 
 
+class PronunciationResponse(BaseModel):
+    """The custom pronunciation overrides applied just before synthesis."""
+    entries: dict[str, str]
+    path: str
+
+
+class PronunciationUpdateRequest(BaseModel):
+    # Replaces the whole dictionary. Keys are matched on word boundaries, so
+    # respelling "ไฟล์" leaves "โปรไฟล์" -- a genuinely different vowel -- alone.
+    entries: dict[str, str]
+
+
 class SpeakerInfo(BaseModel):
     id: str
     name: str

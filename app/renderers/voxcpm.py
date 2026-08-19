@@ -32,14 +32,29 @@ def _clean_body(text: str) -> str:
 
 
 def _family_from_body(body: str) -> Optional[Tone]:
-    """Best-effort family for free-form direction, e.g. 'Sad and...' -> SAD."""
-    for word in re.findall(r"[a-z]+", body.lower())[:2]:
-        if word in _TONE_BY_NAME:
-            return _TONE_BY_NAME[word]
-        entry = STYLE_VOCABULARY.get(word)
-        if entry is not None:
-            return entry[1]
-    return None
+    """Best-effort family for free-form direction, e.g. 'Sad and...' -> SAD.
+
+    Every recognised word votes, rather than the first one winning outright. The
+    family only drives the per-emotion level and pause in audio_post, and reading
+    just the opening word got those backwards on a mixed direction: "scared and
+    crying, tearful" landed on SCARED, which is +3 dB and *faster*, when what the
+    writer asked for is a tearful read. A tie keeps the earliest word, so a plain
+    single-emotion direction resolves exactly as before.
+    """
+    votes: dict[Tone, int] = {}
+    order: dict[Tone, int] = {}
+    for pos, word in enumerate(re.findall(r"[a-z]+", body.lower())):
+        family = _TONE_BY_NAME.get(word)
+        if family is None:
+            entry = STYLE_VOCABULARY.get(word)
+            family = entry[1] if entry is not None else None
+        if family is None:
+            continue
+        votes[family] = votes.get(family, 0) + 1
+        order.setdefault(family, pos)
+    if not votes:
+        return None
+    return max(votes, key=lambda f: (votes[f], -order[f]))
 
 
 def resolve_style_tag(body: str, level: Optional[str] = None) -> ResolvedTag:
@@ -311,6 +326,9 @@ STYLE_VOCABULARY = {
     "appalled": ("(Appalled and shocked voice, sharp disbelief)", Tone.ANGRY),
     "disappointed": ("(Disappointed voice, quiet and let down)", Tone.SAD),
     "crying": ("(Crying voice, broken and tearful, trembling)", Tone.SAD),
+    "tearful": (None, Tone.SAD), "sobbing": (None, Tone.SAD),
+    "weeping": (None, Tone.SAD), "teary": (None, Tone.SAD),
+    "heartbroken": (None, Tone.SAD),
     "surprised": ("(Surprised voice, sudden rising pitch)", Tone.EXCITED),
     "curious": ("(Curious and inquisitive voice, questioning tone)", Tone.EXCITED),
     "thoughtful": ("(Thoughtful voice, measured and reflective, unhurried)", Tone.CALM),

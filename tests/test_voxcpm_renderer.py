@@ -352,3 +352,26 @@ def test_script_from_llm_segments_has_no_style_words():
 def test_happily_button_tag_resolves_to_the_full_happy_instruction():
     """The studio inserts the ElevenLabs spelling; a bare '(happily)' measured weak."""
     assert resolve_style_tag("happily").instruction == format_voxcpm_instruction(Tone.HAPPY, 2)
+
+
+def test_mixed_direction_takes_the_family_with_the_most_words():
+    """'scared and crying, tearful' is a tearful read, not a +3 dB scared one."""
+    assert resolve_style_tag("scared and crying, tearful").tone == Tone.SAD
+
+
+def test_mixed_direction_is_passed_through_verbatim():
+    """Only the family is re-decided; the writer's own wording still leads the text."""
+    assert resolve_style_tag("scared and crying, tearful").instruction == (
+        "(scared and crying, tearful)"
+    )
+
+
+def test_a_tie_keeps_the_earliest_word():
+    assert resolve_style_tag("happy and excited").tone == Tone.HAPPY
+    assert resolve_style_tag("excited and happy").tone == Tone.EXCITED
+
+
+def test_single_emotion_direction_is_unchanged_by_voting():
+    for word, expected in (("scared", Tone.SCARED), ("crying", Tone.SAD),
+                           ("appalled", Tone.ANGRY), ("bored", Tone.TIRED)):
+        assert resolve_style_tag(word).tone == expected

@@ -4,6 +4,7 @@ import numpy as np
 import pytest
 
 from app.services.audio_post import (
+    ENERGY_MATCH,
     GAP_EMOTION_S,
     GAP_PARAGRAPH_S,
     GAP_SAME_TONE_S,
@@ -179,15 +180,23 @@ def test_assemble_realizes_the_per_tone_energy_offsets():
     assert measured == pytest.approx(wanted, abs=1.0)
 
 
-def test_assemble_equalizes_chunks_the_model_rendered_at_different_levels():
-    """Two same-tone chunks must not keep whatever level the model picked."""
+def test_assemble_pulls_in_chunks_the_model_rendered_at_different_levels():
+    """Two same-tone chunks are pulled together, but not flattened onto each other.
+
+    Levelling is partial by design -- see ENERGY_MATCH -- because a chunk's own level
+    is now mostly the emotion the model was asked for rather than noise. What still
+    has to hold is that a wild difference gets most of the way closed.
+    """
     chunks = [Chunk(tone(1.5, amp=0.1), "neutral"), Chunk(tone(1.5, amp=0.6), "neutral")]
     out = assemble(chunks, SR, match_rate=False)
 
     n = int(SR * 1.5)
     first = float(np.sqrt(np.mean(out[:n].astype("float64") ** 2)))
     last = float(np.sqrt(np.mean(out[-n:].astype("float64") ** 2)))
-    assert 20 * math.log10(last / first) == pytest.approx(0.0, abs=1.0)
+    rendered_gap = 20 * math.log10(0.6 / 0.1)
+    remaining = 20 * math.log10(last / first)
+    assert remaining == pytest.approx(rendered_gap * (1 - ENERGY_MATCH), abs=1.0)
+    assert remaining < rendered_gap / 2
 
 
 def test_assemble_paces_chunks_toward_their_duration_ratio():
