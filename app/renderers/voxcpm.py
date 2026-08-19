@@ -64,7 +64,7 @@ def clear_dynamic_style_cache():
     _DYNAMIC_STYLE_CACHE.clear()
 
 
-def resolve_style_tag(body: str, level: Optional[str] = None, use_llm: bool = True) -> ResolvedTag:
+def resolve_style_tag(body: str, level: Optional[str] = None, use_llm: bool = False) -> ResolvedTag:
     """Turn a raw tag word into everything the pipeline needs from it.
 
     A bare tone name expands to this module's canonical instruction rather than
@@ -72,8 +72,8 @@ def resolve_style_tag(body: str, level: Optional[str] = None, use_llm: bool = Tr
     dF0 -15.0 where the full phrasing gave +28.6.
 
     If the tag is not found in the static dictionary, queries the LLM to convert it into
-    a structured VoxCPM2 style instruction. Falls back to canonical tone instruction if
-    LLM is unavailable.
+    a structured VoxCPM2 style instruction when use_llm=True. Falls back to canonical
+    tone instruction or verbatim tag.
     """
     raw = body.strip()
     key = raw.lower()
@@ -121,12 +121,18 @@ def resolve_style_tag(body: str, level: Optional[str] = None, use_llm: bool = Tr
         except Exception:
             pass
 
+    # If the tag is a composite expression or already a full parenthetical instruction
     family = _family_from_body(raw)
     if family is not None:
-        instruction = f"({raw})" if len(raw.split()) > 1 else format_voxcpm_instruction(family, intensity)
+        if len(raw.split()) > 1:
+            instruction = raw if (raw.startswith("(") and raw.endswith(")")) else f"({raw})"
+        else:
+            instruction = format_voxcpm_instruction(family, intensity)
         resolved = ResolvedTag(instruction, family, intensity, key, None)
-    else:
-        resolved = ResolvedTag(f"({raw})", Tone.NEUTRAL, intensity, key, None)
+        _DYNAMIC_STYLE_CACHE[(key, intensity)] = resolved
+        return resolved
+
+    resolved = ResolvedTag(f"({raw})", Tone.NEUTRAL, intensity, key, None)
     _DYNAMIC_STYLE_CACHE[(key, intensity)] = resolved
     return resolved
 
@@ -371,10 +377,11 @@ STYLE_VOCABULARY = {
     "tearful and crying": ("(Crying voice, broken and tearful, trembling)", Tone.SAD),
     "sad and cry": ("(Deeply sorrowful and crying voice, trembling)", Tone.SAD),
     "sad and crying": ("(Deeply sorrowful and crying voice, trembling)", Tone.SAD),
-    "crying and sad": ("(Deeply sorrowful and crying voice, trembling)", Tone.SAD),
     "tearful": (None, Tone.SAD), "sobbing": (None, Tone.SAD),
     "weeping": (None, Tone.SAD), "teary": (None, Tone.SAD),
     "heartbroken": (None, Tone.SAD),
+    "somber": ("(Somber and melancholic voice, quiet and grave)", Tone.SAD),
+    "gloomy": ("(Gloomy and despondent voice, heavy and subdued)", Tone.SAD),
     "surprised": ("(Surprised voice, sudden rising pitch)", Tone.EXCITED),
     "curious": ("(Curious and inquisitive voice, questioning tone)", Tone.EXCITED),
     "thoughtful": ("(Thoughtful voice, measured and reflective, unhurried)", Tone.CALM),

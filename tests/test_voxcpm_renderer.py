@@ -406,6 +406,15 @@ def test_a_tie_keeps_the_earliest_word():
 
 def test_single_emotion_direction_is_unchanged_by_voting():
     for word, expected in (("scared", Tone.SCARED), ("crying", Tone.SAD),
-                           ("appalled", Tone.ANGRY), ("bored", Tone.TIRED)):
+                           ("appalled", Tone.ANGRY), ("bored", Tone.TIRED),
+                           ("somber", Tone.SAD), ("gloomy", Tone.SAD)):
         assert resolve_style_tag(word).tone == expected
+
+
+def test_somber_and_gloomy_resolve_to_proper_instruction():
+    assert "Somber and melancholic" in resolve_style_tag("somber").instruction
+    assert "Gloomy and despondent" in resolve_style_tag("gloomy").instruction
+    segs = parse_tagged_segments("[somber] วันนี้อากาศมืดมน")
+    assert len(segs) == 1
+    assert segs[0].tone == Tone.SAD
 

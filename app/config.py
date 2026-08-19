@@ -5,8 +5,8 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
 class Settings(BaseSettings):
-    # Provider selection: "gemini" or "anthropic"
-    llm_provider: Literal["gemini", "anthropic"] = "gemini"
+    # Provider selection: "gemini", "anthropic", or "openai"
+    llm_provider: Literal["gemini", "anthropic", "openai"] = "gemini"
 
     # Gemini (Google AI Studio)
     gemini_api_key: str = ""
@@ -20,6 +20,12 @@ class Settings(BaseSettings):
     anthropic_api_key: str = ""
     llm_model: str = "claude-haiku-4-5"
     llm_escalate_model: str = "claude-sonnet-5"
+
+    # 9arm Gateway / OpenAI-Compatible
+    openai_api_key: str = ""
+    openai_base_url: str = "https://gateway.9arm.co/v1"
+    openai_model: str = "qwen3.8-27b-fp8"
+    openai_escalate_model: str = "deepseek-v4-flash-0731"
 
     # Custom pronunciation overrides, applied to the text just before synthesis.
     # See app/services/pronunciation.py -- matching is token-level, so "ไฟล์" can be
@@ -106,6 +112,10 @@ class Settings(BaseSettings):
     @property
     def effective_gemini_api_key(self) -> str:
         return self.gemini_api_key or self.google_api_key or os.getenv("GEMINI_API_KEY", "") or os.getenv("GOOGLE_API_KEY", "")
+
+    @property
+    def effective_openai_api_key(self) -> str:
+        return self.openai_api_key or os.getenv("OPENAI_API_KEY", "")
 
 
 settings = Settings()

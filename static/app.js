@@ -151,6 +151,99 @@ document.addEventListener('DOMContentLoaded', () => {
     return val || null;
   }
 
+  const btnRefreshModels = document.getElementById('btn-refresh-models');
+
+  async function loadAvailableModels(forceRefresh = false) {
+    if (!llmModelSelect) return;
+    if (btnRefreshModels) btnRefreshModels.classList.add('spinning');
+
+    try {
+      const url = `${API_BASE}/models${forceRefresh ? '?refresh=true' : ''}`;
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`Failed to load models: ${res.status}`);
+      const data = await res.json();
+
+      const currentSelected = llmModelSelect.value;
+      llmModelSelect.innerHTML = '';
+
+      // 1. 9arm Gateway / OpenAI-Compatible models
+      const openaiData = data.providers?.openai;
+      if (openaiData && openaiData.available && openaiData.models && openaiData.models.length > 0) {
+        const group = document.createElement('optgroup');
+        group.label = `9arm Gateway / OpenAI Compatible (API Key Active)`;
+        openaiData.models.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = m.name;
+          group.appendChild(opt);
+        });
+        llmModelSelect.appendChild(group);
+      }
+
+      // 2. Google Gemini models
+      const geminiData = data.providers?.gemini;
+      if (geminiData && geminiData.models && geminiData.models.length > 0) {
+        const group = document.createElement('optgroup');
+        group.label = `Google Gemini (${geminiData.available ? 'API Key Active' : 'Default'})`;
+        geminiData.models.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = m.name;
+          group.appendChild(opt);
+        });
+        llmModelSelect.appendChild(group);
+      }
+
+      // 3. Anthropic Claude models (if available or configured)
+      const anthropicData = data.providers?.anthropic;
+      if (anthropicData && anthropicData.available && anthropicData.models && anthropicData.models.length > 0) {
+        const group = document.createElement('optgroup');
+        group.label = `Anthropic Claude (API Key Active)`;
+        anthropicData.models.forEach(m => {
+          const opt = document.createElement('option');
+          opt.value = m.id;
+          opt.textContent = m.name;
+          group.appendChild(opt);
+        });
+        llmModelSelect.appendChild(group);
+      }
+
+      // 4. Custom Option
+      const customOpt = document.createElement('option');
+      customOpt.value = 'custom';
+      customOpt.textContent = '✏️ ระบุชื่อโมเดลเอง (Custom)...';
+      llmModelSelect.appendChild(customOpt);
+
+      // Restore selection or set default
+      const defaultChoice = data.default_model || 'gemini-3.6-flash';
+      if (currentSelected && [...llmModelSelect.options].some(o => o.value === currentSelected)) {
+        llmModelSelect.value = currentSelected;
+      } else if ([...llmModelSelect.options].some(o => o.value === defaultChoice)) {
+        llmModelSelect.value = defaultChoice;
+      }
+
+      if (forceRefresh && btnRefreshModels) {
+        const spanEl = btnRefreshModels.querySelector('span');
+        if (spanEl) {
+          spanEl.textContent = '✅ อัปเดตแล้ว!';
+          setTimeout(() => {
+            spanEl.textContent = '🔄 รีเฟรชโมเดล';
+          }, 1800);
+        }
+      }
+    } catch (e) {
+      console.warn('Could not load models list:', e);
+    } finally {
+      if (btnRefreshModels) btnRefreshModels.classList.remove('spinning');
+    }
+  }
+
+  if (btnRefreshModels) {
+    btnRefreshModels.addEventListener('click', () => {
+      loadAvailableModels(true);
+    });
+  }
+
   // Model select change handler
   if (llmModelSelect) {
     llmModelSelect.addEventListener('change', () => {
@@ -188,6 +281,7 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     loadSpeakersList();
+    loadAvailableModels(false);
   }
 
   async function loadSpeakersList() {

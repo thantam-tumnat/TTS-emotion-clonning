@@ -140,6 +140,15 @@ def health_check():
     }
 
 
+@app.get("/models")
+def get_available_models_endpoint(refresh: bool = False):
+    """
+    Returns available LLM models from configured API keys (Gemini, Anthropic).
+    Pass ?refresh=true to query the providers live.
+    """
+    return annotator.list_available_models(refresh=refresh)
+
+
 @app.post("/annotate", response_model=AnnotateResponse)
 def annotate_endpoint(req: AnnotateRequest):
     """

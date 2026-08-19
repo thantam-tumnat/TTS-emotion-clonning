@@ -303,3 +303,16 @@ def test_seed_voice_is_built_once_and_reused_across_requests():
 
     assert spoken.count(svc.settings.siangtts_voice_seed_text) == 1
     assert len(built) == 1
+
+
+def test_get_available_models_endpoint(client):
+    res = client.get("/models")
+    assert res.status_code == 200
+    data = res.json()
+    assert "providers" in data
+    assert "gemini" in data["providers"]
+    assert "anthropic" in data["providers"]
+    assert "openai" in data["providers"]
+    assert len(data["providers"]["gemini"]["models"]) > 0
+    assert len(data["providers"]["openai"]["models"]) > 0
+    assert data["providers"]["openai"]["available"] is True
