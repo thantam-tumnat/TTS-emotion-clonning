@@ -57,12 +57,23 @@ def _family_from_body(body: str) -> Optional[Tone]:
     return max(votes, key=lambda f: (votes[f], -order[f]))
 
 
-def resolve_style_tag(body: str, level: Optional[str] = None) -> ResolvedTag:
+_DYNAMIC_STYLE_CACHE: dict[tuple[str, int], ResolvedTag] = {}
+
+
+def clear_dynamic_style_cache():
+    _DYNAMIC_STYLE_CACHE.clear()
+
+
+def resolve_style_tag(body: str, level: Optional[str] = None, use_llm: bool = True) -> ResolvedTag:
     """Turn a raw tag word into everything the pipeline needs from it.
 
     A bare tone name expands to this module's canonical instruction rather than
     being passed through: measured against a pinned speaker, "(sad)"/"(happy)" gave
     dF0 -15.0 where the full phrasing gave +28.6.
+
+    If the tag is not found in the static dictionary, queries the LLM to convert it into
+    a structured VoxCPM2 style instruction. Falls back to canonical tone instruction if
+    LLM is unavailable.
     """
     raw = body.strip()
     key = raw.lower()
@@ -89,10 +100,40 @@ def resolve_style_tag(body: str, level: Optional[str] = None) -> ResolvedTag:
             f"[{raw}] is a {UNSUPPORTED_TAGS[key]}; VoxCPM2 cannot produce it and will ignore the tag.",
         )
 
-    return ResolvedTag(f"({raw})", _family_from_body(raw) or Tone.NEUTRAL, intensity, key, None)
+    cached = _DYNAMIC_STYLE_CACHE.get((key, intensity))
+    if cached is not None:
+        return cached
+
+    if use_llm:
+        try:
+            from app.annotator import annotator
+            llm_res = annotator.convert_style_tag(raw, intensity)
+            if llm_res and llm_res.get("instruction"):
+                resolved = ResolvedTag(
+                    instruction=llm_res["instruction"],
+                    tone=llm_res.get("tone", _family_from_body(raw) or Tone.NEUTRAL),
+                    intensity=llm_res.get("intensity", intensity),
+                    label=key,
+                    warning=None,
+                )
+                _DYNAMIC_STYLE_CACHE[(key, intensity)] = resolved
+                return resolved
+        except Exception:
+            pass
+
+    family = _family_from_body(raw)
+    if family is not None:
+        instruction = f"({raw})" if len(raw.split()) > 1 else format_voxcpm_instruction(family, intensity)
+        resolved = ResolvedTag(instruction, family, intensity, key, None)
+    else:
+        resolved = ResolvedTag(f"({raw})", Tone.NEUTRAL, intensity, key, None)
+    _DYNAMIC_STYLE_CACHE[(key, intensity)] = resolved
+    return resolved
+
 
 
 class Span(NamedTuple):
+
     tag: ResolvedTag
     body: str
     break_before: bool   # the source put a line break ahead of this tag
@@ -326,6 +367,11 @@ STYLE_VOCABULARY = {
     "appalled": ("(Appalled and shocked voice, sharp disbelief)", Tone.ANGRY),
     "disappointed": ("(Disappointed voice, quiet and let down)", Tone.SAD),
     "crying": ("(Crying voice, broken and tearful, trembling)", Tone.SAD),
+    "crying and tearful": ("(Crying voice, broken and tearful, trembling)", Tone.SAD),
+    "tearful and crying": ("(Crying voice, broken and tearful, trembling)", Tone.SAD),
+    "sad and cry": ("(Deeply sorrowful and crying voice, trembling)", Tone.SAD),
+    "sad and crying": ("(Deeply sorrowful and crying voice, trembling)", Tone.SAD),
+    "crying and sad": ("(Deeply sorrowful and crying voice, trembling)", Tone.SAD),
     "tearful": (None, Tone.SAD), "sobbing": (None, Tone.SAD),
     "weeping": (None, Tone.SAD), "teary": (None, Tone.SAD),
     "heartbroken": (None, Tone.SAD),

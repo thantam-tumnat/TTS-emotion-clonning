@@ -150,3 +150,10 @@ class LLMClauseLabel(BaseModel):
 
 class LLMAnnotationResult(BaseModel):
     labels: list[LLMClauseLabel]
+
+
+class LLMTagConversionResult(BaseModel):
+    instruction: str
+    tone: Tone
+    intensity: int = Field(default=2, ge=1, le=3)
+

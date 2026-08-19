@@ -150,3 +150,66 @@ ANNOTATE_TOOL = {
         "additionalProperties": False
     }
 }
+
+
+TAG_CONVERSION_SYSTEM_PROMPT = """You are an expert TTS vocal director converting free-form emotion tags or descriptions (in Thai or English) into structured English vocal style instructions for the VoxCPM2 / SiangTTS speech synthesis engine.
+
+VoxCPM2 requires English style instructions enclosed in parentheses with explicit vocal descriptors.
+Pattern: "(<Adjective/Emotion> voice/tone, <action/manner participle>)" or "(<Intensity Adjective> <Emotion> voice, <manner>)"
+
+Examples of target format:
+- "sad and cry" / "crying and tearful" -> "(Deeply sorrowful and crying voice, trembling)" [tone: sad, intensity: 3]
+- "ตกใจมาก" / "panicked scream" -> "(Terrified and panicked voice, gasping and shaking)" [tone: scared, intensity: 3]
+- "กระซิบเบาๆ" / "whisper" -> "(Whispering voice, very soft and breathy)" [tone: calm, intensity: 1]
+- "โกรธจัด" / "furious yelling" -> "(Furious and yelling tone, very loud and harsh)" [tone: angry, intensity: 3]
+- "หัวเราะร่าเริง" / "laughing joy" -> "(Extremely joyful and laughing voice)" [tone: happy, intensity: 3]
+- "เหนื่อยหมดแรง" / "exhausted" -> "(Exhausted and drained voice, heavy sighs, very slow)" [tone: tired, intensity: 3]
+
+Allowed Tone enum:
+- neutral, sad, happy, angry, excited, calm, nervous, sarcastic, scared, tired
+
+Intensity: 1 (slight), 2 (moderate), 3 (intense).
+
+Return a JSON object with:
+- instruction: The exact English parenthetical string e.g. "(Deeply sorrowful and crying voice, trembling)"
+- tone: One of the 10 allowed Tone enum values
+- intensity: 1, 2, or 3
+"""
+
+CONVERT_TAG_TOOL = {
+    "name": "convert_style_tag",
+    "description": "Convert free-form emotion tag to VoxCPM2 instruction, tone family, and intensity.",
+    "input_schema": {
+        "type": "object",
+        "properties": {
+            "instruction": {
+                "type": "string",
+                "description": "The exact English instruction string enclosed in parentheses e.g. '(Deeply sorrowful and crying voice, trembling)'"
+            },
+            "tone": {
+                "type": "string",
+                "enum": [
+                    "neutral",
+                    "sad",
+                    "happy",
+                    "angry",
+                    "excited",
+                    "calm",
+                    "nervous",
+                    "sarcastic",
+                    "scared",
+                    "tired"
+                ],
+                "description": "The closest coarse Tone family"
+            },
+            "intensity": {
+                "type": "integer",
+                "enum": [1, 2, 3],
+                "description": "Intensity level (1=slightly, 2=standard, 3=very)"
+            }
+        },
+        "required": ["instruction", "tone", "intensity"],
+        "additionalProperties": False
+    }
+}
+

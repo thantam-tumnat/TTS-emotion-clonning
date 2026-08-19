@@ -356,14 +356,47 @@ def test_happily_button_tag_resolves_to_the_full_happy_instruction():
 
 def test_mixed_direction_takes_the_family_with_the_most_words():
     """'scared and crying, tearful' is a tearful read, not a +3 dB scared one."""
-    assert resolve_style_tag("scared and crying, tearful").tone == Tone.SAD
+    assert resolve_style_tag("scared and crying, tearful", use_llm=False).tone == Tone.SAD
 
 
-def test_mixed_direction_is_passed_through_verbatim():
-    """Only the family is re-decided; the writer's own wording still leads the text."""
-    assert resolve_style_tag("scared and crying, tearful").instruction == (
-        "(scared and crying, tearful)"
+def test_unknown_tag_falls_back_to_canonical_tone_when_llm_unavailable():
+    """When LLM is unavailable, unknown multi-word phrases keep verbatim and single word gets canonical instruction."""
+    resolved = resolve_style_tag("scared and crying, tearful", use_llm=False)
+    assert resolved.tone == Tone.SAD
+    assert resolved.instruction == "(scared and crying, tearful)"
+
+
+
+def test_unknown_tag_converts_via_llm(monkeypatch):
+    """When LLM succeeds, unknown tags get the structured VoxCPM2 instruction from LLM."""
+    from app.annotator import annotator
+    from app.renderers.voxcpm import clear_dynamic_style_cache
+
+    clear_dynamic_style_cache()
+    monkeypatch.setattr(
+        annotator,
+        "convert_style_tag",
+        lambda tag, intensity=2, custom_model=None: {
+            "instruction": "(Custom weeping and desperate voice, shaking)",
+            "tone": Tone.SAD,
+            "intensity": 3,
+        }
     )
+
+    resolved = resolve_style_tag("very desperate sobbing", level="3", use_llm=True)
+    assert resolved.instruction == "(Custom weeping and desperate voice, shaking)"
+    assert resolved.tone == Tone.SAD
+    assert resolved.intensity == 3
+
+    # Check that it is cached
+    monkeypatch.setattr(annotator, "convert_style_tag", lambda *args, **kwargs: None)
+    cached = resolve_style_tag("very desperate sobbing", level="3", use_llm=True)
+    assert cached.instruction == "(Custom weeping and desperate voice, shaking)"
+
+
+def test_crying_and_tearful_and_sad_and_cry_resolve_to_proper_instruction():
+    assert resolve_style_tag("crying and tearful").instruction == "(Crying voice, broken and tearful, trembling)"
+    assert resolve_style_tag("sad and cry").instruction == "(Deeply sorrowful and crying voice, trembling)"
 
 
 def test_a_tie_keeps_the_earliest_word():
@@ -375,3 +408,4 @@ def test_single_emotion_direction_is_unchanged_by_voting():
     for word, expected in (("scared", Tone.SCARED), ("crying", Tone.SAD),
                            ("appalled", Tone.ANGRY), ("bored", Tone.TIRED)):
         assert resolve_style_tag(word).tone == expected
+

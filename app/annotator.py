@@ -2,8 +2,14 @@ import json
 import logging
 from typing import List, Tuple, Any, Optional
 from app.config import settings
-from app.models import Segment, Tone, AnnotateResponse, LLMAnnotationResult
-from app.prompts import SYSTEM_PROMPT, FEW_SHOT_EXAMPLES, ANNOTATE_TOOL
+from app.models import Segment, Tone, AnnotateResponse, LLMAnnotationResult, LLMTagConversionResult
+from app.prompts import (
+    SYSTEM_PROMPT,
+    FEW_SHOT_EXAMPLES,
+    ANNOTATE_TOOL,
+    TAG_CONVERSION_SYSTEM_PROMPT,
+    CONVERT_TAG_TOOL,
+)
 from app.validator import validate_and_build_segments, ValidationError
 
 logger = logging.getLogger(__name__)
@@ -259,5 +265,89 @@ class Annotator:
             attempts=attempts
         )
 
+    def convert_style_tag(
+        self,
+        tag: str,
+        intensity: int = 2,
+        custom_model: Optional[str] = None
+    ) -> Optional[dict]:
+        """Convert a free-form emotion tag (e.g. 'sad and cry') to a VoxCPM-compatible instruction."""
+        if not tag or not tag.strip():
+            return None
+
+        clean_tag = tag.strip()
+        provider = settings.llm_provider.lower()
+        if provider == "gemini":
+            primary_model = (custom_model.strip() if custom_model and custom_model.strip() else settings.gemini_model)
+            escalate_model = settings.gemini_escalate_model
+        else:
+            primary_model = (custom_model.strip() if custom_model and custom_model.strip() else settings.llm_model)
+            escalate_model = settings.llm_escalate_model
+
+        for model in filter(None, [primary_model, escalate_model]):
+            try:
+                if provider == "gemini":
+                    from google.genai import types
+                    client = self.get_gemini_client()
+                    config = types.GenerateContentConfig(
+                        system_instruction=TAG_CONVERSION_SYSTEM_PROMPT,
+                        response_mime_type="application/json",
+                        response_schema=LLMTagConversionResult,
+                        temperature=0.0,
+                    )
+                    prompt = f"Convert this emotion tag to a VoxCPM2 style instruction: '{clean_tag}' (default intensity: {intensity})"
+                    response = client.models.generate_content(
+                        model=model,
+                        contents=prompt,
+                        config=config
+                    )
+                    if response.text:
+                        parsed = LLMTagConversionResult.model_validate_json(response.text)
+                        instr = parsed.instruction.strip()
+                        if not instr.startswith("("):
+                            instr = f"({instr}"
+                        if not instr.endswith(")"):
+                            instr = f"{instr})"
+                        return {
+                            "instruction": instr,
+                            "tone": parsed.tone,
+                            "intensity": parsed.intensity,
+                        }
+                else:
+                    client = self.get_anthropic_client()
+                    response = client.messages.create(
+                        model=model,
+                        max_tokens=512,
+                        temperature=0,
+                        system=TAG_CONVERSION_SYSTEM_PROMPT,
+                        messages=[
+                            {"role": "user", "content": f"Convert this emotion tag to a VoxCPM2 style instruction: '{clean_tag}' (default intensity: {intensity})"}
+                        ],
+                        tools=[CONVERT_TAG_TOOL],
+                        tool_choice={"type": "tool", "name": "convert_style_tag"}
+                    )
+                    for block in response.content:
+                        if getattr(block, "type", None) == "tool_use" and getattr(block, "name", None) == "convert_style_tag":
+                            input_data = getattr(block, "input", {})
+                            instr = str(input_data.get("instruction", "")).strip()
+                            if instr:
+                                if not instr.startswith("("):
+                                    instr = f"({instr}"
+                                if not instr.endswith(")"):
+                                    instr = f"{instr})"
+                                tone_str = str(input_data.get("tone", "neutral")).lower()
+                                tone_enum = Tone(tone_str) if tone_str in Tone._value2member_map_ else Tone.NEUTRAL
+                                return {
+                                    "instruction": instr,
+                                    "tone": tone_enum,
+                                    "intensity": int(input_data.get("intensity", intensity)),
+                                }
+            except Exception as e:
+                logger.warning(f"[convert_style_tag] Failed with model {model} ({provider}): {e}")
+                continue
+
+        return None
+
 
 annotator = Annotator()
+
