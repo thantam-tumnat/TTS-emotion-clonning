@@ -221,6 +221,37 @@ def _payload_response(job: RenderJob) -> Response:
     )
 
 
+@app.post("/v2/direct_render")
+async def direct_render(req: RenderRequest) -> Response:
+    """Execute a render job directly on the GPU without queuing.
+    Used by the Go Queue Gateway (:8020) to dispatch scheduled jobs."""
+    engine = _engine()
+    chunks = [c for c in req.chunks if c and c.strip()]
+    if not chunks:
+        return JSONResponse({"error": "chunks is empty"}, status_code=400)
+    if req.output.mode not in ("npz", "files"):
+        return JSONResponse({"error": f"unknown output mode {req.output.mode!r}"}, status_code=400)
+
+    job = RenderJob(
+        chunks=chunks,
+        voice=req.voice.model_dump() if req.voice else None,
+        cfg_value=req.cfg_value,
+        timesteps=req.timesteps,
+        lora=req.lora,
+        output=req.output.model_dump(),
+        lane=req.lane,
+        client=req.client,
+        **({"job_id": req.job_id} if req.job_id else {}),
+    )
+
+    await engine._execute(job)
+    if job.status == "failed":
+        return JSONResponse(job.as_dict(), status_code=500)
+    if job.payload is not None:
+        return _payload_response(job)
+    return JSONResponse(job.as_dict(), status_code=200)
+
+
 @app.post("/v2/jobs/render")
 async def render(req: RenderRequest, wait: float = 0.0) -> Response:
     """Queue a render. With `?wait=N` the request blocks up to N seconds and returns
