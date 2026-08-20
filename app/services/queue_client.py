@@ -278,8 +278,18 @@ class QueueSynthesizer:
 
         from app.services.siangtts_service import prepare_text
 
+        prepared_chunks = [prepare_text(t) for t in texts]
+        spk_label = speaker_id or (prompt_cache if isinstance(prompt_cache, str) else "auto-seed")
+        print(
+            f"\n[ToneStudio -> GPU] >>> Submitting {len(prepared_chunks)} chunk(s) "
+            f"(speaker={spk_label}, lora={lora_mode}, cfg={cfg_value}):",
+            file=sys.stderr,
+        )
+        for idx, c in enumerate(prepared_chunks):
+            print(f"[ToneStudio -> GPU]     [{idx+1}/{len(prepared_chunks)}] {c!r}", file=sys.stderr)
+
         payload = {
-            "chunks": [prepare_text(t) for t in texts],
+            "chunks": prepared_chunks,
             "voice": self._voice_spec(prompt_cache, speaker_id, ref_audio),
             "cfg_value": cfg_value,
             "timesteps": inference_timesteps,
