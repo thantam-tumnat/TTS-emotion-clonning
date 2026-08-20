@@ -1,11 +1,11 @@
 {
   "info": {
     "name": "SiangTTS webhook (:8002)",
-    "description": "Thai TTS service that replaced the n8n LIveAI_Audio flow.\n\nSet the collection variables first:\n- base_url: http://localhost:8002 (use 127.0.0.1 while testing; the service has no auth)\n- voice_id: must match a clip in ref/ — ref/demo_female.wav gives voice_id demo_female\n- callback_url: grab a throwaway URL from https://webhook.site so results never reach the real callback\n\n'Create audio' fills the job_id variable automatically, so the job requests below work straight after it.",
+    "description": "Thai TTS service that replaced the n8n LIveAI_Audio flow.\n\nSet the collection variables first:\n- base_url: http://localhost:8010 (use 127.0.0.1 while testing; the service has no auth)\n- voice_id: must match a clip in ref/ — ref/demo_female.wav gives voice_id demo_female\n- callback_url: grab a throwaway URL from https://webhook.site so results never reach the real callback\n\n'Create audio' fills the job_id variable automatically, so the job requests below work straight after it.",
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "base_url", "value": "http://localhost:8002" },
+    { "key": "base_url", "value": "http://localhost:8010" },
     { "key": "voice_id", "value": "demo_female" },
     { "key": "callback_url", "value": "https://webhook.site/REPLACE-ME" },
     { "key": "run_id", "value": "" },

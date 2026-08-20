@@ -10,31 +10,39 @@ What that buys over the n8n version: no 3-second polling granularity, no HTTP
 hop per chunk, and the reference voice is encoded once per job instead of
 re-read on every chunk.
 
-Run:
-    uv run uvicorn src.webhook:app --host 0.0.0.0 --port 8002
+The synth step no longer happens here. This process used to load VoxCPM2 itself,
+which meant a second copy of the model whenever the tone studio was also running —
+on one GPU that is a copy nobody can afford. Generation now goes to the shared GPU
+service (src/gpu_service.py, :8020) and this process keeps everything else: the n8n
+contract, Thai text preparation, chunking, the merge, the upload, the callback and
+the job dashboard. Nothing a caller can see changed.
+
+The chunk WAVs come back as files in the shared work directory rather than over
+HTTP, because the very next thing that happens to them is ffmpeg — so the two
+services must share SIANGTTS_WORK_DIR, which is also why they belong on one host.
+
+Run (after src/gpu_service.py is up):
+    uv run uvicorn src.webhook:app --host 0.0.0.0 --port 8010
 
 Config (env):
-    SIANGTTS_ADAPTER        LoRA dir            (default checkpoints/siangtts-v1)
-    SIANGTTS_BASE_MODEL     base HF id
-    SIANGTTS_DEVICE         cuda / cpu          (default: auto)
-    SIANGTTS_REF_DIR        reference clips     (default ref/)
-                            NB: the old system kept these in
-                            C:\\temp\\tts_jobs\\voices — point this there to
-                            reuse them in place.
-    SIANGTTS_CACHE_DIR      prompt-cache store  (default voice_cache/)
-                            Derived .pt files, not audio. Deleting it only
-                            costs a re-encode.
-    SIANGTTS_WORK_DIR       job scratch         (default work/)
+    SIANGTTS_GPU_URL        shared GPU service   (default http://127.0.0.1:8020)
+    SIANGTTS_REF_DIR        reference clips      (default ref/)
+                            Only for listing voices — the GPU service is what
+                            actually reads them, so point both at the same place.
+    SIANGTTS_WORK_DIR       job scratch          (default work/)
+                            Must match the GPU service's work dir.
     SIANGTTS_UPLOAD_URL     upload endpoint
     SIANGTTS_UPLOAD_TOKEN   bearer for upload   (was n8n credential "VR_live Auth")
     SIANGTTS_DEFAULT_CALLBACK
     SIANGTTS_KEEP_WORK      "1" keeps job scratch dirs for debugging
+
+    Model settings (SIANGTTS_BASE_MODEL / _ADAPTER / _DEVICE / _CACHE_DIR) moved to
+    the GPU service. Setting them here does nothing.
 """
 
 from __future__ import annotations
 
 import asyncio
-import hashlib
 import os
 import time
 import traceback
@@ -43,26 +51,19 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-import soundfile as sf
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
 from . import pipeline
-from .inference import DEFAULT_BASE_MODEL, Synthesizer
+from .gpu_client import DEFAULT_URL as GPU_URL_DEFAULT
+from .gpu_client import GPUClient
 from .thai_text import Chunk, chunk_text, prepare_prompt
 
 pipeline._load_dotenv()
 
-BASE_MODEL = os.environ.get("SIANGTTS_BASE_MODEL", DEFAULT_BASE_MODEL)
-ADAPTER = os.environ.get("SIANGTTS_ADAPTER", "checkpoints/siangtts-v1")
-DEVICE = os.environ.get("SIANGTTS_DEVICE") or None
+GPU_URL = os.environ.get("SIANGTTS_GPU_URL", GPU_URL_DEFAULT)
 REF_DIR = Path(os.environ.get("SIANGTTS_REF_DIR", "ref"))
-CACHE_DIR = Path(
-    os.environ.get("SIANGTTS_CACHE_DIR")
-    or os.environ.get("SIANGTTS_VOICES_DIR")
-    or ("voices" if Path("voices").exists() else "voice_cache")
-)
 KEEP_WORK = os.environ.get("SIANGTTS_KEEP_WORK", "") == "1"
 
 AUDIO_EXTS = (".mp3", ".wav", ".m4a", ".ogg", ".flac")
@@ -122,6 +123,8 @@ class Job:
     error: str | None = None
     file_url: str | None = None
     done: int = 0                       # chunks synthesised so far
+    gpu_job_id: str | None = None       # the render job on the GPU service
+    gpu_position: int | None = None     # its place in the shared queue, while waiting
     created: float = field(default_factory=time.time)
     started: float | None = None
     finished: float | None = None
@@ -155,66 +158,11 @@ class Job:
             "file_url": self.file_url,
             "audio_src": audio_src,
             "has_local_audio": has_audio,
+            "gpu_job_id": self.gpu_job_id,
+            "gpu_position": self.gpu_position,
             "error": self.error,
         }
 
-
-# ---------------------------------------------------------------------------
-# Voice cache
-# ---------------------------------------------------------------------------
-
-class VoiceCache:
-    """Encoded reference clips, keyed by voice + ref text.
-
-    VoxCPM2's prompt cache is bound to the transcript it was built with, so a
-    voice used with two different `voice_text` values needs two caches. Built
-    lazily on first use and persisted, because voice ids arrive from the caller
-    and are not known at startup.
-    """
-
-    def __init__(self, synth: Synthesizer) -> None:
-        self.synth = synth
-        self.mem: dict[str, dict] = {}
-        CACHE_DIR.mkdir(parents=True, exist_ok=True)
-
-    def _ref_file(self, voice_id: str) -> Path:
-        dirs_to_check = [REF_DIR]
-        fallback_dir = Path("C:/temp/tts_jobs/voices")
-        if fallback_dir.exists() and fallback_dir.resolve() != REF_DIR.resolve():
-            dirs_to_check.append(fallback_dir)
-
-        for d in dirs_to_check:
-            for ext in AUDIO_EXTS:
-                p = d / f"{voice_id}{ext}"
-                if p.exists():
-                    return p
-        raise RuntimeError(f"voice '{voice_id}' has no reference clip in {REF_DIR}/ or {fallback_dir}/")
-
-    def get(self, voice_id: str, ref_text: str) -> dict:
-        ref_file = self._ref_file(voice_id)
-        # If caller sent empty or default ref_text, check if companion .txt exists beside the audio clip
-        if not ref_text or ref_text == DEFAULT_REF_TEXT:
-            txt_file = ref_file.with_suffix(".txt")
-            if txt_file.exists():
-                try:
-                    ref_text = txt_file.read_text(encoding="utf-8").strip() or ref_text
-                except Exception:
-                    pass
-
-        digest = hashlib.sha1(ref_text.encode("utf-8")).hexdigest()[:8]
-        key = f"{voice_id}-{digest}"
-        if key in self.mem:
-            return self.mem[key]
-
-        path = CACHE_DIR / f"{key}.pt"
-        if path.exists() and path.stat().st_mtime >= ref_file.stat().st_mtime:
-            cache = self.synth.load_voice(path)
-        else:
-            print(f"[voice] encoding '{voice_id}' from {ref_file.name} …")
-            cache = self.synth.build_voice(str(ref_file), prompt_text=ref_text or None)
-            self.synth.save_voice(cache, path)
-        self.mem[key] = cache
-        return cache
 
 
 # ---------------------------------------------------------------------------
@@ -226,18 +174,7 @@ _state: dict = {}
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    adapter = ADAPTER or None
-    if adapter and not Path(adapter).exists():
-        # Loud, because the service otherwise runs happily on the base model and
-        # every clip comes out without the Thai LoRA.
-        raise RuntimeError(
-            f"adapter {adapter!r} not found — set SIANGTTS_ADAPTER, or '' for base only"
-        )
-
-    print(f"[webhook] loading {BASE_MODEL} adapter={adapter} …")
-    synth = Synthesizer(base_model=BASE_MODEL, adapter_path=adapter, device=DEVICE)
-    _state["synth"] = synth
-    _state["voices"] = VoiceCache(synth)
+    _state["gpu"] = GPUClient(GPU_URL)
     _state["jobs"] = {}
     _state["running"] = None
     _state["queue"] = asyncio.Queue()
@@ -245,9 +182,20 @@ async def lifespan(app: FastAPI):
     # First thaisum/newmm call loads its model; do it now so job #1 isn't slower.
     await asyncio.to_thread(prepare_prompt, "อุ่นเครื่องนะคะ", "th")
 
+    # A warning, not a failure. The GPU service takes 30–60 s to load the model, so
+    # on a cold boot it is normal for this process to come up first; jobs submitted
+    # meanwhile wait it out (see GPUClient.await_job) rather than being rejected.
+    health = await _state["gpu"].health()
+    if health is None:
+        print(f"[webhook] WARNING: GPU service at {GPU_URL} is not answering yet")
+    elif health.get("stub"):
+        print(f"[webhook] WARNING: GPU service at {GPU_URL} is in STUB MODE — output is a test tone")
+    else:
+        print(f"[webhook] GPU service ok — {health.get('model')} adapter={health.get('adapter')}")
+
     worker = asyncio.create_task(_worker())
     pipeline.WORK_ROOT.mkdir(parents=True, exist_ok=True)
-    print(f"[webhook] ready — sr={synth.sample_rate} work={pipeline.WORK_ROOT}")
+    print(f"[webhook] ready — gpu={GPU_URL} work={pipeline.WORK_ROOT}")
     try:
         yield
     finally:
@@ -274,8 +222,7 @@ async def _worker() -> None:
 
 
 async def _run_job(job: Job) -> None:
-    synth: Synthesizer = _state["synth"]
-    voices: VoiceCache = _state["voices"]
+    gpu: GPUClient = _state["gpu"]
     work = pipeline.WORK_ROOT / job.queue_id
     job.status = "running"
     job.started = time.time()
@@ -283,22 +230,49 @@ async def _run_job(job: Job) -> None:
 
     try:
         work.mkdir(parents=True, exist_ok=True)
-        cache = await asyncio.to_thread(voices.get, job.voice_id, job.ref_text)
 
-        wav_paths: list[Path] = []
-        for ch in job.chunks:
-            wav = await asyncio.to_thread(
-                synth.synth_cached,
-                ch.text,
-                cache,
-                cfg_value=GUIDANCE,
-                inference_timesteps=NUM_STEP,
-            )
-            out = work / f"{ch.filename}.wav"
-            await asyncio.to_thread(sf.write, str(out), wav, synth.sample_rate)
-            wav_paths.append(out)
-            job.done = ch.index
-            print(f"[{job.queue_id}] chunk {ch.index}/{ch.total} ok")
+        # The GPU service writes the chunk WAVs straight into this job's scratch dir,
+        # under the same `<queue_id>_NNN.wav` names the in-process version produced —
+        # which is what keeps /audio/{queue_id} and the merge unchanged.
+        submitted = await gpu.submit_render({
+            "chunks": [ch.text for ch in job.chunks],
+            "voice": {
+                "speaker_id": job.voice_id,
+                "ref_text": job.ref_text,
+                # Only consult a sidecar transcript when the caller did not send a
+                # real one of its own — the original in-process rule, preserved so
+                # the prompt caches already on disk stay hits.
+                "allow_sidecar": job.ref_text == DEFAULT_REF_TEXT,
+            },
+            "cfg_value": GUIDANCE,
+            "timesteps": NUM_STEP,
+            # What this path has always run at: the adapter's shipped strength.
+            "lora": "shipped",
+            "output": {
+                "mode": "files",
+                "job_dir": job.queue_id,
+                "names": [ch.filename for ch in job.chunks],
+            },
+            "lane": "batch",
+            "client": "webhook",
+        })
+        job.gpu_job_id = submitted["job_id"]
+        job.gpu_position = submitted.get("position")
+        print(f"[{job.queue_id}] gpu job {job.gpu_job_id} queued at position "
+              f"{job.gpu_position}")
+
+        def _progress(remote: dict) -> None:
+            if remote["chunks_done"] != job.done:
+                job.done = remote["chunks_done"]
+                print(f"[{job.queue_id}] chunk {job.done}/{len(job.chunks)} ok")
+            job.gpu_position = remote.get("position")
+
+        remote = await gpu.await_job(job.gpu_job_id, on_progress=_progress)
+        if remote["status"] != "completed":
+            raise RuntimeError(remote.get("error") or f"gpu job {remote['status']}")
+
+        wav_paths = [Path(p) for p in remote["result"]["files"]]
+        job.done = len(wav_paths)
 
         merged = work / f"{job.queue_id}.mp3"
         await asyncio.to_thread(
@@ -451,16 +425,24 @@ def get_job(job_id: str) -> JSONResponse:
 
 
 @app.get("/health")
-def health() -> JSONResponse:
-    synth = _state.get("synth")
+async def health() -> JSONResponse:
+    """Status of this service *and* the engine behind it.
+
+    The model-shaped fields still exist and still say what model is answering — they
+    are just reported by the GPU service now rather than read off a local object, so
+    anything that was watching them keeps working. `gpu` is where to look when they
+    come back null: it is null exactly when the engine is unreachable.
+    """
+    gpu: GPUClient = _state["gpu"]
+    remote = await gpu.health()
     queue: asyncio.Queue | None = _state.get("queue")
     jobs: list[Job] = list(_state.get("jobs", {}).values())
     return JSONResponse({
-        "status": "ok" if synth else "loading",
-        "model": BASE_MODEL,
-        "adapter": ADAPTER,
-        "device": DEVICE or "auto",
-        "sample_rate": getattr(synth, "sample_rate", 48000),
+        "status": "ok" if remote else "degraded",
+        "model": (remote or {}).get("model"),
+        "adapter": (remote or {}).get("adapter"),
+        "device": (remote or {}).get("device"),
+        "sample_rate": (remote or {}).get("sample_rate", 48000),
         "num_step": NUM_STEP,
         "guidance": GUIDANCE,
         "waiting": queue.qsize() if queue else 0,
@@ -468,41 +450,49 @@ def health() -> JSONResponse:
         "completed": sum(1 for j in jobs if j.status == "completed"),
         "failed": sum(1 for j in jobs if j.status == "failed"),
         "total": len(jobs),
-        "voices_cached": len(getattr(_state.get("voices"), "mem", {})),
+        "voices_cached": ((remote or {}).get("voices") or {}).get("in_memory", 0),
         "upload_token": bool(
             os.environ.get("SIANGTTS_UPLOAD_TOKEN", "").strip() or pipeline.UPLOAD_TOKEN
         ),
+        "gpu": {
+            "url": GPU_URL,
+            "reachable": remote is not None,
+            "stub": (remote or {}).get("stub"),
+            "waiting": (remote or {}).get("waiting"),
+            "running": (remote or {}).get("running"),
+        },
     })
 
 
 @app.get("/voices")
-def list_voices() -> JSONResponse:
-    """List available reference voices and cached prompt caches."""
-    voices: list[dict] = []
-    seen = set()
-    dirs_to_check = [REF_DIR]
-    fallback_dir = Path("C:/temp/tts_jobs/voices")
-    if fallback_dir.exists() and fallback_dir.resolve() != REF_DIR.resolve():
-        dirs_to_check.append(fallback_dir)
+async def list_voices() -> JSONResponse:
+    """List available reference voices and cached prompt caches.
 
-    for d in dirs_to_check:
-        if d.exists():
-            for f in d.iterdir():
-                if f.suffix.lower() in AUDIO_EXTS and f.stem not in seen:
-                    seen.add(f.stem)
-                    voices.append({"id": f.stem, "file": f.name, "cached": False})
+    Answered by the GPU service, which is what actually reads the reference
+    directories and owns the prompt caches. Falls back to a local directory scan when
+    it is unreachable, so the dashboard still shows something useful during a restart
+    — without the `cached` flags, which only the engine knows.
+    """
+    remote = await _state["gpu"].list_voices()
+    if remote is not None:
+        voices = remote.get("voices", [])
+    else:
+        voices = []
+        seen = set()
+        dirs_to_check = [REF_DIR]
+        fallback_dir = Path("C:/temp/tts_jobs/voices")
+        if fallback_dir.exists() and fallback_dir.resolve() != REF_DIR.resolve():
+            dirs_to_check.append(fallback_dir)
+        for d in dirs_to_check:
+            if d.exists():
+                for f in d.iterdir():
+                    if f.suffix.lower() in AUDIO_EXTS and f.stem not in seen:
+                        seen.add(f.stem)
+                        voices.append({"id": f.stem, "file": f.name, "cached": None})
 
-    cached_ids = set()
-    if CACHE_DIR.exists():
-        for f in CACHE_DIR.glob("*.pt"):
-            stem = f.stem.split("-")[0]
-            cached_ids.add(stem)
-    for v in voices:
-        if v["id"] in cached_ids:
-            v["cached"] = True
-    # If default voice is not in ref directory, list it anyway
-    if DEFAULT_VOICE not in seen:
-        voices.insert(0, {"id": DEFAULT_VOICE, "file": f"{DEFAULT_VOICE}.mp3", "cached": DEFAULT_VOICE in cached_ids})
+    # If the default voice is not in a reference directory, list it anyway.
+    if not any(v["id"] == DEFAULT_VOICE for v in voices):
+        voices.insert(0, {"id": DEFAULT_VOICE, "file": f"{DEFAULT_VOICE}.mp3", "cached": False})
     return JSONResponse({"voices": voices, "default": DEFAULT_VOICE})
 
 

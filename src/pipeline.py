@@ -22,19 +22,14 @@ from pathlib import Path
 import httpx
 
 
+from .env_file import load_env_file
+
+
 def _load_dotenv() -> None:
-    env_path = Path(".env")
-    if env_path.exists():
-        with open(env_path, encoding="utf-8") as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line:
-                    continue
-                k, v = line.split("=", 1)
-                k = k.strip()
-                v = v.strip().strip("'").strip('"')
-                if k and k not in os.environ:
-                    os.environ[k] = v
+    """Kept as a name callers already use; the implementation moved to
+    src/env_file.py so the GPU service can share it without importing this
+    module, which is all about ffmpeg and uploads."""
+    load_env_file()
 
 
 _load_dotenv()

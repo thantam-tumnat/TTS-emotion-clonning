@@ -64,19 +64,30 @@ setx SIANGTTS_ADAPTER "checkpoints/siangtts-v1" /M
 
 ### All variables
 
+Which process reads which matters now that there are two. Anything about the model belongs to the **GPU service**; anything about scripts, uploads and callbacks belongs to the **webhook**. `SIANGTTS_WORK_DIR` is the one both must agree on.
+
+| variable | read by | default | what it does |
+|---|---|---|---|
+| `SIANGTTS_GPU_URL` | webhook | `http://127.0.0.1:8020` | where the GPU service is |
+| `SIANGTTS_GPU_STUB` | gpu | — | `1` runs without the model; output is a test tone. Never in production. |
+| `SIANGTTS_STUB_DELAY` | gpu | `0` | seconds per chunk in stub mode, so queueing is observable |
+| `SIANGTTS_INTERACTIVE_BURST` | gpu | `3` | interactive jobs allowed to jump the batch queue before one batch job goes through regardless |
+| `SIANGTTS_DEFAULT_LORA` | gpu | `shipped` | LoRA strength for a job that does not name one |
+| `SIANGTTS_GPU_RECONNECT_BUDGET` | webhook | `180` | seconds a running job keeps retrying through an unreachable GPU service before failing |
+
 | variable | default | what it does |
 |---|---|---|
-| `SIANGTTS_ADAPTER` | `checkpoints/siangtts-v1` | LoRA directory. **Missing = refuses to start.** `""` runs the base model with no Thai LoRA. |
-| `SIANGTTS_BASE_MODEL` | `openbmb/VoxCPM2` | base HF id |
-| `SIANGTTS_DEVICE` | auto | `cuda` / `cpu` |
+| `SIANGTTS_ADAPTER` | `checkpoints/siangtts-v1` | **GPU service.** LoRA directory. **Missing = refuses to start.** `""` runs the base model with no Thai LoRA. |
+| `SIANGTTS_BASE_MODEL` | `openbmb/VoxCPM2` | **GPU service.** base HF id |
+| `SIANGTTS_DEVICE` | auto | **GPU service.** `cuda` / `cpu` |
 | `SIANGTTS_UPLOAD_TOKEN` | — | bearer for the upload endpoint. Unset = every job fails at upload. |
 | `SIANGTTS_UPLOAD_URL` | `https://looklike.ai/api/v1/live-gpt/upload` | where the merged mp3 goes |
 | `SIANGTTS_DEFAULT_CALLBACK` | `https://test.looklike.ai/.../audio-callback` | used when the caller omits `callback_url` |
-| `SIANGTTS_REF_DIR` | `ref` | reference clips, named `<voice_id>.mp3`. The old server kept these in `C:\temp\tts_jobs\voices\` — point here to reuse them in place. |
-| `SIANGTTS_CACHE_DIR` | `voice_cache` | cached encodings (`.pt`), derived from `ref/`. Safe to delete; costs a re-encode. |
-| `SIANGTTS_WORK_DIR` | `work` | job scratch. **Relative to the working directory** — set an absolute path when running as a service. |
+| `SIANGTTS_REF_DIR` | `ref` | **GPU service** (the webhook reads it only to list voices while the engine is down). Reference clips, named `<voice_id>.mp3`. Accepts **several directories separated by `;`** — the service answers for both pipelines, so it has to see both their voice folders. `C:\temp\tts_jobs\voices\` is always checked as well. New clips are written to the first entry. |
+| `SIANGTTS_CACHE_DIR` | `voices/` if it exists, else `voice_cache` | **GPU service.** Cached encodings (`.pt`), derived from `ref/`. Safe to delete; costs a re-encode. Keys are unchanged by the split, so existing files stay hits. |
+| `SIANGTTS_WORK_DIR` | `work` | job scratch, and how chunk WAVs travel between the two services — **they must resolve it to the same directory**. Relative to the working directory; set an absolute path when running as a service. |
 | `SIANGTTS_KEEP_WORK` | — | `1` keeps `work/<queue_id>/` for successful jobs too; failed jobs are kept either way |
-| `SIANGTTS_NUM_STEP` | `10` | inference steps (was `num_step` in n8n, where it was `32` — see DEPLOY.md) |
+| `SIANGTTS_NUM_STEP` | `10` | inference steps, sent with each render job (was `num_step` in n8n, where it was `32` — see DEPLOY.md) |
 | `SIANGTTS_GUIDANCE` | `2` | CFG scale (was `guidance_scale`) |
 | `SIANGTTS_MAX_HISTORY` | `500` | finished jobs kept for `/jobs` |
 | `SIANGTTS_HTTP_TIMEOUT` | `120` | seconds for upload + callback |
@@ -86,6 +97,24 @@ setx SIANGTTS_ADAPTER "checkpoints/siangtts-v1" /M
 ---
 
 ## Run
+
+Two processes now. The model lives in the **GPU service** (`src/gpu_service.py`, port 8020); the **webhook** (`src/webhook.py`, port 8010) keeps the n8n contract and no longer loads anything. Start the GPU service first — the webhook comes up either way, but jobs cannot run until it is there.
+
+### 1. GPU service — the only process that loads the model
+
+```
+uv run uvicorn src.gpu_service:app --host 127.0.0.1 --port 8020
+```
+
+Ready when the console prints `[gpu] ready — stub=False sr=48000 …`. Model load takes 30–60 s; the port isn't listening before that.
+
+Bind to **127.0.0.1**, not `0.0.0.0`: it has no authentication and a render job names the folder it writes into.
+
+Do **not** add `--workers N`: each worker loads its own copy of the model into VRAM. Concurrency is handled inside the process by the job queue.
+
+Without a GPU (or while one is busy), `SIANGTTS_GPU_STUB=1` runs the whole service on a test-tone generator — every queue, voice and callback path works, the audio is a sine wave. `/health` reports `"stub": true` and both clients say so on startup.
+
+### 2. Webhook — same port, same contract as before
 
 Testing — localhost only, no one else can reach it:
 
@@ -99,28 +128,42 @@ Reachable from other machines (**the service has no authentication** — make su
 uv run uvicorn src.webhook:app --host 0.0.0.0 --port 8010
 ```
 
-Ready when the console prints `[webhook] ready — sr=48000 work=work`. Model load takes 30–60 s; the port isn't listening before that. Stop with `Ctrl+C`.
+Ready when the console prints `[webhook] ready — gpu=http://127.0.0.1:8020 work=work`. Starts in about a second — there is no model here any more, which is what makes restarting it cheap.
 
-Do **not** add `--workers N`: each worker loads its own copy of the model into VRAM. Concurrency is handled inside the process by the job queue.
+`SIANGTTS_WORK_DIR` **must match** the GPU service's: that directory is how the chunk WAVs get from one process to the other.
 
-### As a Windows service
+### As Windows services
 
+```
+nssm install SiangTTS-GPU "C:\Users\opendream002\.local\bin\uv.exe" "run uvicorn src.gpu_service:app --host 127.0.0.1 --port 8020"
+```
+```
+nssm set SiangTTS-GPU AppEnvironmentExtra SIANGTTS_ADAPTER=checkpoints/siangtts-v1 PYTHONIOENCODING=utf-8
+```
 ```
 nssm install SiangTTS "C:\Users\opendream002\.local\bin\uv.exe" "run uvicorn src.webhook:app --host 0.0.0.0 --port 8010"
 ```
 ```
+nssm set SiangTTS AppEnvironmentExtra SIANGTTS_GPU_URL=http://127.0.0.1:8020 SIANGTTS_UPLOAD_TOKEN=<bearer> PYTHONIOENCODING=utf-8
+```
+```
+nssm set SiangTTS DependOnService SiangTTS-GPU
+```
+
+Set `AppDirectory` on **both** to the same folder:
+
+```
+nssm set SiangTTS-GPU AppDirectory "C:\Users\opendream002\Desktop\SIANGTTS\VoxCPM-thai"
+```
+```
 nssm set SiangTTS AppDirectory "C:\Users\opendream002\Desktop\SIANGTTS\VoxCPM-thai"
-```
-```
-nssm set SiangTTS AppEnvironmentExtra SIANGTTS_ADAPTER=checkpoints/siangtts-v1 SIANGTTS_UPLOAD_TOKEN=<bearer> PYTHONIOENCODING=utf-8
-```
-```
-nssm start SiangTTS
 ```
 
 `nssm restart SiangTTS` · `nssm stop SiangTTS` · `nssm edit SiangTTS`
 
-`AppDirectory` matters: `work/`, `ref/`, `voice_cache/` and the adapter path are all relative to it.
+`AppDirectory` matters: `work/`, `ref/`, `voices/` and the adapter path are all relative to it — and the two services have to resolve `work/` to the same place.
+
+Restarting the GPU service kills whatever it was generating: its job table is in memory, so any job in flight fails with *"it restarted while the job was queued or running"* and the caller is told through the normal callback. Drain the queue first (`/v2/jobs` should show nothing running) if that matters.
 
 ---
 

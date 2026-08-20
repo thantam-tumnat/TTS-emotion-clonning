@@ -15,11 +15,23 @@ import argparse
 import json
 from pathlib import Path
 
+import re
 import soundfile as sf
 
 from .thai_normalizer import normalize_thai_text
 
 DEFAULT_BASE_MODEL = "openbmb/VoxCPM2"
+
+_LEADING_STYLE_RE = re.compile(r"^\s*\([^)]*\)\s*")
+
+
+def _clean_input_text(text: str) -> str:
+    m = _LEADING_STYLE_RE.match(text or "")
+    if m:
+        instr = m.group(0)
+        body = text[m.end():]
+        return instr + normalize_thai_text(body)
+    return normalize_thai_text(text or "")
 
 
 class Synthesizer:
@@ -62,7 +74,7 @@ class Synthesizer:
         cfg_value: float = 2.5,
         inference_timesteps: int = 10,
     ):
-        text = normalize_thai_text(text)
+        text = _clean_input_text(text)
         return self.model.generate(
             text=text,
             reference_wav_path=ref_audio,
@@ -135,10 +147,17 @@ class Synthesizer:
     ):
         """Synthesize using a prompt cache from `build_voice` (no ref re-encode).
         Mirrors the text cleanup the high-level `generate()` applies."""
-        import re
+        m = _LEADING_STYLE_RE.match(text or "")
+        if m:
+            instr = m.group(0)
+            body = text[m.end():]
+            clean_body = normalize_thai_text(body)
+            clean_body = re.sub(r"\s+", " ", clean_body.replace("\n", " ")).strip()
+            text = f"{instr}{clean_body}"
+        else:
+            text = normalize_thai_text(text)
+            text = re.sub(r"\s+", " ", text.replace("\n", " ")).strip()
 
-        text = normalize_thai_text(text)
-        text = re.sub(r"\s+", " ", text.replace("\n", " ")).strip()
         wav, _, _ = self.model.tts_model.generate_with_prompt_cache(
             target_text=text,
             prompt_cache=prompt_cache,

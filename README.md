@@ -104,44 +104,71 @@ uv run python -m src.eval --adapter checkpoints/siangtts-lora-v0/latest --prompt
 
 ## Serving & demos
 
-### 1. Production Webhook Service (FastAPI — Port 8010)
+The model is loaded **once per host**, by the GPU service. Everything else is a client of it:
 
-Handles async voice synthesis jobs, in-process queue, chunking, audio merging, upload, and webhook callbacks (replaces the n8n flow). Includes a live web dashboard at `http://localhost:8010/`.
+```
+n8n / LiveAI ──► :8010 webhook       ──┐
+                                       ├──► :8020 GPU service   VoxCPM2 + Thai LoRA ×1
+browser      ──► :8011 tone studio   ──┘                        (../voice-cloning-with-tones)
+```
+
+Before the split each pipeline loaded its own copy, which on a single GPU meant they
+could not run at the same time.
+
+### 1. GPU Service (FastAPI — Port 8020)
+
+The only process that touches the GPU. Owns the model, the prompt-cache store, the job
+queue and its single worker. Knows nothing about scripts, ffmpeg, uploads or emotion tags.
 
 ```bash
-# Environment variables (PowerShell):
 $env:PYTHONIOENCODING = "utf-8"
 $env:SIANGTTS_ADAPTER = "checkpoints/siangtts-v1"
+
+uv run uvicorn src.gpu_service:app --host 127.0.0.1 --port 8020
+```
+
+Localhost only: no authentication, and a render job names the directory it writes into.
+`SIANGTTS_GPU_STUB=1` runs the whole service without a model for testing.
+
+**Key endpoints:**
+- `POST /v2/jobs/render` — a list of ready-to-speak chunks + a voice → audio. `?wait=N` blocks for the result; otherwise poll `GET /v2/jobs/{id}`.
+- `POST /v2/voices` · `POST /v2/voices/resolve` · `POST /v2/voices/seed` — prompt caches, addressed by opaque handle
+- `GET /health` — model, adapter, queue depth per lane, current LoRA scale
+- `GET /` — queue dashboard
+
+Two lanes: the studio's requests (`interactive`) jump ahead of webhook scripts (`batch`),
+capped so production traffic is never starved.
+
+### 2. Production Webhook Service (FastAPI — Port 8010)
+
+Async voice synthesis jobs, chunking, audio merging, upload, and webhook callbacks
+(replaces the n8n flow). Live dashboard at `http://localhost:8010/`. Generation goes to
+the GPU service; no model is loaded here, so it restarts in about a second.
+
+```bash
+$env:PYTHONIOENCODING = "utf-8"
+$env:SIANGTTS_GPU_URL = "http://127.0.0.1:8020"
 $env:SIANGTTS_UPLOAD_TOKEN = "<bearer-token>"
 
-# Run FastAPI Webhook server on port 8010:
-uvicorn src.webhook:app --reload --host 0.0.0.0 --port 8010
-# Or using uv:
-uv run uvicorn src.webhook:app --reload --host 0.0.0.0 --port 8010
+uv run uvicorn src.webhook:app --host 0.0.0.0 --port 8010
 ```
+
+`SIANGTTS_WORK_DIR` must resolve to the same directory in both services — that is how the
+chunk WAVs get from one to the other.
 
 **Key Endpoints:**
 - `POST /webhook/live-ai-create-new` — Submit async TTS job (returns immediate `{"status":"success"}`)
 - `GET /jobs` · `GET /jobs/{job_id}` — Query job history and queue status
 - `GET /voices` — List available reference voices and cached prompt caches
-- `GET /health` — Service health, VRAM, and cache metrics
+- `GET /health` — Service health, engine status, and cache metrics
 - `GET /` — Real-time web dashboard
 
 ---
 
-### 2. Synchronous Inference API (FastAPI — Port 8000)
+### Retired: Synchronous Inference API (`src/serve.py`, Port 8000)
 
-Direct KhongkhunAPI-compatible inference API (loads base + LoRA adapter once). Swagger docs at `http://localhost:8000/docs`.
-
-```bash
-# Drop reference clips in ref/<name>.wav — encoded once at startup, cached to voice_cache/<name>.pt
-uv run uvicorn src.serve:app --host 0.0.0.0 --port 8000
-```
-
-**Endpoints:**
-- `POST /tts` — text [+ reference] → wav
-- `POST /tts/speaker/{speaker_id}` — text in a registered voice (cached encoding)
-- `POST /speakers` · `GET /speakers` · `DELETE /speakers/{id}` · `GET /health`
+Superseded by the GPU service, which does the same job for both pipelines instead of
+loading a third copy of the model. Left in the tree for reference; do not start it.
 
 ---
 
@@ -170,10 +197,12 @@ uv run python train/publish_to_hf.py \
 ```
 
 **Surfaces summary:**
+- **GPU Service** → `src/gpu_service.py` (FastAPI, Port 8020) — the only process that loads the model
 - **Webhook Service** → `src/webhook.py` (FastAPI, Port 8010)
-- **Inference API** → `src/serve.py` (FastAPI, Port 8000)
+- **Tone Studio** → `../voice-cloning-with-tones` (FastAPI, Port 8011)
 - **Live Demo** → `src/app.py` (Gradio, Port 7860)
 - **Static Demo** → `src/demo.py` (GitHub Pages)
+- ~~Inference API~~ → `src/serve.py` (Port 8000) — retired, replaced by the GPU service
 
 Published model: <https://huggingface.co/dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA>
 (CC-BY-SA-4.0). Always launch GPU commands with
