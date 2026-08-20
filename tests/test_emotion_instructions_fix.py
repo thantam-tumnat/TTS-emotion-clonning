@@ -1,6 +1,17 @@
+import sys
+from pathlib import Path
 import pytest
 from app.services.queue_client import QueueSynthesizer
-from src.voices import VoiceStore
+
+# Ensure voice-cloning is discoverable for cross-repo tests
+vc_path = Path(__file__).resolve().parent.parent.parent / "voice-cloning"
+if vc_path.exists() and str(vc_path) not in sys.path:
+    sys.path.insert(0, str(vc_path))
+
+try:
+    from src.voices import VoiceStore
+except ImportError:
+    VoiceStore = None
 
 
 class FakeResponse:
@@ -45,6 +56,8 @@ def test_queue_client_resolve_disables_sidecar(monkeypatch):
 
 
 def test_voices_resolve_with_allow_sidecar_false_ignores_txt(tmp_path):
+    if VoiceStore is None:
+        pytest.skip("VoiceStore from voice-cloning not available")
     ref_dir = tmp_path / "ref"
     cache_dir = tmp_path / "voices"
     ref_dir.mkdir()
