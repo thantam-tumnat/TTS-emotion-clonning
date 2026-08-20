@@ -282,6 +282,22 @@ def list_speakers_endpoint():
     return SpeakerListResponse(speakers=speakers)
 
 
+@app.post("/speakers/seed/reroll")
+def reroll_seed_voice_endpoint():
+    """Discard the auto seed voice so the next unpinned request draws a new speaker.
+
+    Only affects requests with no speaker_id: those are conditioned on one cached
+    generation, so a bad draw otherwise persists across every retry and restart.
+    """
+    removed = siangtts_service.reset_seed_voice()
+    return {
+        "rerolled": True,
+        "cache_removed": removed,
+        "detail": ("Seed voice cleared; the next synthesis without a pinned speaker "
+                   "will mint a new one."),
+    }
+
+
 @app.post("/speakers")
 async def register_speaker_endpoint(
     file: UploadFile = File(...),

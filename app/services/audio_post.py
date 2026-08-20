@@ -243,15 +243,29 @@ def _match_rate(prepared: List[Chunk], sr: int) -> List[Chunk]:
     Pace is seconds per character, not duration, so chunks of different lengths stay
     comparable. Chunks that did not report their text length fall back to a plain
     duration comparison, which is right only when the chunks are similarly long.
+
+    The baseline is this take's *neutral* pace, and neutral chunks anchor it: every
+    ratio in TONE_DURATION_RATIO is defined against a neutral read, so the neutral
+    chunks are the ones that should come through exactly as rendered while the
+    emotional ones move around them. Normalising the targets by their own mean
+    instead -- what this did originally -- gave neutral no fixed point and let it
+    drift with whatever else shared the take: against calm (1.08) and tired (1.073)
+    it was driven to 0.95x of the take median, i.e. audibly rushed, and against
+    happy and excited it was dragged the other way.
+
+    A take with no neutral in it has to estimate one, which it does by dividing each
+    chunk's measured pace by the ratio that chunk was asked for. That also stops a
+    single-tone take from having its ratio applied a second time on top of whatever
+    the model already did.
     """
     wanted = [TONE_DURATION_RATIO.get(c.tone or "neutral", 1.0) for c in prepared]
-    centre = float(np.mean(wanted))
-    if centre <= 0:
-        return prepared
 
     lengths = [max(c.text_len, 1) if c.text_len else 1 for c in prepared]
     pace = [len(c.audio) / sr / n for c, n in zip(prepared, lengths)]
-    baseline = float(np.median([p for p in pace if p > 0]) or 0.0)
+    anchor = [p for p, w in zip(pace, wanted) if p > 0 and w == 1.0]
+    if not anchor:
+        anchor = [p / w for p, w in zip(pace, wanted) if p > 0 and w > 0]
+    baseline = float(np.median(anchor)) if anchor else 0.0
     if baseline <= 0:
         return prepared
 
@@ -260,7 +274,7 @@ def _match_rate(prepared: List[Chunk], sr: int) -> List[Chunk]:
         if p <= 0:
             retimed.append(c)
             continue
-        target_pace = baseline * (w / centre)
+        target_pace = baseline * w
         ratio = float(np.clip(target_pace / p, 1 - MAX_STRETCH, 1 + MAX_STRETCH))
         retimed.append(c._replace(audio=time_stretch(c.audio, sr, ratio)))
     return retimed

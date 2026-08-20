@@ -5,6 +5,7 @@ import pytest
 
 from app.services.audio_post import (
     ENERGY_MATCH,
+    _match_rate,
     GAP_EMOTION_S,
     GAP_PARAGRAPH_S,
     GAP_SAME_TONE_S,
@@ -219,11 +220,40 @@ def test_rate_matching_corrects_toward_the_target_not_blindly_toward_the_ratio()
         Chunk(tone(1.4), "happy", text_len=100),
         Chunk(tone(2.0), "tired", text_len=100),
     ]
-    out_chunks = assemble(chunks, SR, match_energy=False)
-    happy_len = 1.4
-    # The happy chunk should have grown toward the take's pace, not shrunk.
-    total = len(out_chunks) / SR - GAP_EMOTION_S
-    assert total > happy_len + 2.0
+    happy, tired = _match_rate(chunks, SR)
+    assert len(happy.audio) / SR > 1.4
+    # ... without overshooting past the slower tone it is being measured against.
+    assert len(happy.audio) < len(tired.audio)
+
+
+def test_rate_matching_leaves_neutral_where_the_model_put_it():
+    """Neutral is the tone every ratio is defined against, so it is the fixed point.
+
+    It used to be normalised by the mean of whatever tones shared the take, which
+    rushed it in a slow-toned script and dragged it in a fast-toned one.
+    """
+    slow = [
+        Chunk(tone(2.0), "neutral", text_len=100),
+        Chunk(tone(2.0), "calm", text_len=100),
+        Chunk(tone(2.0), "tired", text_len=100),
+    ]
+    fast = [
+        Chunk(tone(2.0), "neutral", text_len=100),
+        Chunk(tone(2.0), "happy", text_len=100),
+        Chunk(tone(2.0), "excited", text_len=100),
+    ]
+    slow_neutral = len(_match_rate(slow, SR)[0].audio) / SR
+    fast_neutral = len(_match_rate(fast, SR)[0].audio) / SR
+
+    assert slow_neutral == pytest.approx(2.0, abs=0.05)
+    assert fast_neutral == pytest.approx(2.0, abs=0.05)
+
+
+def test_rate_matching_does_not_apply_a_single_tone_takes_ratio_twice():
+    """An all-calm take is already slow; it must not be slowed 8% again on top."""
+    chunks = [Chunk(tone(2.0), "calm", text_len=100) for _ in range(3)]
+    for c in _match_rate(chunks, SR):
+        assert len(c.audio) / SR == pytest.approx(2.0, abs=0.05)
 
 
 def test_rate_matching_normalizes_by_text_length():

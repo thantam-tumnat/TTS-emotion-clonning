@@ -14,6 +14,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const selectedFilename = document.getElementById('selected-filename');
   const btnRemoveFile = document.getElementById('btn-remove-file');
   const btnSaveSpeaker = document.getElementById('btn-save-speaker');
+  const btnRerollSeed = document.getElementById('btn-reroll-seed');
 
   // LLM Model Selector Elements
   const llmModelSelect = document.getElementById('llm-model-select');
@@ -310,11 +311,46 @@ document.addEventListener('DOMContentLoaded', () => {
           speakerSelect.appendChild(opt);
         });
         if (prevVal) speakerSelect.value = prevVal;
+        syncRerollVisibility();
       }
     } catch (e) {
       console.warn('Could not load speakers:', e);
     }
   }
+
+  // The seed voice only conditions requests with no speaker pinned, so the button
+  // is meaningless -- and misleading -- while one is selected.
+  function syncRerollVisibility() {
+    if (!btnRerollSeed) return;
+    btnRerollSeed.classList.toggle('hidden', Boolean(speakerSelect.value));
+  }
+
+  // Base Voice is one cached generation reused for every unpinned request, so a bad
+  // draw survives re-rendering and restarts. This throws it away; the next synthesis
+  // mints a new speaker. It does not touch cloned profiles in ref/.
+  async function rerollSeedVoice() {
+    if (!btnRerollSeed) return;
+    const label = btnRerollSeed.textContent;
+    btnRerollSeed.disabled = true;
+    btnRerollSeed.textContent = 'กำลังสุ่ม...';
+    try {
+      const res = await fetch(`${API_BASE}/speakers/seed/reroll`, { method: 'POST' });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      const data = await res.json();
+      alert(data.cache_removed
+        ? 'สุ่มเสียงใหม่แล้ว — กดสังเคราะห์อีกครั้งเพื่อฟังผู้พูดคนใหม่'
+        : 'ยังไม่มีเสียงที่แคชไว้ — ครั้งถัดไปจะสุ่มผู้พูดใหม่อยู่แล้ว');
+    } catch (e) {
+      alert(`สุ่มเสียงใหม่ไม่สำเร็จ: ${e.message}`);
+    } finally {
+      btnRerollSeed.disabled = false;
+      btnRerollSeed.textContent = label;
+    }
+  }
+
+  if (btnRerollSeed) btnRerollSeed.addEventListener('click', rerollSeedVoice);
+  speakerSelect.addEventListener('change', syncRerollVisibility);
+  syncRerollVisibility();
 
   checkHealthAndSpeakers();
   setInterval(checkHealthAndSpeakers, 30000);
@@ -574,9 +610,30 @@ document.addEventListener('DOMContentLoaded', () => {
     return '●●○ (Standard)';
   }
 
+  // Mirrors STYLE_TAG_RE in app/renderers/voxcpm.py: same label vocabulary and the
+  // same optional :1-3 intensity, so a tag the renderer will act on is a tag the
+  // preview shows. The old pattern accepted letters and spaces only, which left
+  // every intensity-carrying tag -- [sarcastic:3], [angry:3] -- as unmarked text.
+  const TAG_RE = /\[\s*([A-Za-z][A-Za-z\s,.\-]*?)\s*(?::\s*([123]))?\s*\]/g;
+
+  // The tag as one word, which is the point of the preview: the operator wants to
+  // see what a tag condenses to at a glance, not re-read what they typed. Matches
+  // the 'short' segmented format (capitalised, parenthesised) so the two agree.
+  // The raw tag stays on the tooltip, since intensity still matters when testing.
+  function shortTagLabel(label) {
+    const word = label.trim().split(/\s+/)[0];
+    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+  }
+
   function highlightAudioTags(text) {
-    let formatted = text.replace(/(\[[a-zA-Z\s]+\])/g, '<span class="tag-highlight">$1</span>');
-    formatted = formatted.replace(/(\([a-zA-Z\s,.-]+\))/g, '<span class="instruction-highlight">$1</span>');
+    // Instructions first: the tag pass emits parenthesised text of its own, and
+    // running this after it would highlight that as a hand-written instruction.
+    let formatted = text.replace(/(\([a-zA-Z\s,.-]+\))/g, '<span class="instruction-highlight">$1</span>');
+    formatted = formatted.replace(TAG_RE, (raw, label, intensity) => {
+      const short = shortTagLabel(label);
+      const title = intensity ? `${raw.trim()} -> (${short}) intensity ${intensity}` : `${raw.trim()} -> (${short})`;
+      return `<span class="tag-highlight" title="${title}">(${short})</span>`;
+    });
     return formatted;
   }
 

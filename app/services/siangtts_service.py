@@ -700,6 +700,29 @@ class SiangTTSService:
             file=sys.stderr,
         )
 
+    def reset_seed_voice(self) -> bool:
+        """Throw away the auto seed voice so the next request mints a new speaker.
+
+        The seed voice is one unseeded generation that then becomes permanent -- it
+        is cached in memory and in voice_cache/_auto_seed.pt across restarts, which
+        is the point (a stable speaker) right up until the draw is a bad one. Then
+        every unpinned request inherits it and re-rendering never escapes, because
+        only the speech is re-rolled, not the speaker.
+
+        Returns True if a persisted seed was actually removed. Pinned speakers are
+        untouched: they come from ref/, not from this.
+        """
+        self._seed_voice = None
+        self._seed_voice_failed = False
+        cache_path = self.cache_dir / self.SEED_VOICE_FILE
+        try:
+            existed = cache_path.exists()
+            cache_path.unlink(missing_ok=True)
+            return existed
+        except Exception as e:
+            print(f"[SiangTTS] Could not delete seed voice: {e}", file=sys.stderr)
+            return False
+
     def _build_seed_voice(
         self, synth: Any, sample_rate: int, cfg_value: float, inference_timesteps: int
     ) -> Any:
