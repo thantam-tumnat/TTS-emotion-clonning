@@ -83,6 +83,7 @@ class RenderJob:
             "position": position,
             "chunks_total": len(self.chunks),
             "chunks_done": self.done,
+            "chunks": self.chunks,
             "progress": f"{self.done}/{len(self.chunks)}",
             "voice_handle": self.voice_handle,
             "lora": self.lora_applied,
@@ -301,6 +302,11 @@ class Engine:
             job.voice_handle = await asyncio.to_thread(self._resolve_voice, job.voice, job.client)
             cache = self.voices.get(job.voice_handle) if job.voice_handle else None
             job.lora_applied = await asyncio.to_thread(self._apply_lora, job.lora)
+
+            client_label = job.client or "unknown"
+            print(f"\n[gpu] >>> Running Job {job.job_id} from '{client_label}' (lane={job.lane}, voice={job.voice_handle or 'unpinned'}, {len(job.chunks)} chunk(s)):")
+            for idx, chunk_text in enumerate(job.chunks):
+                print(f"[gpu]     [{idx+1}/{len(job.chunks)}] {chunk_text!r}")
 
             # `files` mode writes each chunk as it is generated rather than at the
             # end. Two reasons: a long script would otherwise hold every chunk's
