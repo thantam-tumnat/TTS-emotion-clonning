@@ -37,6 +37,10 @@ class Settings(BaseSettings):
     reanchor_chars: Optional[int] = None
     segmenter_engine: str = "crfcut"
 
+    # Central Model Service (Port 8000)
+    voxcpm_service_url: str = "http://127.0.0.1:8000"
+    service_port: int = 8011
+
     # SiangTTS / VoxCPM2 Voice Cloning
     siangtts_base_model: str = "openbmb/VoxCPM2"
     siangtts_adapter: str = "dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA"

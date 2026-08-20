@@ -252,6 +252,9 @@ class _RealSynthesizer:
         prompt_cache: Any = None,
         cfg_value: float = 2.5,
         inference_timesteps: int = 10,
+        speaker_id: Optional[str] = None,
+        lora_mode: Optional[str] = "on",
+        **kwargs,
     ):
         text = prepare_text(text)
         if prompt_cache is not None:
@@ -297,6 +300,85 @@ class _RealSynthesizer:
         return torch.load(src_path, map_location="cpu", weights_only=False)
 
 
+class _RemoteSynthesizer:
+    """Delegates speech synthesis to the central VoxCPM2 model service (port 8000)."""
+
+    def __init__(self, base_url: str):
+        self.base_url = base_url.rstrip("/")
+        self.sample_rate = 48000
+        self.lora_loaded = True
+        self.tts_model = None
+
+    def check_health(self) -> bool:
+        try:
+            import httpx
+
+            with httpx.Client(timeout=0.5) as client:
+                res = client.get(f"{self.base_url}/health")
+                if res.status_code == 200:
+                    data = res.json()
+                    self.sample_rate = data.get("sample_rate", 48000)
+                    self.lora_loaded = bool(data.get("adapter"))
+                    return True
+        except Exception:
+            pass
+        return False
+
+    def synth(
+        self,
+        text: str,
+        *,
+        ref_audio: Optional[str] = None,
+        prompt_cache: Any = None,
+        cfg_value: float = 2.5,
+        inference_timesteps: int = 10,
+        speaker_id: Optional[str] = None,
+        lora_mode: Optional[str] = "on",
+        **kwargs,
+    ):
+        import io
+        import httpx
+        import soundfile as sf
+
+        text = prepare_text(text)
+        form_data = {
+            "text": text,
+            "cfg_value": str(cfg_value),
+            "timesteps": str(inference_timesteps),
+            "lora_mode": lora_mode or "on",
+        }
+        if speaker_id:
+            form_data["speaker_id"] = speaker_id
+
+        files = None
+        if ref_audio and os.path.exists(ref_audio):
+            files = {"reference": (Path(ref_audio).name, open(ref_audio, "rb"), "audio/wav")}
+
+        try:
+            with httpx.Client(timeout=180.0) as client:
+                res = client.post(f"{self.base_url}/tts", data=form_data, files=files)
+                if res.status_code != 200:
+                    raise RuntimeError(f"Remote synthesis failed ({res.status_code}): {res.text}")
+                wav_data, sr = sf.read(io.BytesIO(res.content), dtype="float32")
+                self.sample_rate = sr
+                return wav_data
+        finally:
+            if files and "reference" in files:
+                try:
+                    files["reference"][1].close()
+                except Exception:
+                    pass
+
+    def build_voice(self, ref_audio_path: str, prompt_text: Optional[str] = None) -> Any:
+        return f"remote_latent_for_{ref_audio_path}"
+
+    def save_voice(self, cache: Any, dest_path: Path) -> None:
+        dest_path.write_text(str(cache), encoding="utf-8")
+
+    def load_voice(self, src_path: Path) -> Any:
+        return src_path.read_text(encoding="utf-8")
+
+
 class _MockSynthesizer:
     """Emits a 440 Hz tone. Test scaffolding only -- never a production fallback."""
 
@@ -312,6 +394,9 @@ class _MockSynthesizer:
         prompt_cache: Any = None,
         cfg_value: float = 2.5,
         inference_timesteps: int = 10,
+        speaker_id: Optional[str] = None,
+        lora_mode: Optional[str] = "on",
+        **kwargs,
     ):
         import numpy as np
 
@@ -418,12 +503,29 @@ class SiangTTSService:
     def get_synthesizer(self) -> Any:
         """Lazy-load the VoxCPM2 synthesizer.
 
-        A failure here used to be swallowed and replaced with a sine-tone mock, which
-        is indistinguishable from a broken model at the speaker. It now raises unless
-        mock mode is explicitly enabled.
+        Connects to the central VoxCPM2 model service (port 8000) if configured and active,
+        otherwise falls back to in-process model or mock.
         """
         if self._synthesizer is not None:
             return self._synthesizer
+
+        remote_url = (getattr(settings, "voxcpm_service_url", "") or "").strip()
+        if remote_url:
+            try:
+                remote_synth = _RemoteSynthesizer(remote_url)
+                if remote_synth.check_health():
+                    self._synthesizer = remote_synth
+                    self._is_loaded = True
+                    self._using_mock = False
+                    self._load_error = None
+                    print(
+                        f"[SiangTTS] Connected to central VoxCPM2 model service at {remote_url} "
+                        f"(sample_rate={remote_synth.sample_rate})",
+                        file=sys.stderr,
+                    )
+                    return self._synthesizer
+            except Exception as e:
+                print(f"[SiangTTS] Remote service at {remote_url} not active ({e}); falling back to local...", file=sys.stderr)
 
         try:
             try:
@@ -475,11 +577,14 @@ class SiangTTSService:
 
     @property
     def status(self) -> Dict[str, Any]:
+        mode = "remote" if isinstance(self._synthesizer, _RemoteSynthesizer) else ("mock" if self._using_mock else ("loaded" if self._is_loaded else "unloaded"))
         return {
             "loaded": self._is_loaded,
+            "mode": mode,
             "using_mock": self._using_mock,
             "load_error": self._load_error,
             "base_model": self.base_model,
+            "remote_url": getattr(self._synthesizer, "base_url", None),
             "lora_loaded": bool(getattr(self._synthesizer, "lora_loaded", False)),
             "lora_scales": getattr(self._synthesizer, "lora_scales", None),
             "sample_rate": getattr(self._synthesizer, "sample_rate", None),
@@ -898,6 +1003,8 @@ class SiangTTSService:
                         prompt_cache=prompt_cache,
                         cfg_value=cfg_value,
                         inference_timesteps=inference_timesteps,
+                        speaker_id=speaker_id,
+                        lora_mode=lora_mode,
                     ),
                     dtype="float32",
                 )

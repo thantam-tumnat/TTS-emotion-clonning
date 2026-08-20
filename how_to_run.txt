@@ -1,0 +1,19 @@
+=====================================================
+Thai TTS Tone Annotation & Voice Cloning Studio (Port 8011)
+=====================================================
+
+Prerequisites:
+Make sure the central VoxCPM2 Model Service is running on Port 8000:
+    cd C:\Users\opendream002\Desktop\deploy\voice-cloning
+    uv run uvicorn src.serve:app --host 0.0.0.0 --port 8000 --reload
+
+Run Tone Studio on Port 8011:
+    cd C:\Users\opendream002\Desktop\SiangTTS+emotions\voice-cloning-with-tones
+    uvicorn app.main:app --host 0.0.0.0 --port 8011 --reload
+
+Or double-click `run.bat`
+
+Web UI:
+    http://localhost:8011/
+API Documentation:
+    http://localhost:8011/docs
