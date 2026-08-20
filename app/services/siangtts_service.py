@@ -144,15 +144,16 @@ def split_for_synthesis(text: str, limit: Optional[int] = None) -> List[ChunkPie
 def prepare_text(text: str) -> str:
     """Everything the text needs between the API and the model.
 
-    Encoding hygiene first, then the user's pronunciation overrides -- but only over
-    the spoken body. The leading style parenthetical is direction for the engine, not
-    speech, so an override must never rewrite a word inside it.
+    Encoding hygiene and pronunciation overrides are applied only over the spoken
+    body. The leading style parenthetical is direction for the engine, not speech,
+    so normalisation and overrides must never alter characters or punctuation inside it.
     """
-    text = normalize_thai_text(text)
-    m = _LEADING_STYLE_RE.match(text)
+    m = _LEADING_STYLE_RE.match(text or "")
     if m:
-        return text[:m.end()] + apply_pronunciation(text[m.end():])
-    return apply_pronunciation(text)
+        instr = m.group(0)
+        body = text[m.end():]
+        return instr + apply_pronunciation(normalize_thai_text(body))
+    return apply_pronunciation(normalize_thai_text(text or ""))
 
 
 def _wav_to_numpy(wav: Any):
@@ -300,85 +301,6 @@ class _RealSynthesizer:
         return torch.load(src_path, map_location="cpu", weights_only=False)
 
 
-class _RemoteSynthesizer:
-    """Delegates speech synthesis to the central VoxCPM2 model service (port 8000)."""
-
-    def __init__(self, base_url: str):
-        self.base_url = base_url.rstrip("/")
-        self.sample_rate = 48000
-        self.lora_loaded = True
-        self.tts_model = None
-
-    def check_health(self) -> bool:
-        try:
-            import httpx
-
-            with httpx.Client(timeout=0.5) as client:
-                res = client.get(f"{self.base_url}/health")
-                if res.status_code == 200:
-                    data = res.json()
-                    self.sample_rate = data.get("sample_rate", 48000)
-                    self.lora_loaded = bool(data.get("adapter"))
-                    return True
-        except Exception:
-            pass
-        return False
-
-    def synth(
-        self,
-        text: str,
-        *,
-        ref_audio: Optional[str] = None,
-        prompt_cache: Any = None,
-        cfg_value: float = 2.5,
-        inference_timesteps: int = 10,
-        speaker_id: Optional[str] = None,
-        lora_mode: Optional[str] = "on",
-        **kwargs,
-    ):
-        import io
-        import httpx
-        import soundfile as sf
-
-        text = prepare_text(text)
-        form_data = {
-            "text": text,
-            "cfg_value": str(cfg_value),
-            "timesteps": str(inference_timesteps),
-            "lora_mode": lora_mode or "on",
-        }
-        if speaker_id:
-            form_data["speaker_id"] = speaker_id
-
-        files = None
-        if ref_audio and os.path.exists(ref_audio):
-            files = {"reference": (Path(ref_audio).name, open(ref_audio, "rb"), "audio/wav")}
-
-        try:
-            with httpx.Client(timeout=180.0) as client:
-                res = client.post(f"{self.base_url}/tts", data=form_data, files=files)
-                if res.status_code != 200:
-                    raise RuntimeError(f"Remote synthesis failed ({res.status_code}): {res.text}")
-                wav_data, sr = sf.read(io.BytesIO(res.content), dtype="float32")
-                self.sample_rate = sr
-                return wav_data
-        finally:
-            if files and "reference" in files:
-                try:
-                    files["reference"][1].close()
-                except Exception:
-                    pass
-
-    def build_voice(self, ref_audio_path: str, prompt_text: Optional[str] = None) -> Any:
-        return f"remote_latent_for_{ref_audio_path}"
-
-    def save_voice(self, cache: Any, dest_path: Path) -> None:
-        dest_path.write_text(str(cache), encoding="utf-8")
-
-    def load_voice(self, src_path: Path) -> Any:
-        return src_path.read_text(encoding="utf-8")
-
-
 class _MockSynthesizer:
     """Emits a 440 Hz tone. Test scaffolding only -- never a production fallback."""
 
@@ -501,31 +423,52 @@ class SiangTTSService:
             return None
 
     def get_synthesizer(self) -> Any:
-        """Lazy-load the VoxCPM2 synthesizer.
+        """Get the synthesizer, preferring the shared GPU service.
 
-        Connects to the central VoxCPM2 model service (port 8000) if configured and active,
-        otherwise falls back to in-process model or mock.
+        The studio's job is annotation and assembly, not model hosting: generation
+        goes to the SiangTTS GPU service, which is the single process holding VoxCPM2
+        for every pipeline on the box.
+
+        Falling back to an in-process model when that service is unreachable is off by
+        default (`voxcpm_remote_required`). It looks like resilience and is the
+        opposite: on a one-GPU host the fallback either fights the shared model for
+        VRAM or fails to load after a two-minute pause, and either way it silently
+        undoes the whole point of sharing. Failing fast says what is actually wrong.
         """
         if self._synthesizer is not None:
             return self._synthesizer
 
         remote_url = (getattr(settings, "voxcpm_service_url", "") or "").strip()
         if remote_url:
-            try:
-                remote_synth = _RemoteSynthesizer(remote_url)
-                if remote_synth.check_health():
-                    self._synthesizer = remote_synth
-                    self._is_loaded = True
-                    self._using_mock = False
-                    self._load_error = None
-                    print(
-                        f"[SiangTTS] Connected to central VoxCPM2 model service at {remote_url} "
-                        f"(sample_rate={remote_synth.sample_rate})",
-                        file=sys.stderr,
-                    )
-                    return self._synthesizer
-            except Exception as e:
-                print(f"[SiangTTS] Remote service at {remote_url} not active ({e}); falling back to local...", file=sys.stderr)
+            from app.services.queue_client import QueueSynthesizer
+
+            remote = QueueSynthesizer(remote_url)
+            if remote.check_health():
+                self._synthesizer = remote
+                self._is_loaded = True
+                self._using_mock = False
+                self._load_error = None
+                print(
+                    f"[SiangTTS] Using the shared GPU service at {remote_url} "
+                    f"(sample_rate={remote.sample_rate}, lora={'yes' if remote.lora_loaded else 'no'})",
+                    file=sys.stderr,
+                )
+                return self._synthesizer
+
+            self._load_error = f"GPU service at {remote_url} is not answering"
+            if getattr(settings, "voxcpm_remote_required", True):
+                raise SynthesizerUnavailable(
+                    f"{self._load_error}. Start it with:\n"
+                    f"    uv run uvicorn src.gpu_service:app --host 127.0.0.1 --port 8020\n"
+                    f"Set VOXCPM_REMOTE_REQUIRED=false to load a second copy of the "
+                    f"model in this process instead — only do that if no other "
+                    f"pipeline is using the GPU."
+                )
+            print(
+                f"[SiangTTS] {self._load_error}; loading the model in-process "
+                f"(VOXCPM_REMOTE_REQUIRED=false).",
+                file=sys.stderr,
+            )
 
         try:
             try:
@@ -577,7 +520,12 @@ class SiangTTSService:
 
     @property
     def status(self) -> Dict[str, Any]:
-        mode = "remote" if isinstance(self._synthesizer, _RemoteSynthesizer) else ("mock" if self._using_mock else ("loaded" if self._is_loaded else "unloaded"))
+        if getattr(self._synthesizer, "is_remote", False):
+            mode = "remote"
+        elif self._using_mock:
+            mode = "mock"
+        else:
+            mode = "loaded" if self._is_loaded else "unloaded"
         return {
             "loaded": self._is_loaded,
             "mode": mode,
@@ -588,6 +536,9 @@ class SiangTTSService:
             "lora_loaded": bool(getattr(self._synthesizer, "lora_loaded", False)),
             "lora_scales": getattr(self._synthesizer, "lora_scales", None),
             "sample_rate": getattr(self._synthesizer, "sample_rate", None),
+            # Loud on purpose: a stub engine returns a test tone, and nothing else
+            # downstream would ever mention it.
+            "stub_engine": bool(getattr(self._synthesizer, "is_stub", False)),
         }
 
     # ------------------------------------------------------------------ #
@@ -628,6 +579,12 @@ class SiangTTSService:
             print(f"[SiangTTS] Skipping speaker init: {e}", file=sys.stderr)
             return
 
+        # A remote engine owns the reference directory and encodes on first use.
+        # Pre-encoding from here would upload every clip we happen to have a local
+        # copy of, at startup, to build caches the service already keeps.
+        if getattr(synth, "is_remote", False):
+            return
+
         for ref_file in self._ref_files():
             sid = ref_file.stem
             cache_path = self.cache_dir / f"{sid}.pt"
@@ -644,7 +601,48 @@ class SiangTTSService:
             except Exception as ex:
                 print(f"[SiangTTS] WARNING: could not cache voice '{sid}': {ex}", file=sys.stderr)
 
+    def _remote(self) -> Any:
+        """The synthesizer, when it is a remote one and already connected.
+
+        Deliberately does not connect: the speaker endpoints are also how the studio
+        UI loads, and they should not be the thing that raises when the GPU service
+        is down.
+        """
+        return self._synthesizer if getattr(self._synthesizer, "is_remote", False) else None
+
+    def get_speaker_audio_path(self, speaker_id: str) -> Optional[Path]:
+        """Locate the reference audio file on disk for a given speaker ID."""
+        clean_id = speaker_id.strip()
+        search_dirs = [
+            self.ref_dir,
+            Path(__file__).resolve().parent.parent.parent / "ref",
+            Path(__file__).resolve().parent.parent.parent.parent / "voice-cloning" / "ref",
+            Path("C:/temp/tts_jobs/voices"),
+        ]
+        for d in search_dirs:
+            if not d.exists():
+                continue
+            for ext in AUDIO_EXTS:
+                cand = d / f"{clean_id}{ext}"
+                if cand.is_file():
+                    return cand
+            for cand in d.iterdir():
+                if cand.is_file() and cand.stem.lower() == clean_id.lower() and cand.suffix.lower() in AUDIO_EXTS:
+                    return cand
+        return None
+
     def list_speakers(self) -> List[Dict[str, Any]]:
+        remote = self._remote()
+        if remote is not None:
+            return [
+                {
+                    "id": v["id"],
+                    "name": v["id"].replace("_", " ").title(),
+                    "filename": v.get("file", ""),
+                    "cached": bool(v.get("cached")),
+                }
+                for v in remote.list_speakers()
+            ]
         return [
             {
                 "id": f.stem,
@@ -663,6 +661,20 @@ class SiangTTSService:
         ext = Path(filename).suffix.lower()
         if ext not in AUDIO_EXTS:
             ext = ".wav"
+
+        # Register with the engine that will actually be asked to speak in this voice.
+        # Writing it into the studio's own ref/ instead would produce a speaker this
+        # process can list and the GPU service has never heard of.
+        remote = self._remote()
+        if remote is not None:
+            remote.register_speaker(clean_id, audio_bytes, f"{clean_id}{ext}")
+            self._voices.pop(clean_id, None)
+            return {
+                "id": clean_id,
+                "name": clean_id.replace("_", " ").title(),
+                "filename": f"{clean_id}{ext}",
+                "cached": True,
+            }
 
         ref_path = self.ref_dir / f"{clean_id}{ext}"
         ref_path.write_bytes(audio_bytes)
@@ -684,6 +696,11 @@ class SiangTTSService:
         }
 
     def delete_speaker(self, speaker_id: str) -> bool:
+        remote = self._remote()
+        if remote is not None:
+            self._voices.pop(speaker_id, None)
+            return remote.delete_speaker(speaker_id)
+
         found = False
         for f in self.ref_dir.glob(f"{speaker_id}.*"):
             if f.is_file():
@@ -709,6 +726,7 @@ class SiangTTSService:
         speaker_id: Optional[str],
         ref_audio_bytes: Optional[bytes],
         ref_filename: Optional[str],
+        synth: Any = None,
     ) -> Tuple[Optional[Any], Optional[str], Optional[str]]:
         """Return (prompt_cache, ref_audio_path, temp_path_to_clean_up)."""
         if ref_audio_bytes:
@@ -723,6 +741,18 @@ class SiangTTSService:
         if speaker_id:
             if speaker_id in self._voices:
                 return self._voices[speaker_id], None, None
+
+            # A remote engine keeps its own reference directory, and that is the
+            # source of truth for named voices. Ask it to resolve the name rather
+            # than uploading our copy of the clip on every request — and so a voice
+            # registered through the other pipeline works here too.
+            resolver = getattr(synth, "resolve_speaker", None)
+            if resolver is not None:
+                handle = resolver(speaker_id)
+                if handle:
+                    self._voices[speaker_id] = handle
+                    return handle, None, None
+
             for cand in self.ref_dir.glob(f"{speaker_id}.*"):
                 if cand.suffix.lower() in AUDIO_EXTS:
                     return None, str(cand), None
@@ -819,6 +849,11 @@ class SiangTTSService:
         """
         self._seed_voice = None
         self._seed_voice_failed = False
+
+        remote_reset = getattr(self._synthesizer, "reset_seed_voice", None)
+        if remote_reset is not None:
+            return remote_reset()
+
         cache_path = self.cache_dir / self.SEED_VOICE_FILE
         try:
             existed = cache_path.exists()
@@ -848,6 +883,15 @@ class SiangTTSService:
             return self._seed_voice
         if self._seed_voice_failed:
             return None
+
+        # A remote engine mints and keeps the seed voice itself. Let it: that makes
+        # the seed shared across every client instead of one per process, and there
+        # is no local cache file to go stale against a service that restarted.
+        remote_seed = getattr(synth, "seed_voice", None)
+        if remote_seed is not None:
+            self._seed_voice = remote_seed()
+            self._seed_voice_failed = self._seed_voice is None
+            return self._seed_voice
 
         seed_text = (settings.siangtts_voice_seed_text or "").strip()
         if not seed_text:
@@ -964,7 +1008,7 @@ class SiangTTSService:
                 )
 
         prompt_cache, ref_audio_path, temp_ref_path = self._resolve_voice(
-            speaker_id, ref_audio_bytes, ref_filename
+            speaker_id, ref_audio_bytes, ref_filename, synth
         )
 
         try:
@@ -993,6 +1037,35 @@ class SiangTTSService:
                     prompt_cache, ref_audio_path = shared, None
 
             self._warn_if_instructions_are_dead(prompt_cache, planned)
+
+            # A remote engine takes the whole run as one job: the chunks have to be
+            # generated against one prompt cache or the speaker drifts between them,
+            # and sending them together is what lets the service guarantee that — for
+            # one round trip and one place in the queue instead of N of each.
+            batch = getattr(synth, "render_batch", None)
+            if batch is not None:
+                audios, sample_rate = batch(
+                    [text for _, text, _ in planned],
+                    speaker_id=speaker_id,
+                    prompt_cache=prompt_cache,
+                    ref_audio=ref_audio_path,
+                    cfg_value=cfg_value,
+                    inference_timesteps=inference_timesteps,
+                    lora_mode=lora_mode,
+                )
+                if len(audios) != len(planned):
+                    raise RuntimeError(
+                        f"engine returned {len(audios)} chunks for {len(planned)} sent"
+                    )
+                return [
+                    Chunk(
+                        audio=np.asarray(audio, dtype="float32"),
+                        tone=_tone_at(src_idx),
+                        break_before=break_before,
+                        text_len=spoken_len(chunk),
+                    )
+                    for (src_idx, chunk, break_before), audio in zip(planned, audios)
+                ], sample_rate
 
             rendered: List[Chunk] = []
             for src_idx, chunk, break_before in planned:

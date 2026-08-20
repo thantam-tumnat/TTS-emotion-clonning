@@ -84,7 +84,17 @@ def test_speakers_crud(client):
     ids = [s["id"] for s in list_res.json()["speakers"]]
     assert "test_speaker_alpha" in ids
 
-    # 4. Delete speaker
+    # 4. Stream/get reference audio for speaker
+    audio_res = client.get("/speakers/test_speaker_alpha/audio")
+    assert audio_res.status_code == 200
+    assert "audio/" in audio_res.headers.get("content-type", "")
+    assert audio_res.content == dummy_wav
+
+    # 4.1 Non-existent speaker returns 404
+    audio_404_res = client.get("/speakers/non_existent_speaker_xyz/audio")
+    assert audio_404_res.status_code == 404
+
+    # 5. Delete speaker
     del_res = client.delete("/speakers/test_speaker_alpha")
     assert del_res.status_code == 200
     assert del_res.json()["deleted"] is True

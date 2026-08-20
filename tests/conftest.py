@@ -18,6 +18,10 @@ def mock_synthesizer(monkeypatch, tmp_path):
     cache_dir = tmp_path / "voice_cache"
     cache_dir.mkdir()
 
+    # No test may reach for the shared GPU service. Left at its default the suite
+    # would depend on whether a machine happens to have one running on :8020, and
+    # the tests that exercise the in-process load path would never reach it.
+    monkeypatch.setattr(svc.settings, "voxcpm_service_url", "", raising=False)
     monkeypatch.setattr(svc.settings, "siangtts_allow_mock", True, raising=False)
     monkeypatch.setattr(svc.settings, "siangtts_cache_dir", str(cache_dir), raising=False)
     monkeypatch.setattr(svc.siangtts_service, "cache_dir", cache_dir, raising=False)

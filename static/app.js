@@ -6,12 +6,16 @@ document.addEventListener('DOMContentLoaded', () => {
   const engineSelect = document.getElementById('engine-select');
   const speakerSelect = document.getElementById('speaker-select');
   const speakerGroup = document.getElementById('speaker-group');
+  const btnPlaySpeakerRef = document.getElementById('btn-play-speaker-ref');
+  const speakerRefAudio = document.getElementById('speaker-ref-audio');
   const uploadVoiceArea = document.getElementById('upload-voice-area');
   const audioFileInput = document.getElementById('audio-file-input');
   const dropZone = document.getElementById('drop-zone');
   const dropZoneContent = document.getElementById('drop-zone-content');
   const fileInfoBadge = document.getElementById('file-info-badge');
   const selectedFilename = document.getElementById('selected-filename');
+  const btnPlayUploadedRef = document.getElementById('btn-play-uploaded-ref');
+  const uploadedRefAudio = document.getElementById('uploaded-ref-audio');
   const btnRemoveFile = document.getElementById('btn-remove-file');
   const btnSaveSpeaker = document.getElementById('btn-save-speaker');
   const btnRerollSeed = document.getElementById('btn-reroll-seed');
@@ -25,6 +29,9 @@ document.addEventListener('DOMContentLoaded', () => {
   const paramSteps = document.getElementById('param-steps');
   const valCfg = document.getElementById('val-cfg');
   const valSteps = document.getElementById('val-steps');
+  const btnCfgMinus = document.getElementById('btn-cfg-minus');
+  const btnCfgPlus = document.getElementById('btn-cfg-plus');
+  const cfgPillButtons = document.querySelectorAll('.cfg-pill-btn');
 
   const btnProcess = document.getElementById('btn-process');
   const btnSynthesizeDirect = document.getElementById('btn-synthesize-direct');
@@ -152,7 +159,10 @@ document.addEventListener('DOMContentLoaded', () => {
   };
 
   // API Base URL
-  const API_BASE = window.location.protocol === 'file:' ? 'http://127.0.0.1:8000' : '';
+  // Served over http the API is same-origin, so the base stays empty. The literal
+  // only applies when index.html is opened straight off disk, and it has to name
+  // the studio's own port (8011) -- 8000 was the retired model service.
+  const API_BASE = window.location.protocol === 'file:' ? 'http://127.0.0.1:8011' : '';
 
   // Get selected model helper
   function getSelectedModel() {
@@ -269,13 +279,54 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // Slider updates
-  paramCfg.addEventListener('input', () => {
-    valCfg.textContent = parseFloat(paramCfg.value).toFixed(1);
+  // CFG & Parameter Slider & Stepper updates
+  function updateCfgValue(newVal) {
+    const clamped = Math.max(1.0, Math.min(6.0, parseFloat(newVal) || 2.5));
+    const rounded = Math.round(clamped * 10) / 10;
+    if (paramCfg) paramCfg.value = rounded;
+    if (valCfg) valCfg.textContent = rounded.toFixed(1);
+
+    // Highlight matching pill
+    cfgPillButtons.forEach(btn => {
+      const pillVal = parseFloat(btn.getAttribute('data-cfg'));
+      btn.classList.toggle('active', Math.abs(pillVal - rounded) < 0.05);
+    });
+  }
+
+  if (paramCfg) {
+    paramCfg.addEventListener('input', () => {
+      updateCfgValue(paramCfg.value);
+    });
+  }
+
+  if (btnCfgMinus) {
+    btnCfgMinus.addEventListener('click', () => {
+      const current = parseFloat(paramCfg.value) || 2.5;
+      updateCfgValue(current - 0.1);
+    });
+  }
+
+  if (btnCfgPlus) {
+    btnCfgPlus.addEventListener('click', () => {
+      const current = parseFloat(paramCfg.value) || 2.5;
+      updateCfgValue(current + 0.1);
+    });
+  }
+
+  cfgPillButtons.forEach(btn => {
+    btn.addEventListener('click', () => {
+      const targetVal = parseFloat(btn.getAttribute('data-cfg'));
+      if (!isNaN(targetVal)) {
+        updateCfgValue(targetVal);
+      }
+    });
   });
-  paramSteps.addEventListener('input', () => {
-    valSteps.textContent = paramSteps.value;
-  });
+
+  if (paramSteps && valSteps) {
+    paramSteps.addEventListener('input', () => {
+      valSteps.textContent = paramSteps.value;
+    });
+  }
 
   // Check API Health & Fetch Speakers
   async function checkHealthAndSpeakers() {
@@ -311,18 +362,95 @@ document.addEventListener('DOMContentLoaded', () => {
           speakerSelect.appendChild(opt);
         });
         if (prevVal) speakerSelect.value = prevVal;
-        syncRerollVisibility();
+        syncSpeakerControls();
       }
     } catch (e) {
       console.warn('Could not load speakers:', e);
     }
   }
 
-  // The seed voice only conditions requests with no speaker pinned, so the button
-  // is meaningless -- and misleading -- while one is selected.
-  function syncRerollVisibility() {
-    if (!btnRerollSeed) return;
-    btnRerollSeed.classList.toggle('hidden', Boolean(speakerSelect.value));
+  function setButtonPlayingState(btn, isPlaying, defaultText = 'ฟังเสียง Ref', playingText = 'หยุด') {
+    if (!btn) return;
+    btn.classList.toggle('playing', isPlaying);
+    const playIcon = btn.querySelector('.play-icon');
+    const pauseIcon = btn.querySelector('.pause-icon');
+    const label = btn.querySelector('.ref-btn-label') || btn.querySelector('.upload-btn-label') || btn.querySelector('span:last-child');
+    if (playIcon) playIcon.classList.toggle('hidden', isPlaying);
+    if (pauseIcon) pauseIcon.classList.toggle('hidden', !isPlaying);
+    if (label) label.textContent = isPlaying ? playingText : defaultText;
+  }
+
+  function stopAllAudios(exceptEl = null) {
+    const audios = [
+      speakerRefAudio,
+      uploadedRefAudio,
+      audioPlayerLoraOn,
+      audioPlayerLoraOff,
+      audioPlayerNoEmotion
+    ];
+    audios.forEach(a => {
+      if (a && a !== exceptEl && !a.paused) {
+        a.pause();
+      }
+    });
+  }
+
+  // Sync speaker select controls: Re-roll visibility and Ref audio player button
+  function syncSpeakerControls() {
+    const hasSpeaker = Boolean(speakerSelect.value);
+    if (btnRerollSeed) btnRerollSeed.classList.toggle('hidden', hasSpeaker);
+    if (btnPlaySpeakerRef) {
+      btnPlaySpeakerRef.classList.toggle('hidden', !hasSpeaker);
+      setButtonPlayingState(btnPlaySpeakerRef, false, 'ฟังเสียง Ref', 'หยุด');
+    }
+    if (speakerRefAudio) {
+      speakerRefAudio.pause();
+      if (hasSpeaker) {
+        speakerRefAudio.src = `${API_BASE}/speakers/${encodeURIComponent(speakerSelect.value)}/audio`;
+        speakerRefAudio.load();
+      } else {
+        speakerRefAudio.removeAttribute('src');
+      }
+    }
+  }
+
+  if (btnPlaySpeakerRef && speakerRefAudio) {
+    btnPlaySpeakerRef.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      const sid = speakerSelect.value;
+      if (!sid) return;
+
+      if (speakerRefAudio.paused) {
+        stopAllAudios(speakerRefAudio);
+        try {
+          if (!speakerRefAudio.src || !speakerRefAudio.src.includes(encodeURIComponent(sid))) {
+            speakerRefAudio.src = `${API_BASE}/speakers/${encodeURIComponent(sid)}/audio`;
+          }
+          await speakerRefAudio.play();
+          setButtonPlayingState(btnPlaySpeakerRef, true, 'ฟังเสียง Ref', 'หยุด');
+        } catch (err) {
+          console.warn('Could not play speaker audio:', err);
+          alert('ไม่สามารถเล่นเสียงตัวอย่างได้ (อาจยังไม่มีไฟล์เสียงสำหรับ Speaker นี้บนเซิร์ฟเวอร์)');
+          setButtonPlayingState(btnPlaySpeakerRef, false, 'ฟังเสียง Ref', 'หยุด');
+        }
+      } else {
+        speakerRefAudio.pause();
+        speakerRefAudio.currentTime = 0;
+        setButtonPlayingState(btnPlaySpeakerRef, false, 'ฟังเสียง Ref', 'หยุด');
+      }
+    });
+
+    speakerRefAudio.addEventListener('ended', () => {
+      setButtonPlayingState(btnPlaySpeakerRef, false, 'ฟังเสียง Ref', 'หยุด');
+    });
+
+    speakerRefAudio.addEventListener('pause', () => {
+      setButtonPlayingState(btnPlaySpeakerRef, false, 'ฟังเสียง Ref', 'หยุด');
+    });
+
+    speakerRefAudio.addEventListener('play', () => {
+      setButtonPlayingState(btnPlaySpeakerRef, true, 'ฟังเสียง Ref', 'หยุด');
+    });
   }
 
   // Base Voice is one cached generation reused for every unpinned request, so a bad
@@ -349,8 +477,8 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   if (btnRerollSeed) btnRerollSeed.addEventListener('click', rerollSeedVoice);
-  speakerSelect.addEventListener('change', syncRerollVisibility);
-  syncRerollVisibility();
+  speakerSelect.addEventListener('change', syncSpeakerControls);
+  syncSpeakerControls();
 
   checkHealthAndSpeakers();
   setInterval(checkHealthAndSpeakers, 30000);
@@ -364,12 +492,50 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       speakerGroup.classList.add('hidden');
       uploadVoiceArea.classList.add('hidden');
+      if (speakerRefAudio) speakerRefAudio.pause();
+      if (uploadedRefAudio) uploadedRefAudio.pause();
     }
   }
   engineSelect.addEventListener('change', updateEngineVisibility);
   updateEngineVisibility();
 
-  // File Upload & Drag-and-Drop
+  // File Upload & Drag-and-Drop & Audio Preview
+  let uploadedAudioBlobUrl = null;
+
+  if (btnPlayUploadedRef && uploadedRefAudio) {
+    btnPlayUploadedRef.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      if (!uploadedRefAudio.src) return;
+
+      if (uploadedRefAudio.paused) {
+        stopAllAudios(uploadedRefAudio);
+        try {
+          await uploadedRefAudio.play();
+          setButtonPlayingState(btnPlayUploadedRef, true, 'ฟังเสียง Ref', 'หยุด');
+        } catch (err) {
+          console.warn('Could not play uploaded audio:', err);
+          setButtonPlayingState(btnPlayUploadedRef, false, 'ฟังเสียง Ref', 'หยุด');
+        }
+      } else {
+        uploadedRefAudio.pause();
+        uploadedRefAudio.currentTime = 0;
+        setButtonPlayingState(btnPlayUploadedRef, false, 'ฟังเสียง Ref', 'หยุด');
+      }
+    });
+
+    uploadedRefAudio.addEventListener('ended', () => {
+      setButtonPlayingState(btnPlayUploadedRef, false, 'ฟังเสียง Ref', 'หยุด');
+    });
+
+    uploadedRefAudio.addEventListener('pause', () => {
+      setButtonPlayingState(btnPlayUploadedRef, false, 'ฟังเสียง Ref', 'หยุด');
+    });
+
+    uploadedRefAudio.addEventListener('play', () => {
+      setButtonPlayingState(btnPlayUploadedRef, true, 'ฟังเสียง Ref', 'หยุด');
+    });
+  }
+
   dropZone.addEventListener('click', () => {
     audioFileInput.click();
   });
@@ -404,6 +570,17 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function handleAudioFileSelected(file) {
     selectedAudioFile = file;
+    if (uploadedAudioBlobUrl) {
+      URL.revokeObjectURL(uploadedAudioBlobUrl);
+    }
+    uploadedAudioBlobUrl = URL.createObjectURL(file);
+    if (uploadedRefAudio) {
+      uploadedRefAudio.src = uploadedAudioBlobUrl;
+      uploadedRefAudio.load();
+    }
+    if (btnPlayUploadedRef) {
+      setButtonPlayingState(btnPlayUploadedRef, false, 'ฟังเสียง Ref', 'หยุด');
+    }
     selectedFilename.textContent = `🎵 ${file.name} (${(file.size / 1024).toFixed(1)} KB)`;
     dropZoneContent.classList.add('hidden');
     fileInfoBadge.classList.remove('hidden');
@@ -413,6 +590,17 @@ document.addEventListener('DOMContentLoaded', () => {
   btnRemoveFile.addEventListener('click', (e) => {
     e.stopPropagation();
     selectedAudioFile = null;
+    if (uploadedRefAudio) {
+      uploadedRefAudio.pause();
+      uploadedRefAudio.removeAttribute('src');
+    }
+    if (uploadedAudioBlobUrl) {
+      URL.revokeObjectURL(uploadedAudioBlobUrl);
+      uploadedAudioBlobUrl = null;
+    }
+    if (btnPlayUploadedRef) {
+      setButtonPlayingState(btnPlayUploadedRef, false, 'ฟังเสียง Ref', 'หยุด');
+    }
     audioFileInput.value = '';
     dropZoneContent.classList.remove('hidden');
     fileInfoBadge.classList.add('hidden');
@@ -537,6 +725,7 @@ document.addEventListener('DOMContentLoaded', () => {
   btnClear.addEventListener('click', () => {
     textInput.value = '';
     guidanceInput.value = '';
+    updateCfgValue(2.5);
     textInput.dispatchEvent(new Event('input'));
     showEmptyState();
   });
@@ -601,6 +790,10 @@ document.addEventListener('DOMContentLoaded', () => {
     if (audioPlayerLoraOn) { audioPlayerLoraOn.pause(); audioPlayerLoraOn.currentTime = 0; }
     if (audioPlayerLoraOff) { audioPlayerLoraOff.pause(); audioPlayerLoraOff.currentTime = 0; }
     if (audioPlayerNoEmotion) { audioPlayerNoEmotion.pause(); audioPlayerNoEmotion.currentTime = 0; }
+    if (speakerRefAudio) { speakerRefAudio.pause(); speakerRefAudio.currentTime = 0; }
+    if (uploadedRefAudio) { uploadedRefAudio.pause(); uploadedRefAudio.currentTime = 0; }
+    if (btnPlaySpeakerRef) { setButtonPlayingState(btnPlaySpeakerRef, false, 'ฟังเสียง Ref', 'หยุด'); }
+    if (btnPlayUploadedRef) { setButtonPlayingState(btnPlayUploadedRef, false, 'ฟังเสียง Ref', 'หยุด'); }
     if (errorBanner) errorBanner.classList.add('hidden');
   }
 
@@ -614,7 +807,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // same optional :1-3 intensity, so a tag the renderer will act on is a tag the
   // preview shows. The old pattern accepted letters and spaces only, which left
   // every intensity-carrying tag -- [sarcastic:3], [angry:3] -- as unmarked text.
-  const TAG_RE = /\[\s*([A-Za-z][A-Za-z\s,.\-]*?)\s*(?::\s*([123]))?\s*\]/g;
+  const TAG_RE = /\[\s*([A-Za-z\u0e00-\u0e7f][A-Za-z\u0e00-\u0e7f\s,.\-]*?)\s*(?::\s*([123]))?\s*\]/g;
 
   // The tag as one word, which is the point of the preview: the operator wants to
   // see what a tag condenses to at a glance, not re-read what they typed. Matches
@@ -622,13 +815,13 @@ document.addEventListener('DOMContentLoaded', () => {
   // The raw tag stays on the tooltip, since intensity still matters when testing.
   function shortTagLabel(label) {
     const word = label.trim().split(/\s+/)[0];
-    return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
+    return word.charAt(0).toUpperCase() + word.slice(1);
   }
 
   function highlightAudioTags(text) {
     // Instructions first: the tag pass emits parenthesised text of its own, and
     // running this after it would highlight that as a hand-written instruction.
-    let formatted = text.replace(/(\([a-zA-Z\s,.-]+\))/g, '<span class="instruction-highlight">$1</span>');
+    let formatted = text.replace(/(\([a-zA-Z\u0e00-\u0e7f\s,.-]+\))/g, '<span class="instruction-highlight">$1</span>');
     formatted = formatted.replace(TAG_RE, (raw, label, intensity) => {
       const short = shortTagLabel(label);
       const title = intensity ? `${raw.trim()} -> (${short}) intensity ${intensity}` : `${raw.trim()} -> (${short})`;
@@ -758,8 +951,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function stripEmotionTags(str) {
     if (!str) return '';
     return str
-      .replace(/\[\s*[A-Za-z][A-Za-z\s,.\-]*?(?::\s*[123])?\s*\]/g, '')
-      .replace(/\(\s*[A-Za-z][A-Za-z\s,.\-]*?(?::\s*[123])?\s*\)/g, '')
+      .replace(/\[\s*[A-Za-z\u0e00-\u0e7f][A-Za-z\u0e00-\u0e7f\s,.\-]*?(?::\s*[123])?\s*\]/g, '')
+      .replace(/\(\s*[A-Za-z\u0e00-\u0e7f][A-Za-z\u0e00-\u0e7f\s,.\-]*?(?::\s*[123])?\s*\)/g, '')
       .replace(/\s+/g, ' ')
       .trim();
   }
@@ -842,6 +1035,7 @@ document.addEventListener('DOMContentLoaded', () => {
     };
 
     try {
+      stopAllAudios();
       const modeNames = selectedModes.map(m => modeLabels[m] || m).join(', ');
       if (selectedModes.length > 1) {
         showLoading(true, `⚡ กำลังสร้าง ${selectedModes.length} รูปแบบพร้อมกัน (${modeNames})...`);

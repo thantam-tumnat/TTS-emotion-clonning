@@ -3,16 +3,18 @@ from typing import List, NamedTuple, Optional
 from app.models import Segment, Tone, RenderResponse, RenderedChunk
 from app.renderers.base import BaseRenderer
 
-# A style tag is ASCII-only and may use either bracket style -- the UI documents
-# "[sad]" while VoxCPM2's own format is "(sad)". Requiring ASCII keeps Thai inside
-# brackets treated as spoken content, not direction. An optional ":N" sets intensity.
-STYLE_TAG_RE = re.compile(r"[\[(]\s*([A-Za-z][A-Za-z\s,.\-]*?)\s*(?::\s*([123]))?\s*[\])]")
+# A style tag may use either bracket style -- the UI documents "[sad]" while
+# VoxCPM2's own format is "(sad)". Supports English and Thai emotion names.
+# An optional ":N" sets intensity.
+STYLE_TAG_RE = re.compile(
+    r"[\[(]\s*([A-Za-z\u0e00-\u0e7f][A-Za-z\u0e00-\u0e7f\s,.\-]*?)\s*(?::\s*([123]))?\s*[\])]"
+)
 
 _TONE_BY_NAME = {t.value: t for t in Tone}
 
 # Users paste text where newlines arrived as the two characters "\" + "n" rather
 # than as real line breaks. Left alone they end up inside the spoken body.
-_LITERAL_ESCAPE_RE = re.compile(r"\[nrt]")
+_LITERAL_ESCAPE_RE = re.compile(r"\\[nrt]")
 
 # A line break immediately before a tag -- real, or arrived as the two characters
 # "\" + "n" the same way _LITERAL_ESCAPE_RE handles.
@@ -43,7 +45,7 @@ def _family_from_body(body: str) -> Optional[Tone]:
     """
     votes: dict[Tone, int] = {}
     order: dict[Tone, int] = {}
-    for pos, word in enumerate(re.findall(r"[a-z]+", body.lower())):
+    for pos, word in enumerate(re.findall(r"[a-z\u0e00-\u0e7f]+", body.lower())):
         family = _TONE_BY_NAME.get(word)
         if family is None:
             entry = STYLE_VOCABULARY.get(word)
@@ -158,9 +160,20 @@ class ChunkSpec(NamedTuple):
     break_before: bool
 
 
+def _is_valid_tag_name(name: str) -> bool:
+    clean = name.strip().lower()
+    if not clean:
+        return False
+    # If it contains Thai characters, it must be in the known Thai emotion vocabulary.
+    # Regular Thai in brackets like "(พิเศษ)" or "[กรุงเทพ]" is spoken content, not direction.
+    if re.search(r"[\u0e00-\u0e7f]", clean):
+        return clean in STYLE_VOCABULARY or clean in _TONE_BY_NAME
+    return True
+
+
 def _tagged_spans(text: str, use_llm: bool = False, custom_model: Optional[str] = None) -> List[Span]:
     """Split text into (resolved tag, body) runs at each style tag."""
-    matches = list(STYLE_TAG_RE.finditer(text))
+    matches = [m for m in STYLE_TAG_RE.finditer(text) if _is_valid_tag_name(m.group(1))]
     if not matches:
         return []
 
@@ -403,6 +416,25 @@ STYLE_VOCABULARY = {
     "urgent": ("(Urgent voice, fast and pressing)", Tone.EXCITED),
     "bored": ("(Bored voice, flat and disinterested, slow)", Tone.TIRED),
     "disgusted": ("(Disgusted voice, recoiling distaste)", Tone.ANGRY),
+
+    # -- Thai emotion vocabulary ------------------------------------------
+    "ปกติ": (None, Tone.NEUTRAL), "เป็นกลาง": (None, Tone.NEUTRAL),
+    "เศร้า": (None, Tone.SAD), "เสียใจ": (None, Tone.SAD), "หม่นหมอง": (None, Tone.SAD),
+    "ดีใจ": (None, Tone.HAPPY), "ร่าเริง": (None, Tone.HAPPY), "มีความสุข": (None, Tone.HAPPY), "สดใส": (None, Tone.HAPPY),
+    "โกรธ": (None, Tone.ANGRY), "โมโห": (None, Tone.ANGRY), "ไม่พอใจ": (None, Tone.ANGRY), "หงุดหงิด": ("(Annoyed and irritated voice, clipped delivery)", Tone.ANGRY),
+    "ตื่นเต้น": (None, Tone.EXCITED), "กระตือรือร้น": (None, Tone.EXCITED),
+    "สงบ": (None, Tone.CALM), "ผ่อนคลาย": (None, Tone.CALM), "นุ่มนวล": (None, Tone.CALM), "อ่อนโยน": (None, Tone.CALM),
+    "ประหม่า": (None, Tone.NERVOUS), "กังวล": (None, Tone.NERVOUS), "ลังเล": (None, Tone.NERVOUS), "ระแวง": (None, Tone.NERVOUS),
+    "ประชด": (None, Tone.SARCASTIC), "แดกดัน": (None, Tone.SARCASTIC), "ประชดประชัน": (None, Tone.SARCASTIC),
+    "กลัว": (None, Tone.SCARED), "หวาดกลัว": (None, Tone.SCARED), "ตกใจ": ("(Surprised voice, sudden rising pitch)", Tone.EXCITED), "ตื่นตระหนก": (None, Tone.SCARED),
+    "เหนื่อย": (None, Tone.TIRED), "อ่อนเพลีย": (None, Tone.TIRED), "หมดแรง": (None, Tone.TIRED), "ง่วง": (None, Tone.TIRED),
+    "กระซิบ": ("(Whispering voice, very soft and breathy)", Tone.CALM),
+    "ตะโกน": ("(Shouting voice, very loud and projected)", Tone.ANGRY),
+    "ร้องไห้": ("(Crying voice, broken and tearful, trembling)", Tone.SAD),
+    "ผิดหวัง": ("(Disappointed voice, quiet and let down)", Tone.SAD),
+    "ขี้เล่น": ("(Playful and light voice, teasing lilt)", Tone.HAPPY),
+    "จริงจัง": ("(Serious and grave voice, deliberate delivery)", Tone.NEUTRAL),
+    "มั่นใจ": ("(Confident and assured voice, steady and firm)", Tone.NEUTRAL),
 }
 STYLE_VOCABULARY["whispers"] = STYLE_VOCABULARY["whispering"]
 STYLE_VOCABULARY["shouts"] = STYLE_VOCABULARY["shouting"]

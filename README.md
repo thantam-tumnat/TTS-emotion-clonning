@@ -18,6 +18,8 @@ Uploaded Reference Audio / Registered Speaker ────────► 2. VOI
                                                                  │
                                                                  ▼
                                                         4. SYNTHESIS ENGINE
+                                                           shared GPU service :8020 -- one job,
+                                                           all chunks, one voice
                                                            (VoxCPM2 + dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA)
                                                                  │
                                                                  ▼
@@ -72,7 +74,7 @@ Edits are picked up on the next synthesis — the file is re-read when its mtime
 changes, no restart needed. Also editable over the API:
 
 ```bash
-curl -X PUT localhost:8000/pronunciation -H "Content-Type: application/json" -d "{\"entries\":{\"ไฟล์\":\"ฟาย\"}}"
+curl -X PUT localhost:8011/pronunciation -H "Content-Type: application/json" -d "{\"entries\":{\"ไฟล์\":\"ฟาย\"}}"
 ```
 
 `GET /pronunciation` returns the current entries and the file path.
@@ -148,6 +150,10 @@ Copy `.env.example` to `.env` and configure:
 ```env
 GEMINI_API_KEY=your_gemini_api_key
 LLM_PROVIDER=gemini
+# The shared GPU service that holds VoxCPM2 for every pipeline on this host.
+VOXCPM_SERVICE_URL=http://127.0.0.1:8020
+VOXCPM_REMOTE_REQUIRED=true
+# Used only when VOXCPM_REMOTE_REQUIRED=false, i.e. loading the model in-process.
 SIANGTTS_BASE_MODEL=openbmb/VoxCPM2
 SIANGTTS_ADAPTER=dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA
 # How hard the Thai LoRA is applied, per side of the model (2.0 = as shipped).
@@ -161,11 +167,29 @@ SIANGTTS_LORA_DIT_SCALE=0.0
 ```
 
 ### 3. Run FastAPI Server & Web Studio
+
+The studio does not load VoxCPM2 itself. Start the shared GPU service first — the
+one process on the host holding the model, shared with the webhook queue on :8010:
+
 ```bash
-py -m uvicorn app.main:app --reload --port 8000
+cd ../voice-cloning && uv run uvicorn src.gpu_service:app --host 127.0.0.1 --port 8020
+```
+
+Then the studio:
+
+```bash
+py -m uvicorn app.main:app --reload --port 8011
 ```
 Then open your browser and navigate to:
-👉 **`http://localhost:8000/`** to access the interactive **Thai TTS & Voice Cloning Studio**.
+👉 **`http://localhost:8011/`** to access the interactive **Thai TTS & Voice Cloning Studio**.
+
+Startup logs which engine it connected to. Without the GPU service, `/synthesize`
+returns 503 rather than quietly loading a second copy of the model — on a single-GPU
+host that competes with the shared one for VRAM. `VOXCPM_REMOTE_REQUIRED=false`
+allows the in-process fallback when nothing else is using the GPU.
+
+The shared queue — what the GPU is actually working on, across both pipelines — is at
+**`http://localhost:8020/`**.
 
 ### 4. Run Test Suite
 ```bash

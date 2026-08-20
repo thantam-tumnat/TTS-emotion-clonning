@@ -432,3 +432,22 @@ def test_voxcpm_renderer_uses_spoken_text():
     assert res.script == "[angry] ฉันบอกแล้ว! ทำไมไม่ฟัง?!"
 
 
+def test_thai_emotion_tags_resolve_properly():
+    chunks = split_style_chunks("[โกรธ]ทำไมทำแบบนี้\n[ดีใจ:1]ขอบคุณมากนะ\n[เศร้า:3]เสียใจจัง\n[กระซิบ]เบาๆ นะ")
+    assert len(chunks) == 4
+    assert chunks[0] == f"{format_voxcpm_instruction(Tone.ANGRY, 2)}ทำไมทำแบบนี้"
+    assert chunks[1] == f"{format_voxcpm_instruction(Tone.HAPPY, 1)}ขอบคุณมากนะ"
+    assert chunks[2] == f"{format_voxcpm_instruction(Tone.SAD, 3)}เสียใจจัง"
+    assert chunks[3] == "(Whispering voice, very soft and breathy)เบาๆ นะ"
+
+
+def test_prepare_text_preserves_parenthetical_instruction():
+    from app.services.siangtts_service import prepare_text
+
+    text = "(Happy and cheerful voice, smiling while speaking)สวัสดีครับ... วันนี้อากาศดีมาก"
+    res = prepare_text(text)
+    assert res.startswith("(Happy and cheerful voice, smiling while speaking)")
+    assert "สวัสดีครับ" in res
+
+
+

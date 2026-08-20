@@ -19,6 +19,11 @@ from app.models import (
     SynthesizeRequest,
     PronunciationResponse,
     PronunciationUpdateRequest,
+    BenchmarkSessionInitRequest,
+    BenchmarkSessionInitResponse,
+    BenchmarkTakeRequest,
+    BenchmarkTakeResult,
+    BenchmarkSessionSummary,
 )
 from app.config import settings
 from app.segmenter import segment_text
@@ -35,6 +40,8 @@ from app.services.pronunciation import (
     load_dictionary,
     save_dictionary,
 )
+from app.services.benchmark_service import benchmark_service
+
 
 
 ChunkPlan = tuple[list[str], list[Optional[str]], list[bool]]
@@ -89,11 +96,15 @@ def _plan_chunks(
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    # Initialize speaker audio clips & cache on startup
+    # Connect to the engine and, when it is local, precompute the speaker caches.
+    # A failure here is a warning rather than a crash: the studio's annotation half
+    # works without an engine, and saying so on /health beats refusing to boot.
     try:
         siangtts_service.init_speakers()
+        status = siangtts_service.status
+        print(f"[Startup] synthesizer: {status['mode']} {status.get('remote_url') or ''}".rstrip())
     except Exception as e:
-        print(f"[Startup] Warning: Could not initialize speaker cache: {e}")
+        print(f"[Startup] Warning: synthesizer unavailable: {e}")
     yield
 
 
@@ -124,6 +135,19 @@ def root_ui():
     if os.path.exists(index_file):
         return FileResponse(index_file)
     return {"message": "Thai TTS Tone Annotation & Voice Cloning API is running. Visit /docs for API documentation."}
+
+
+@app.get("/test", include_in_schema=False)
+@app.get("/benchmark", include_in_schema=False)
+def benchmark_ui():
+    test_file = os.path.join(static_dir, "test.html")
+    if os.path.exists(test_file):
+        return FileResponse(test_file)
+    index_file = os.path.join(static_dir, "index.html")
+    if os.path.exists(index_file):
+        return FileResponse(index_file)
+    return {"message": "Benchmark UI is loading."}
+
 
 
 @app.get("/health")
@@ -317,6 +341,37 @@ async def register_speaker_endpoint(
     return result
 
 
+@app.get("/speakers/{speaker_id}/audio")
+def get_speaker_audio_endpoint(speaker_id: str):
+    """Stream reference audio file for a registered speaker profile."""
+    clean_id = speaker_id.strip()
+
+    # 1. Try local file lookup
+    local_path = siangtts_service.get_speaker_audio_path(clean_id)
+    if local_path and local_path.exists():
+        suffix = local_path.suffix.lower()
+        media_type = "audio/mpeg" if suffix in (".mp3", ".m4a") else ("audio/ogg" if suffix == ".ogg" else "audio/wav")
+        return FileResponse(
+            local_path,
+            media_type=media_type,
+            headers={"Content-Disposition": f'inline; filename="{local_path.name}"'}
+        )
+
+    # 2. Try remote GPU service if active
+    remote = siangtts_service._remote()
+    if remote is not None:
+        audio_info = remote.get_speaker_audio_bytes(clean_id)
+        if audio_info is not None:
+            content, media_type, filename = audio_info
+            return Response(
+                content=content,
+                media_type=media_type,
+                headers={"Content-Disposition": f'inline; filename="{filename}"'}
+            )
+
+    raise HTTPException(status_code=404, detail=f"Reference audio for speaker '{speaker_id}' not found")
+
+
 @app.delete("/speakers/{speaker_id}")
 def delete_speaker_endpoint(speaker_id: str):
     """Remove a voice cloning profile."""
@@ -431,3 +486,67 @@ async def synthesize_with_upload_endpoint(
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Synthesis failed: {str(e)}")
+
+
+# ---------------------------------------------------------------------------
+# Benchmark & Testing Suite Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/benchmark/presets")
+def get_benchmark_presets_endpoint():
+    """Returns preset test sentences, emotion definitions, and available speakers."""
+    return benchmark_service.get_presets()
+
+
+@app.post("/api/benchmark/session/init", response_model=BenchmarkSessionInitResponse)
+def init_benchmark_session_endpoint(req: BenchmarkSessionInitRequest):
+    """Initialize a new emotion benchmark session and create storage folder."""
+    return benchmark_service.init_session(req)
+
+
+@app.post("/api/benchmark/run-take", response_model=BenchmarkTakeResult)
+def run_benchmark_take_endpoint(req: BenchmarkTakeRequest):
+    """Synthesize a single take for an emotion and return audio URL + prosody metrics."""
+    return benchmark_service.run_take(req)
+
+
+@app.get("/api/benchmark/sessions", response_model=list[BenchmarkSessionSummary])
+def list_benchmark_sessions_endpoint():
+    """List all previous benchmark test runs."""
+    return benchmark_service.list_sessions()
+
+
+@app.get("/api/benchmark/sessions/{session_id}")
+def get_benchmark_session_endpoint(session_id: str):
+    """Retrieve full metadata and results of a specific benchmark session."""
+    data = benchmark_service.get_session(session_id)
+    if data is None:
+        raise HTTPException(status_code=404, detail="Session not found")
+    return data
+
+
+@app.get("/api/benchmark/audio/{session_id}/{filename}")
+def get_benchmark_audio_endpoint(session_id: str, filename: str):
+    """Stream synthesized audio file from a benchmark session."""
+    path = benchmark_service.get_audio_path(session_id, filename)
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    return FileResponse(
+        path,
+        media_type="audio/wav",
+        headers={"Content-Disposition": f'inline; filename="{path.name}"'},
+    )
+
+
+@app.get("/api/benchmark/export/{session_id}")
+def export_benchmark_session_endpoint(session_id: str):
+    """Download ZIP package containing all WAV audio files, report.csv, and session.json."""
+    zip_bytes = benchmark_service.export_session_zip(session_id)
+    if zip_bytes is None:
+        raise HTTPException(status_code=404, detail="Session not found or export failed")
+    return Response(
+        content=zip_bytes,
+        media_type="application/zip",
+        headers={"Content-Disposition": f'attachment; filename="{session_id}.zip"'},
+    )
+

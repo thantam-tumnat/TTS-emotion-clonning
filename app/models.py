@@ -160,3 +160,72 @@ class LLMTagConversionResult(BaseModel):
     tone: Tone
     intensity: int = Field(default=2, ge=1, le=3)
 
+
+# ---------------------------------------------------------------------------
+# Benchmark & Testing Suite Models
+# ---------------------------------------------------------------------------
+
+class BenchmarkSessionInitRequest(BaseModel):
+    name: Optional[str] = None
+    speaker_id: Optional[str] = None
+    text: str = Field(min_length=1, max_length=5000)
+    emotions: List[str] = Field(default_factory=lambda: [t.value for t in Tone])
+    repeats: int = Field(default=3, ge=1, le=10)
+    intensity: int = Field(default=2, ge=1, le=3)
+    cfg_value: float = Field(default=2.5, ge=1.0, le=10.0)
+    inference_timesteps: int = Field(default=10, ge=4, le=50)
+    lora_mode: Optional[Literal["on", "off", "legacy"]] = "on"
+
+
+class BenchmarkSessionInitResponse(BaseModel):
+    session_id: str
+    name: str
+    created_at: str
+    speaker_id: Optional[str]
+    text: str
+    emotions: List[str]
+    repeats: int
+    total_takes: int
+    params: dict
+
+
+class BenchmarkTakeRequest(BaseModel):
+    session_id: str
+    emotion: str
+    take_idx: int = Field(default=1, ge=1, le=10)
+    text: str = Field(min_length=1, max_length=5000)
+    instruction: Optional[str] = None
+    intensity: int = Field(default=2, ge=1, le=3)
+    speaker_id: Optional[str] = None
+    cfg_value: float = Field(default=2.5, ge=1.0, le=10.0)
+    inference_timesteps: int = Field(default=10, ge=4, le=50)
+    lora_mode: Optional[Literal["on", "off", "legacy"]] = "on"
+    post_process: bool = True
+
+
+class BenchmarkTakeResult(BaseModel):
+    session_id: str
+    emotion: str
+    take_idx: int
+    instruction: str
+    spoken_text: str
+    audio_url: str
+    filename: str
+    metrics: Optional[dict] = None
+    elapsed_s: float = 0.0
+    error: Optional[str] = None
+
+
+class BenchmarkSessionSummary(BaseModel):
+    session_id: str
+    name: str
+    created_at: str
+    speaker_id: Optional[str] = None
+    text: str
+    emotions: List[str]
+    repeats: int
+    total_takes: int
+    completed_takes: int
+    params: dict
+
+

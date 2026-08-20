@@ -37,8 +37,15 @@ class Settings(BaseSettings):
     reanchor_chars: Optional[int] = None
     segmenter_engine: str = "crfcut"
 
-    # Central Model Service (Port 8000)
-    voxcpm_service_url: str = "http://127.0.0.1:8000"
+    # Shared SiangTTS GPU service — the one process that holds VoxCPM2 for every
+    # pipeline on the host (voice-cloning/src/gpu_service.py). The studio sends
+    # generation there and keeps annotation, chunking and assembly local.
+    voxcpm_service_url: str = "http://127.0.0.1:8020"
+    # Refuse to run without it. Loading a second copy of the model here would fight
+    # the shared one for VRAM on a single-GPU host, which is the exact problem the
+    # split exists to solve -- and it would do it silently, several minutes into a
+    # request. Set false only when nothing else is using the GPU.
+    voxcpm_remote_required: bool = True
     service_port: int = 8011
 
     # SiangTTS / VoxCPM2 Voice Cloning

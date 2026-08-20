@@ -27,11 +27,22 @@
         </div>
       </div>
       <div class="header-meta">
+        <a href="/test" class="btn btn-sm btn-outline" style="display:inline-flex;align-items:center;gap:6px;font-weight:600;color:#c084fc;border-color:rgba(139,92,246,0.4);background:rgba(139,92,246,0.1);">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <path d="M10 2v7.31"></path>
+            <path d="M14 9.3V2"></path>
+            <path d="M8.5 2h7"></path>
+            <path d="M14 9.3a6.5 6.5 0 1 1-4 0"></path>
+            <path d="M5.52 16h12.96"></path>
+          </svg>
+          <span>🧪 หน้าผลเทส (Benchmark)</span>
+        </a>
         <div id="health-status" class="status-indicator">
           <span class="status-dot"></span>
           <span class="status-label">กำลังเชื่อมต่อ...</span>
         </div>
       </div>
+
     </header>
 
     <!-- Main Workspace -->
@@ -92,12 +103,26 @@
             </div>
             <div class="form-group flex-1" id="speaker-group">
               <label for="speaker-select" class="field-label">เลือกเสียงที่โคลนไว้ (Speaker):</label>
-              <select id="speaker-select" class="custom-select">
-                <option value="">-- ไม่ใช้เสียงโคลน (Base Voice) --</option>
-              </select>
-              <button type="button" id="btn-reroll-seed" class="btn btn-sm btn-outline hidden"
-                      title="Base Voice ถูกสุ่มไว้ครั้งเดียวแล้วจำไว้ถาวร — กดเพื่อสุ่มผู้พูดใหม่">
-                สุ่มเสียงใหม่ (Re-roll)</button>
+              <div class="speaker-action-row">
+                <select id="speaker-select" class="custom-select flex-1">
+                  <option value="">-- ไม่ใช้เสียงโคลน (Base Voice) --</option>
+                </select>
+                <button type="button" id="btn-play-speaker-ref" class="btn btn-sm btn-outline btn-ref-play hidden"
+                        title="กดเพื่อฟังเสียงต้นแบบ (Ref Audio)">
+                  <svg class="play-icon" width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                    <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                  </svg>
+                  <svg class="pause-icon hidden" width="13" height="13" viewBox="0 0 24 24" fill="currentColor">
+                    <rect x="6" y="4" width="4" height="16"></rect>
+                    <rect x="14" y="4" width="4" height="16"></rect>
+                  </svg>
+                  <span class="ref-btn-label">ฟังเสียง Ref</span>
+                </button>
+                <button type="button" id="btn-reroll-seed" class="btn btn-sm btn-outline hidden"
+                        title="Base Voice ถูกสุ่มไว้ครั้งเดียวแล้วจำไว้ถาวร — กดเพื่อสุ่มผู้พูดใหม่">
+                  สุ่มเสียงใหม่ (Re-roll)</button>
+              </div>
+              <audio id="speaker-ref-audio" preload="none" class="hidden"></audio>
             </div>
           </div>
 
@@ -119,10 +144,23 @@
                 <span class="drop-subtext">แนะนำความยาว 3 - 30 วินาทีเพื่อความเหมือนสูงสุด</span>
               </div>
               <div class="file-info-badge hidden" id="file-info-badge">
-                <span id="selected-filename">sample.wav</span>
+                <div class="file-badge-content">
+                  <span id="selected-filename">sample.wav</span>
+                  <button type="button" id="btn-play-uploaded-ref" class="btn btn-xs btn-outline btn-badge-play" title="ฟังเสียงไฟล์ที่เลือก">
+                    <svg class="play-icon" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                      <polygon points="5 3 19 12 5 21 5 3"></polygon>
+                    </svg>
+                    <svg class="pause-icon hidden" width="12" height="12" viewBox="0 0 24 24" fill="currentColor">
+                      <rect x="6" y="4" width="4" height="16"></rect>
+                      <rect x="14" y="4" width="4" height="16"></rect>
+                    </svg>
+                    <span class="upload-btn-label">ฟังเสียง Ref</span>
+                  </button>
+                </div>
                 <button type="button" id="btn-remove-file" class="btn-icon-clear" title="ลบไฟล์">✕</button>
               </div>
             </div>
+            <audio id="uploaded-ref-audio" preload="none" class="hidden"></audio>
           </div>
 
           <!-- LoRA & Emotion Mode Multi-Selection Toggle -->
@@ -186,18 +224,47 @@
             <input type="text" id="custom-model-input" class="custom-input" placeholder="เช่น gemini-3.6-flash หรือชื่อโมเดลอื่นๆ">
           </div>
 
+          <!-- CFG Guidance Control Section -->
+          <div class="form-group cfg-config-section" id="cfg-config-section" style="margin-top: 14px;">
+            <div class="field-label-row">
+              <label for="param-cfg" class="field-label" style="margin-bottom: 0;">
+                <span>ความเข้มอารมณ์ / CFG Guidance:</span>
+                <span class="cfg-badge-val" id="val-cfg">2.5</span>
+              </label>
+              <div class="cfg-stepper-group">
+                <button type="button" class="cfg-step-btn" id="btn-cfg-minus" title="ลดค่า CFG (-0.1)">−</button>
+                <button type="button" class="cfg-step-btn" id="btn-cfg-plus" title="เพิ่มค่า CFG (+0.1)">+</button>
+              </div>
+            </div>
+            
+            <!-- Quick Preset Pills for CFG -->
+            <div class="cfg-preset-pills">
+              <button type="button" class="cfg-pill-btn" data-cfg="1.5">🍃 1.5 นุ่มนวล</button>
+              <button type="button" class="cfg-pill-btn" data-cfg="2.0">🌿 2.0 ธรรมชาติ</button>
+              <button type="button" class="cfg-pill-btn active" data-cfg="2.5">⭐ 2.5 มาตรฐาน</button>
+              <button type="button" class="cfg-pill-btn" data-cfg="3.5">🔥 3.5 ชัดเจน</button>
+              <button type="button" class="cfg-pill-btn" data-cfg="4.5">⚡ 4.5 จัดจ้าน</button>
+            </div>
+
+            <div class="cfg-slider-wrapper">
+              <input type="range" id="param-cfg" min="1.0" max="6.0" step="0.1" value="2.5" class="custom-range">
+              <div class="range-labels">
+                <span>1.0 (เบา)</span>
+                <span>2.5 (แนะนำ)</span>
+                <span>6.0 (แรงสุด)</span>
+              </div>
+            </div>
+            <small class="param-hint">💡 ค่า CFG ควบคุมความเข้มข้นของการแสดงอารมณ์ตามแท็ก (แนะนำ 2.0 – 3.5)</small>
+          </div>
+
           <!-- Advanced Parameters Collapsible -->
           <details class="advanced-details" id="advanced-details">
-            <summary>⚙️ พารามิเตอร์การสังเคราะห์ (Advanced Parameters)</summary>
+            <summary>⚙️ พารามิเตอร์ขั้นสูงเพิ่มเติม (Advanced Timesteps)</summary>
             <div class="advanced-grid">
-              <div class="param-item">
-                <label for="param-cfg">ความเข้มของอารมณ์ / CFG Guidance: <span id="val-cfg">2.5</span></label>
-                <input type="range" id="param-cfg" min="1.0" max="6.0" step="0.1" value="2.5">
-                <small class="param-hint">ยิ่งสูง ยิ่งทำตามคำสั่งอารมณ์มากขึ้น แต่เสียงอาจเพี้ยน (แนะนำ 2.5–4.0)</small>
-              </div>
               <div class="param-item">
                 <label for="param-steps">Inference Timesteps: <span id="val-steps">10</span></label>
                 <input type="range" id="param-steps" min="4" max="30" step="1" value="10">
+                <small class="param-hint">จำนวนรอบ sampling ในการสร้างเสียง (ปกติ 10)</small>
               </div>
             </div>
           </details>
