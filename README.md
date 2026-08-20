@@ -43,6 +43,11 @@ SiangTTS/
 │   ├── voxcpm_lora.yaml       # LoRA training recipe (§8.2 of RESEARCH.md) — 3090-sized
 │   └── voxcpm_sft.yaml        # full-SFT recipe — A100-80G sized (escalation path)
 ├── src/
+│   ├── webhook.py             # FastAPI webhook & async job service (primary production server)
+│   ├── serve.py               # synchronous inference API (KhongkhunAPI-compatible)
+│   ├── app.py                 # Gradio interactive web UI
+│   ├── pipeline.py            # audio merge, upload, and callback pipeline
+│   ├── thai_text.py           # Thai text segmentation and prompt preparation
 │   ├── thai_normalizer.py     # encoding hygiene only (no number-to-word, no segmentation)
 │   ├── augment.py             # DataLoader-time text augmentations
 │   ├── inference.py           # thin wrapper around voxcpm.VoxCPM
@@ -63,6 +68,8 @@ SiangTTS/
 ├── checkpoints/               # gitignored
 ├── pyproject.toml             # uv-managed
 ├── conftest.py                # makes `pytest` resolve src/ + train/ from any CWD
+├── COMMANDS.md                # operational commands reference
+├── DEPLOY.md                  # deployment guide
 ├── RESEARCH.md
 └── README.md
 ```
@@ -97,41 +104,76 @@ uv run python -m src.eval --adapter checkpoints/siangtts-lora-v0/latest --prompt
 
 ## Serving & demos
 
-Three separate surfaces, all sharing the curated samples from `src.demo prep`:
+### 1. Production Webhook Service (FastAPI — Port 8010)
+
+Handles async voice synthesis jobs, in-process queue, chunking, audio merging, upload, and webhook callbacks (replaces the n8n flow). Includes a live web dashboard at `http://localhost:8010/`.
 
 ```bash
-# 0. Generate the curated comparison set (GPU): diverse gender / length / numeric,
-#    each with ref + ground-truth + base + LoRA. Feeds the static page and Gradio.
+# Environment variables (PowerShell):
+$env:PYTHONIOENCODING = "utf-8"
+$env:SIANGTTS_ADAPTER = "checkpoints/siangtts-v1"
+$env:SIANGTTS_UPLOAD_TOKEN = "<bearer-token>"
+
+# Run FastAPI Webhook server on port 8010:
+uvicorn src.webhook:app --reload --host 0.0.0.0 --port 8010
+# Or using uv:
+uv run uvicorn src.webhook:app --reload --host 0.0.0.0 --port 8010
+```
+
+**Key Endpoints:**
+- `POST /webhook/live-ai-create-new` — Submit async TTS job (returns immediate `{"status":"success"}`)
+- `GET /jobs` · `GET /jobs/{job_id}` — Query job history and queue status
+- `GET /voices` — List available reference voices and cached prompt caches
+- `GET /health` — Service health, VRAM, and cache metrics
+- `GET /` — Real-time web dashboard
+
+---
+
+### 2. Synchronous Inference API (FastAPI — Port 8000)
+
+Direct KhongkhunAPI-compatible inference API (loads base + LoRA adapter once). Swagger docs at `http://localhost:8000/docs`.
+
+```bash
+# Drop reference clips in ref/<name>.wav — encoded once at startup, cached to voice_cache/<name>.pt
+uv run uvicorn src.serve:app --host 0.0.0.0 --port 8000
+```
+
+**Endpoints:**
+- `POST /tts` — text [+ reference] → wav
+- `POST /tts/speaker/{speaker_id}` — text in a registered voice (cached encoding)
+- `POST /speakers` · `GET /speakers` · `DELETE /speakers/{id}` · `GET /health`
+
+---
+
+### 3. Live Demo (Gradio UI — Port 7860)
+
+Standalone interactive browser UI to type text and compare Base VoxCPM2 vs. SiangTTS LoRA:
+
+```bash
+uv run python -m src.app                   # http://localhost:7860 (--share for public link)
+```
+
+---
+
+### 4. Static Demo Page & Model Publishing
+
+```bash
+# 0. Generate the curated comparison set (GPU): diverse gender / length / numeric
 uv run python -m src.demo prep
 
-# 1. Static demo page → GitHub Pages (no server; renders to docs/)
-uv run python -m src.demo html              # build docs/index.html + docs/samples/
-#    Serve /docs via GitHub Pages → viewable in the browser & on GitHub.
+# 1. Build static demo page → docs/ (viewable on GitHub Pages)
+uv run python -m src.demo html
 
-# 2. Live demo (Gradio UI: type text + optional reference → base vs LoRA)
-uv run python -m src.app                   # http://localhost:7860  (--share for public)
-
-# 3. Inference API (FastAPI; loads base + adapter once). Swagger at /docs.
-#    Drop reference clips in ref/<name>.wav — encoded once at startup, cached to
-#    voice_cache/<name>.pt, then clone by name. Register at runtime via POST /speakers.
-uv run uvicorn src.serve:app --host 0.0.0.0 --port 8000
-#    POST /tts                       text [+ reference] → wav
-#    POST /tts/speaker/{speaker_id}  text in a registered voice (cached encoding)
-#    POST /speakers · GET /speakers · DELETE /speakers/{id} · GET /health
-
-# Publish the adapter to the Hub (clean release: weights + config + card + LICENSE).
-# The card links to the GitHub Pages demo — samples are NOT bundled (single source).
+# 2. Publish adapter to Hugging Face Hub:
 uv run python train/publish_to_hf.py \
     --repo-id dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA --public
 ```
 
-**One demo, linked everywhere:** the comparison page is served from `docs/` via
-GitHub Pages (<https://dubbing-ai.github.io/VoxCPM-thai/>) and the HF model card
-links to it — no duplicated sample hosting.
-
-- **Static demo** → `src/demo.py` (offline page, GitHub Pages)
-- **Live demo** → `src/app.py` (Gradio)
-- **Inference API** → `src/serve.py` (FastAPI)
+**Surfaces summary:**
+- **Webhook Service** → `src/webhook.py` (FastAPI, Port 8010)
+- **Inference API** → `src/serve.py` (FastAPI, Port 8000)
+- **Live Demo** → `src/app.py` (Gradio, Port 7860)
+- **Static Demo** → `src/demo.py` (GitHub Pages)
 
 Published model: <https://huggingface.co/dubbing-ai/SiangTTS-VoxCPM2-Thai-LoRA>
 (CC-BY-SA-4.0). Always launch GPU commands with

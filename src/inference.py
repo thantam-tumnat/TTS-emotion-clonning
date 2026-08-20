@@ -32,6 +32,9 @@ class Synthesizer:
         device: str | None = None,
         denoise_prompts: bool = False,
     ) -> None:
+        import torch._dynamo
+        torch._dynamo.config.suppress_errors = True
+
         from voxcpm import VoxCPM  # lazy import — keeps `--help` snappy
 
         lora_config = None

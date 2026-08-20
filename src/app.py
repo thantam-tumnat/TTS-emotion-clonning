@@ -20,7 +20,11 @@ from pathlib import Path
 DEMO_DIR = Path("demo/samples")
 MANIFEST = DEMO_DIR / "manifest.json"
 DEFAULT_BASE = "openbmb/VoxCPM2"
-DEFAULT_ADAPTER = "checkpoints/siangtts-lora-v0/latest"
+DEFAULT_ADAPTER = (
+    "checkpoints/siangtts-v1"
+    if Path("checkpoints/siangtts-v1").exists()
+    else "checkpoints/siangtts-lora-v0/latest"
+)
 
 
 def chunk_text(text: str, max_chars: int = 200) -> list[str]:
