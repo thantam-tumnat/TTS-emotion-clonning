@@ -315,8 +315,9 @@ def test_seed_voice_is_built_once_and_reused_across_requests():
     assert len(built) == 1
 
 
-def test_get_available_models_endpoint(client):
-    res = client.get("/models")
+def test_get_available_models_endpoint(client, monkeypatch):
+    monkeypatch.setattr("app.config.settings.openai_api_key", "test-key")
+    res = client.get("/models?refresh=true")
     assert res.status_code == 200
     data = res.json()
     assert "providers" in data
@@ -326,3 +327,21 @@ def test_get_available_models_endpoint(client):
     assert len(data["providers"]["gemini"]["models"]) > 0
     assert len(data["providers"]["openai"]["models"]) > 0
     assert data["providers"]["openai"]["available"] is True
+
+
+def test_synthesize_endpoint_raw_tts_post_process_false(client, monkeypatch):
+    """Verify synthesize endpoint accepts post_process=False for raw TTS without crashing."""
+    svc.settings.siangtts_allow_mock = True
+    res = client.post(
+        "/synthesize",
+        json={
+            "text": "[sad] ทดสอบเสียงสด [angry] แบบปิด post process",
+            "cfg_value": 2.5,
+            "inference_timesteps": 4,
+            "lora_mode": "on",
+            "post_process": False,
+        },
+    )
+    assert res.status_code == 200
+    assert res.headers["content-type"] == "audio/wav"
+    assert len(res.content) > 100

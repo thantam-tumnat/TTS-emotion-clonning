@@ -186,6 +186,11 @@
                 <span class="chk-badge">✓</span>
                 <span>😐 ไม่ใส่อารมณ์ (เสียงเรียบ)</span>
               </label>
+              <label class="lora-toggle-opt opt-raw-tts" id="opt-raw-tts">
+                <input type="checkbox" name="lora_mode_check" value="raw_tts">
+                <span class="chk-badge">✓</span>
+                <span>🎛️ เสียงสด (Raw / No DSP)</span>
+              </label>
             </div>
           </div>
 
@@ -376,6 +381,23 @@
               </div>
               <div class="player-controls">
                 <audio id="audio-player-no-emotion" controls class="native-audio-player"></audio>
+              </div>
+            </div>
+
+            <!-- Player Box 4: Raw Audio (No DSP) -->
+            <div id="player-box-raw" class="player-card-box raw-box hidden">
+              <div class="player-header">
+                <div class="player-status">
+                  <span class="audio-pulse-dot dot-purple"></span>
+                  <span class="player-title title-purple" id="title-raw">🎛️ เสียงสดจาก TTS (Raw Audio / No DSP)</span>
+                </div>
+                <a id="btn-download-raw" href="#" download="raw_audio.wav" class="btn btn-sm btn-outline btn-outline-purple">
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
+                  <span>ดาวน์โหลด (เสียงสด)</span>
+                </a>
+              </div>
+              <div class="player-controls">
+                <audio id="audio-player-raw" controls class="native-audio-player"></audio>
               </div>
             </div>
           </div>

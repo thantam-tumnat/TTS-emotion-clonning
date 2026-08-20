@@ -480,21 +480,23 @@ class Annotator:
                         })
             except Exception as e:
                 logger.warning(f"Could not list Gemini models live: {e}")
-                for m_id in [
-                    "gemini-3.6-flash",
-                    "gemini-3.7-flash",
-                    "gemini-3.5-flash-lite",
-                    "gemini-3.1-flash-lite",
-                    "gemini-flash-lite-latest",
-                    "gemini-flash-latest",
-                    "gemini-pro-latest",
-                ]:
-                    is_rec = (m_id == settings.gemini_model)
-                    gemini_models.append({
-                        "id": m_id,
-                        "name": m_id + (" (⚡ แนะนำ: Google)" if is_rec else ""),
-                        "recommended": is_rec,
-                    })
+
+        if not gemini_models:
+            for m_id in [
+                "gemini-3.6-flash",
+                "gemini-3.7-flash",
+                "gemini-3.5-flash-lite",
+                "gemini-3.1-flash-lite",
+                "gemini-flash-lite-latest",
+                "gemini-flash-latest",
+                "gemini-pro-latest",
+            ]:
+                is_rec = (m_id == settings.gemini_model)
+                gemini_models.append({
+                    "id": m_id,
+                    "name": m_id + (" (⚡ แนะนำ: Google)" if is_rec else ""),
+                    "recommended": is_rec,
+                })
 
         providers["gemini"] = {
             "available": has_gemini,
@@ -521,14 +523,16 @@ class Annotator:
                     })
             except Exception as e:
                 logger.warning(f"Could not list OpenAI/9arm models live: {e}")
-                for m_id in [settings.openai_model, settings.openai_escalate_model]:
-                    if m_id:
-                        is_rec = (m_id == settings.openai_model)
-                        openai_models.append({
-                            "id": m_id,
-                            "name": f"{m_id} (9arm Gateway)",
-                            "recommended": is_rec,
-                        })
+
+        if not openai_models:
+            for m_id in [settings.openai_model, settings.openai_escalate_model]:
+                if m_id:
+                    is_rec = (m_id == settings.openai_model)
+                    openai_models.append({
+                        "id": m_id,
+                        "name": f"{m_id} (9arm Gateway)",
+                        "recommended": is_rec,
+                    })
 
         providers["openai"] = {
             "available": has_openai,

@@ -20,6 +20,7 @@ document.addEventListener('DOMContentLoaded', () => {
   const paramIntensity = document.getElementById('param-intensity');
   const paramCfg = document.getElementById('param-cfg');
   const paramLoraMode = document.getElementById('param-lora-mode');
+  const paramPostProcess = document.getElementById('param-post-process');
 
   const summaryEmotionsCount = document.getElementById('summary-emotions-count');
   const summaryTakesCount = document.getElementById('summary-takes-count');
@@ -258,6 +259,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const intensity = parseInt(paramIntensity.value || '2', 10);
     const cfgValue = parseFloat(paramCfg.value || '2.5');
     const loraMode = paramLoraMode.value || 'on';
+    const postProcess = paramPostProcess ? paramPostProcess.value === 'true' : true;
 
     // Start benchmark session
     startBenchmark({
@@ -268,6 +270,7 @@ document.addEventListener('DOMContentLoaded', () => {
       intensity,
       cfgValue,
       loraMode,
+      postProcess,
     });
   });
 
@@ -303,6 +306,7 @@ document.addEventListener('DOMContentLoaded', () => {
         cfg_value: config.cfgValue,
         inference_timesteps: 10,
         lora_mode: config.loraMode,
+        post_process: config.postProcess,
       };
 
       const initRes = await fetch('/api/benchmark/session/init', {
@@ -335,6 +339,7 @@ document.addEventListener('DOMContentLoaded', () => {
             speaker_id: config.speakerId,
             cfg_value: config.cfgValue,
             lora_mode: config.loraMode,
+            post_process: config.postProcess,
           });
         }
       });
@@ -772,6 +777,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const intensity = parseInt(paramIntensity.value || '2', 10);
     const cfgValue = parseFloat(paramCfg.value || '2.5');
     const loraMode = paramLoraMode.value || 'on';
+    const postProcess = paramPostProcess ? paramPostProcess.value === 'true' : true;
 
     for (let takeIdx = 1; takeIdx <= repeats; takeIdx++) {
       setCellGenerating(emotion, takeIdx);
@@ -788,6 +794,7 @@ document.addEventListener('DOMContentLoaded', () => {
             speaker_id: speakerId,
             cfg_value: cfgValue,
             lora_mode: loraMode,
+            post_process: postProcess,
           }),
         });
         const data = await res.json();

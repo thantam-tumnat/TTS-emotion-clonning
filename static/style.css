@@ -1499,6 +1499,11 @@ textarea:focus, .custom-input:focus {
   border-color: #f59e0b;
 }
 
+.lora-toggle-opt.opt-raw-tts.active {
+  background: linear-gradient(135deg, rgba(168, 85, 247, 0.8), rgba(126, 34, 206, 0.9));
+  border-color: #a855f7;
+}
+
 /* Dedicated Multi-Player Container & Cards */
 .multi-player-container {
   display: flex;
@@ -1536,6 +1541,11 @@ textarea:focus, .custom-input:focus {
   box-shadow: 0 2px 8px rgba(245, 158, 11, 0.08);
 }
 
+.player-card-box.raw-box {
+  border: 1px solid rgba(168, 85, 247, 0.4);
+  box-shadow: 0 2px 8px rgba(168, 85, 247, 0.08);
+}
+
 .dot-green {
   background: #10b981;
   box-shadow: 0 0 8px #10b981;
@@ -1551,6 +1561,11 @@ textarea:focus, .custom-input:focus {
   box-shadow: 0 0 8px #f59e0b;
 }
 
+.dot-purple {
+  background: #a855f7;
+  box-shadow: 0 0 8px #a855f7;
+}
+
 .title-green {
   color: #34d399 !important;
 }
@@ -1561,6 +1576,10 @@ textarea:focus, .custom-input:focus {
 
 .title-amber {
   color: #fbbf24 !important;
+}
+
+.title-purple {
+  color: #c084fc !important;
 }
 
 .btn-outline-green {
@@ -1590,6 +1609,16 @@ textarea:focus, .custom-input:focus {
 .btn-outline-amber:hover {
   background: rgba(245, 158, 11, 0.15);
   border-color: #f59e0b;
+  color: #ffffff;
+}
+
+.btn-outline-purple {
+  border-color: rgba(168, 85, 247, 0.4);
+  color: #c084fc;
+}
+.btn-outline-purple:hover {
+  background: rgba(168, 85, 247, 0.15);
+  border-color: #a855f7;
   color: #ffffff;
 }
 

@@ -137,6 +137,7 @@ class SynthesizeRequest(BaseModel):
     lora_mode: Optional[Literal["on", "off", "legacy"]] = Field(
         default="on", description="LoRA mode: 'on' (Thai optimized), 'off' (Base model), or 'legacy' (shipped 2.0/2.0)"
     )
+    post_process: bool = Field(default=True, description="Enable audio_post DSP processing (loudness, pace, pauses)")
 
 
 class LLMClauseItem(BaseModel):
@@ -175,6 +176,7 @@ class BenchmarkSessionInitRequest(BaseModel):
     cfg_value: float = Field(default=2.5, ge=1.0, le=10.0)
     inference_timesteps: int = Field(default=10, ge=4, le=50)
     lora_mode: Optional[Literal["on", "off", "legacy"]] = "on"
+    post_process: bool = True
 
 
 class BenchmarkSessionInitResponse(BaseModel):

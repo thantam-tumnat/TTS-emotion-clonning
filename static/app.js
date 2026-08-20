@@ -97,6 +97,10 @@ document.addEventListener('DOMContentLoaded', () => {
   const audioPlayerNoEmotion = document.getElementById('audio-player-no-emotion');
   const btnDownloadNoEmotion = document.getElementById('btn-download-no-emotion');
 
+  const playerBoxRaw = document.getElementById('player-box-raw');
+  const audioPlayerRaw = document.getElementById('audio-player-raw');
+  const btnDownloadRaw = document.getElementById('btn-download-raw');
+
   const loraToggleOptions = document.querySelectorAll('.lora-toggle-opt');
   const loraCheckInputs = document.querySelectorAll('input[name="lora_mode_check"]');
 
@@ -104,6 +108,7 @@ document.addEventListener('DOMContentLoaded', () => {
   let currentAudioUrlOn = null;
   let currentAudioUrlOff = null;
   let currentAudioUrlNoEmotion = null;
+  let currentAudioUrlRaw = null;
   // Last /speak payload, kept so the full/short toggle can re-render without refetching.
   let lastRenderData = null;
   let segFormat = 'full';
@@ -787,9 +792,11 @@ document.addEventListener('DOMContentLoaded', () => {
     if (playerBoxLoraOn) playerBoxLoraOn.classList.add('hidden');
     if (playerBoxLoraOff) playerBoxLoraOff.classList.add('hidden');
     if (playerBoxNoEmotion) playerBoxNoEmotion.classList.add('hidden');
+    if (playerBoxRaw) playerBoxRaw.classList.add('hidden');
     if (audioPlayerLoraOn) { audioPlayerLoraOn.pause(); audioPlayerLoraOn.currentTime = 0; }
     if (audioPlayerLoraOff) { audioPlayerLoraOff.pause(); audioPlayerLoraOff.currentTime = 0; }
     if (audioPlayerNoEmotion) { audioPlayerNoEmotion.pause(); audioPlayerNoEmotion.currentTime = 0; }
+    if (audioPlayerRaw) { audioPlayerRaw.pause(); audioPlayerRaw.currentTime = 0; }
     if (speakerRefAudio) { speakerRefAudio.pause(); speakerRefAudio.currentTime = 0; }
     if (uploadedRefAudio) { uploadedRefAudio.pause(); uploadedRefAudio.currentTime = 0; }
     if (btnPlaySpeakerRef) { setButtonPlayingState(btnPlaySpeakerRef, false, 'ฟังเสียง Ref', 'หยุด'); }
@@ -958,7 +965,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Synthesis Helper
-  async function fetchSynthesisBlob({ text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode, autoAnnotate = true }) {
+  async function fetchSynthesisBlob({ text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode, autoAnnotate = true, postProcess = true }) {
     if (selectedAudioFile) {
       const formData = new FormData();
       formData.append('text', text);
@@ -969,6 +976,7 @@ document.addEventListener('DOMContentLoaded', () => {
       formData.append('inference_timesteps', timesteps);
       formData.append('auto_annotate', autoAnnotate ? 'true' : 'false');
       formData.append('lora_mode', loraMode);
+      formData.append('post_process', postProcess ? 'true' : 'false');
 
       const response = await fetch(`${API_BASE}/synthesize/upload`, {
         method: 'POST',
@@ -994,7 +1002,8 @@ document.addEventListener('DOMContentLoaded', () => {
           cfg_value: cfgValue,
           inference_timesteps: timesteps,
           auto_annotate: autoAnnotate,
-          lora_mode: loraMode
+          lora_mode: loraMode,
+          post_process: postProcess
         })
       });
       if (!response.ok) {
@@ -1031,7 +1040,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const modeLabels = {
       lora_on: 'Thai LoRA (ON)',
       lora_off: 'LoRA OFF (Base)',
-      no_emotion: 'ไม่ใส่อารมณ์ (เสียงเรียบ)'
+      no_emotion: 'ไม่ใส่อารมณ์ (เสียงเรียบ)',
+      raw_tts: 'เสียงสด (Raw / No DSP)'
     };
 
     try {
@@ -1048,16 +1058,20 @@ document.addEventListener('DOMContentLoaded', () => {
         let blob;
         if (mode === 'lora_on') {
           blob = await fetchSynthesisBlob({
-            text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'on', autoAnnotate: true
+            text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'on', autoAnnotate: true, postProcess: true
           });
         } else if (mode === 'lora_off') {
           blob = await fetchSynthesisBlob({
-            text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'off', autoAnnotate: true
+            text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'off', autoAnnotate: true, postProcess: true
           });
         } else if (mode === 'no_emotion') {
           const plainText = stripEmotionTags(text) || text;
           blob = await fetchSynthesisBlob({
-            text: plainText, speakerId, guidance: null, engine, model, cfgValue, timesteps, loraMode: 'on', autoAnnotate: false
+            text: plainText, speakerId, guidance: null, engine, model, cfgValue, timesteps, loraMode: 'on', autoAnnotate: false, postProcess: true
+          });
+        } else if (mode === 'raw_tts') {
+          blob = await fetchSynthesisBlob({
+            text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'on', autoAnnotate: true, postProcess: false
           });
         }
         return { mode, blob };
@@ -1069,6 +1083,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (playerBoxLoraOn) playerBoxLoraOn.classList.add('hidden');
       if (playerBoxLoraOff) playerBoxLoraOff.classList.add('hidden');
       if (playerBoxNoEmotion) playerBoxNoEmotion.classList.add('hidden');
+      if (playerBoxRaw) playerBoxRaw.classList.add('hidden');
 
       let firstAudioToPlay = null;
 
@@ -1109,6 +1124,18 @@ document.addEventListener('DOMContentLoaded', () => {
             btnDownloadNoEmotion.download = `${ts}_${spkPrefix}no_emotion.wav`;
           }
           if (playerBoxNoEmotion) playerBoxNoEmotion.classList.remove('hidden');
+        } else if (mode === 'raw_tts') {
+          if (currentAudioUrlRaw) URL.revokeObjectURL(currentAudioUrlRaw);
+          currentAudioUrlRaw = URL.createObjectURL(blob);
+          if (audioPlayerRaw) {
+            audioPlayerRaw.src = currentAudioUrlRaw;
+            if (!firstAudioToPlay) firstAudioToPlay = audioPlayerRaw;
+          }
+          if (btnDownloadRaw) {
+            btnDownloadRaw.href = currentAudioUrlRaw;
+            btnDownloadRaw.download = `${ts}_${spkPrefix}raw_audio.wav`;
+          }
+          if (playerBoxRaw) playerBoxRaw.classList.remove('hidden');
         }
       });
 

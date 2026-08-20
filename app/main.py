@@ -419,6 +419,7 @@ async def synthesize_endpoint(req: SynthesizeRequest):
             inference_timesteps=req.inference_timesteps,
             tones=tones,
             breaks=breaks,
+            post_process=req.post_process,
             lora_mode=lora_mode,
         )
         return Response(
@@ -442,6 +443,7 @@ async def synthesize_with_upload_endpoint(
     inference_timesteps: int = Form(10),
     auto_annotate: bool = Form(True),
     lora_mode: Optional[str] = Form("on"),
+    post_process: bool = Form(True),
 ):
     """
     Synthesizes speech with a direct one-off uploaded reference audio file.
@@ -475,6 +477,7 @@ async def synthesize_with_upload_endpoint(
             inference_timesteps=inference_timesteps,
             tones=tones,
             breaks=breaks,
+            post_process=post_process,
             lora_mode=active_lora_mode,
         )
         return Response(
