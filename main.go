@@ -61,6 +61,7 @@ func main() {
 	// 4. Handlers
 	jobsH := handlers.NewJobsHandler(pq)
 	proxyH := handlers.NewProxyHandler(pythonGPUURL)
+	dashH := handlers.NewDashboardHandler(pq, pythonGPUURL)
 
 	// 5. Job Queue Routes (Handled natively by Go)
 	app.Post("/v2/jobs/render", jobsH.Render)
@@ -77,9 +78,11 @@ func main() {
 	app.Delete("/v2/voices/seed", proxyH.Forward)
 	app.Get("/v2/speakers", proxyH.Forward)
 	app.Get("/health", proxyH.Forward)
-	app.Get("/", proxyH.Forward)
 
-	// 7. Graceful Shutdown Setup
+	// 7. Web Dashboard UI
+	app.Get("/", dashH.Index)
+
+	// 8. Graceful Shutdown Setup
 	c := make(chan os.Signal, 1)
 	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
 	go func() {
