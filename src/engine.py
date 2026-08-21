@@ -262,7 +262,7 @@ class Engine:
         self._lora_state = (lm, dit)
         return applied
 
-    def _resolve_voice(self, spec: Optional[dict]) -> Optional[str]:
+    def _resolve_voice(self, spec: Optional[dict], client: str = "") -> Optional[str]:
         """Voice spec -> handle. Returns None for an unconditioned generation."""
         if not spec:
             return None
@@ -270,10 +270,13 @@ class Engine:
             self.voices.get(spec["handle"])        # raises UnknownVoice -> 410
             return spec["handle"]
         if spec.get("speaker_id"):
+            allow_sidecar = spec.get("allow_sidecar")
+            if allow_sidecar is None:
+                allow_sidecar = False if client == "tone-studio" else True
             return self.voices.resolve_speaker(
                 spec["speaker_id"],
                 spec.get("ref_text") or "",
-                allow_sidecar=bool(spec.get("allow_sidecar", True)),
+                allow_sidecar=bool(allow_sidecar),
             )
         if spec.get("seed"):
             return self.voices.seed(
@@ -295,7 +298,7 @@ class Engine:
         job.started = time.time()
         self.running = job.job_id
         try:
-            job.voice_handle = await asyncio.to_thread(self._resolve_voice, job.voice)
+            job.voice_handle = await asyncio.to_thread(self._resolve_voice, job.voice, job.client)
             cache = self.voices.get(job.voice_handle) if job.voice_handle else None
             job.lora_applied = await asyncio.to_thread(self._apply_lora, job.lora)
 

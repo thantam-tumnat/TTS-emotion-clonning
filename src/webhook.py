@@ -44,6 +44,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import re
 import time
 import traceback
 import uuid
@@ -231,6 +232,10 @@ async def _run_job(job: Job) -> None:
     try:
         work.mkdir(parents=True, exist_ok=True)
 
+        has_style_tags = any(re.match(r"^\s*[\[(]", ch.text) for ch in job.chunks)
+        use_ref_text = "" if has_style_tags else job.ref_text
+        use_sidecar = (job.ref_text == DEFAULT_REF_TEXT) and not has_style_tags
+
         # The GPU service writes the chunk WAVs straight into this job's scratch dir,
         # under the same `<queue_id>_NNN.wav` names the in-process version produced —
         # which is what keeps /audio/{queue_id} and the merge unchanged.
@@ -238,16 +243,13 @@ async def _run_job(job: Job) -> None:
             "chunks": [ch.text for ch in job.chunks],
             "voice": {
                 "speaker_id": job.voice_id,
-                "ref_text": job.ref_text,
-                # Only consult a sidecar transcript when the caller did not send a
-                # real one of its own — the original in-process rule, preserved so
-                # the prompt caches already on disk stay hits.
-                "allow_sidecar": job.ref_text == DEFAULT_REF_TEXT,
+                "ref_text": use_ref_text,
+                "allow_sidecar": use_sidecar,
             },
             "cfg_value": GUIDANCE,
             "timesteps": NUM_STEP,
-            # What this path has always run at: the adapter's shipped strength.
-            "lora": "shipped",
+            # Use 'tones' mode when emotion tags are present, otherwise shipped strength.
+            "lora": "tones" if has_style_tags else "shipped",
             "output": {
                 "mode": "files",
                 "job_dir": job.queue_id,

@@ -22,13 +22,13 @@ from .thai_normalizer import normalize_thai_text
 
 DEFAULT_BASE_MODEL = "openbmb/VoxCPM2"
 
-_LEADING_STYLE_RE = re.compile(r"^\s*\([^)]*\)\s*")
+_LEADING_STYLE_RE = re.compile(r"^\s*([\[(])([^\])]*)([\])])\s*")
 
 
 def _clean_input_text(text: str) -> str:
     m = _LEADING_STYLE_RE.match(text or "")
     if m:
-        instr = m.group(0)
+        instr = f"({m.group(2).strip()})"
         body = text[m.end():]
         return instr + normalize_thai_text(body)
     return normalize_thai_text(text or "")
@@ -149,7 +149,7 @@ class Synthesizer:
         Mirrors the text cleanup the high-level `generate()` applies."""
         m = _LEADING_STYLE_RE.match(text or "")
         if m:
-            instr = m.group(0)
+            instr = f"({m.group(2).strip()})"
             body = text[m.end():]
             clean_body = normalize_thai_text(body)
             clean_body = re.sub(r"\s+", " ", clean_body.replace("\n", " ")).strip()
