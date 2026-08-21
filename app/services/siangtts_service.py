@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import io
+import math
 import os
 import re
 import sys
@@ -1153,6 +1154,94 @@ class SiangTTSService:
         out_buf = io.BytesIO()
         sf.write(out_buf, audio, sample_rate, format="WAV", subtype="PCM_16")
         return out_buf.getvalue()
+
+    def synthesize_variants(
+        self,
+        texts: Sequence[str],
+        *,
+        variants: Sequence[dict],
+        speaker_id: Optional[str] = None,
+        ref_audio_bytes: Optional[bytes] = None,
+        ref_filename: Optional[str] = None,
+        cfg_value: float = 2.5,
+        inference_timesteps: int = 10,
+        tones: Optional[Sequence[Optional[str]]] = None,
+        breaks: Optional[Sequence[bool]] = None,
+        lora_mode: Optional[str] = "on",
+    ) -> Tuple[List[dict], int, List[Optional[str]]]:
+        """Render one generation and assemble it every way ``variants`` asks for.
+
+        This is the honest A/B: ``render_chunks`` runs once, so the only thing that
+        differs between the returned takes is the assembly. Each variant is a dict
+        of ``{"post_process": bool, "params": dict | None}``.
+
+        Returns the takes (WAV bytes plus per-chunk placement), the sample rate, and
+        the tone of each rendered chunk -- which is not the same list as ``tones``,
+        because a long chunk is split for synthesis and each piece keeps its tone.
+        """
+        import io as _io
+
+        import numpy as np
+        import soundfile as sf
+
+        from app.services.audio_post import (
+            PostProcessConfig, assemble_with_spans, butt_join_with_spans, voiced_rms,
+        )
+
+        rendered, sample_rate = self.render_chunks(
+            texts,
+            speaker_id=speaker_id,
+            ref_audio_bytes=ref_audio_bytes,
+            ref_filename=ref_filename,
+            cfg_value=cfg_value,
+            inference_timesteps=inference_timesteps,
+            tones=tones,
+            breaks=breaks,
+            lora_mode=lora_mode,
+        )
+
+        # The assemblers drop empty chunks before measuring, so mirror that filter
+        # here to keep tones aligned with the spans they hand back.
+        usable = [c for c in rendered if c.audio is not None and np.asarray(c.audio).size]
+        chunk_tones: List[Optional[str]] = [c.tone for c in usable]
+
+        takes: List[dict] = []
+        for spec in variants:
+            if spec.get("post_process", True):
+                config = PostProcessConfig.from_dict(spec.get("params"))
+                audio, spans = assemble_with_spans(rendered, sample_rate, config=config)
+            else:
+                audio, spans = butt_join_with_spans(rendered, sample_rate)
+
+            chunk_stats = []
+            for i, (start, end) in enumerate(spans):
+                seg = audio[int(start * sample_rate):int(end * sample_rate)]
+                level = voiced_rms(seg, sample_rate)
+                # Pace has to be per character, or a long chunk reads as a slow one.
+                text_len = usable[i].text_len if i < len(usable) else 0
+                dur = float(end - start)
+                chunk_stats.append({
+                    "tone": chunk_tones[i] if i < len(chunk_tones) else None,
+                    "start_s": round(float(start), 3),
+                    "end_s": round(float(end), 3),
+                    "dur_s": round(dur, 3),
+                    "text_len": int(text_len),
+                    "pace_s_per_char": round(dur / text_len, 5) if text_len else None,
+                    "level_db": (
+                        round(float(20 * math.log10(level)), 2) if level > 1e-6 else None
+                    ),
+                })
+
+            buf = _io.BytesIO()
+            sf.write(buf, audio, sample_rate, format="WAV", subtype="PCM_16")
+            takes.append({
+                "id": spec.get("id"),
+                "wav": buf.getvalue(),
+                "dur_s": round(len(audio) / sample_rate, 3),
+                "chunks": chunk_stats,
+            })
+
+        return takes, sample_rate, chunk_tones
 
 
 siangtts_service = SiangTTSService()

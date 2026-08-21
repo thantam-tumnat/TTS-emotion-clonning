@@ -917,3 +917,253 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 });
+
+/* ==========================================================================
+   Fair A/B — one generation, several assemblies
+   ==========================================================================
+   The benchmark above runs the sampler once per take, which is right for asking
+   "how consistent is this emotion". It is the wrong tool for asking "did the
+   post-processing help", because two runs differ by the sampler as well as by
+   the treatment. This section calls /synthesize/ab, which renders once and
+   assembles the same chunks every way asked for.
+   ========================================================================== */
+(function () {
+  const VARIANT_SPECS = {
+    emotion_on: {
+      label: '🎚️ เปิดชั้นอารมณ์',
+      post_process: true,
+      params: null
+    },
+    cleanup: {
+      label: '🚫 ปิดชั้นอารมณ์',
+      post_process: true,
+      params: { match_energy: false, match_rate: false, gap_emotion_s: 0.2 }
+    },
+    raw: {
+      label: '🎵 ปิด DSP ทั้งหมด',
+      post_process: false,
+      params: null
+    },
+    dramatic: {
+      label: '🎭 เว้นจังหวะเยอะ',
+      post_process: true,
+      params: {
+        gap_same_tone_s: 0.30, gap_emotion_s: 0.70, gap_paragraph_s: 1.60,
+        energy_match: 0.55, max_stretch: 0.20
+      }
+    },
+    narration: {
+      label: '📖 พูดกระชับ',
+      post_process: true,
+      params: {
+        gap_same_tone_s: 0.14, gap_emotion_s: 0.30, gap_paragraph_s: 0.70,
+        energy_match: 0.85, max_stretch: 0.12
+      }
+    }
+  };
+
+  const TONE_COLORS = {
+    neutral: 'var(--tone-neutral)', sad: 'var(--tone-sad)', happy: 'var(--tone-happy)',
+    angry: 'var(--tone-angry)', excited: 'var(--tone-excited)', calm: 'var(--tone-calm)',
+    nervous: 'var(--tone-nervous)', sarcastic: 'var(--tone-sarcastic)',
+    scared: 'var(--tone-scared)', tired: 'var(--tone-tired)'
+  };
+
+  const TONE_TH = {
+    neutral: 'เฉยๆ', sad: 'เศร้า', happy: 'มีความสุข', angry: 'โกรธ', excited: 'ตื่นเต้น',
+    calm: 'สงบ', nervous: 'ประหม่า', sarcastic: 'ประชด', scared: 'กลัว', tired: 'เหนื่อย'
+  };
+
+  const $ = (id) => document.getElementById(id);
+
+  const grid = $('ab-variant-grid');
+  const btnRun = $('btn-run-ab');
+  const abCount = $('ab-count');
+  const abStatus = $('ab-status');
+  const abStatusText = $('ab-status-text');
+  const abError = $('ab-error');
+  const abResults = $('ab-results');
+  const abTableBody = $('ab-table-body');
+  const abTimelines = $('ab-timelines');
+  const abLegend = $('ab-legend');
+  const abResultsNote = $('ab-results-note');
+  if (!grid || !btnRun) return;
+
+  const inputs = [...grid.querySelectorAll('.ab-variant-input')];
+
+  function selected() {
+    return inputs.filter(i => i.checked).map(i => i.value);
+  }
+
+  function syncPicker() {
+    const n = selected().length;
+    inputs.forEach((i) => {
+      const card = i.closest('.ab-variant');
+      if (card) card.classList.toggle('active', i.checked);
+      // Four is the useful ceiling for listening back-to-back, and the endpoint
+      // caps at six. Block the fifth rather than fail the request.
+      i.disabled = !i.checked && n >= 4;
+      if (card) card.classList.toggle('ab-variant-locked', i.disabled);
+    });
+    if (abCount) abCount.textContent = String(n);
+    btnRun.disabled = n < 2;
+    btnRun.title = n < 2 ? 'ต้องเลือกอย่างน้อย 2 สูตรถึงจะเทียบได้' : '';
+  }
+
+  inputs.forEach(i => i.addEventListener('change', syncPicker));
+  syncPicker();
+
+  // Echo the settings this section borrows from the benchmark card, so it is
+  // never a mystery which voice and CFG the comparison actually ran at.
+  function syncEcho() {
+    const spk = $('speaker-select');
+    const cfg = $('param-cfg');
+    const lora = $('param-lora-mode');
+    const txt = $('test-text-input');
+    const set = (id, v) => { const el = $(id); if (el) el.textContent = v; };
+    set('ab-echo-speaker', '🎙️ ' + (spk && spk.value
+      ? (spk.options[spk.selectedIndex] || {}).text || spk.value
+      : 'Auto-Seed Neutral'));
+    set('ab-echo-cfg', 'CFG ' + (cfg ? cfg.value : '2.5'));
+    set('ab-echo-lora', 'LoRA ' + (lora ? lora.value : 'on'));
+    const t = txt && txt.value.trim();
+    set('ab-echo-text', t ? `“${t.length > 48 ? t.slice(0, 48) + '…' : t}”` : 'ยังไม่ได้ใส่ข้อความ');
+  }
+  ['speaker-select', 'param-cfg', 'param-lora-mode'].forEach((id) => {
+    const el = $(id);
+    if (el) el.addEventListener('change', syncEcho);
+  });
+  const textEl = $('test-text-input');
+  if (textEl) textEl.addEventListener('input', syncEcho);
+  document.addEventListener('click', () => setTimeout(syncEcho, 60));
+  syncEcho();
+
+  function fmtDelta(value, unit, betterHigher) {
+    if (value === null || value === undefined || Math.abs(value) < 0.005) {
+      return '<span class="ab-delta ab-delta-zero">±0</span>';
+    }
+    const sign = value > 0 ? '+' : '';
+    const cls = betterHigher === null ? 'ab-delta-neutral'
+      : ((value > 0) === betterHigher ? 'ab-delta-up' : 'ab-delta-down');
+    return `<span class="ab-delta ${cls}">${sign}${value.toFixed(2)}${unit}</span>`;
+  }
+
+  function renderResults(data) {
+    const variants = data.variants || [];
+    const base = variants[0];
+
+    abResultsNote.textContent =
+      `สร้างเสียง 1 รอบ (${data.chunk_count} ท่อน) → ประมวลผล ${variants.length} สูตร · run ${data.run_id}`;
+
+    // --- summary table -----------------------------------------------------
+    abTableBody.innerHTML = variants.map((v, idx) => {
+      const isBase = idx === 0;
+      const dDur = isBase ? null : v.dur_s - base.dur_s;
+      const dLvl = (isBase || v.level_spread_db == null || base.level_spread_db == null)
+        ? null : v.level_spread_db - base.level_spread_db;
+      const dPace = (isBase || v.pace_spread_pct == null || base.pace_spread_pct == null)
+        ? null : v.pace_spread_pct - base.pace_spread_pct;
+      return `
+        <tr class="${isBase ? 'ab-row-base' : ''}">
+          <td>
+            <span class="ab-row-label">${v.label}</span>
+            ${isBase ? '<span class="ab-base-tag">ตัวตั้งต้น</span>' : ''}
+          </td>
+          <td>${v.dur_s.toFixed(2)} วิ ${dDur === null ? '' : fmtDelta(dDur, ' วิ', null)}</td>
+          <td>${v.level_spread_db == null ? '—' : v.level_spread_db.toFixed(2) + ' dB'} ${dLvl === null ? '' : fmtDelta(dLvl, ' dB', true)}</td>
+          <td>${v.pace_spread_pct == null ? '—' : v.pace_spread_pct.toFixed(1) + '%'} ${dPace === null ? '' : fmtDelta(dPace, '%', null)}</td>
+          <td><audio class="ab-audio" controls preload="none" src="${v.audio_url}"></audio></td>
+          <td><a class="ab-dl" href="${v.audio_url}" download="${data.run_id}_${v.filename}">⬇ WAV</a></td>
+        </tr>`;
+    }).join('');
+
+    // --- timelines ---------------------------------------------------------
+    // One shared time axis and one shared dB axis, or the rows would not be
+    // comparable by eye -- which is the entire point of drawing them.
+    const maxDur = Math.max(...variants.map(v => v.dur_s), 0.001);
+    const allLevels = variants.flatMap(v => v.chunks.map(c => c.level_db)).filter(x => x != null);
+    const loud = allLevels.length ? Math.max(...allLevels) : 0;
+    const quiet = allLevels.length ? Math.min(...allLevels) : -1;
+    const range = Math.max(loud - quiet, 1);
+
+    const tones = [...new Set(variants.flatMap(v => v.chunks.map(c => c.tone || 'neutral')))];
+    abLegend.innerHTML = tones.map(t =>
+      `<span class="ab-legend-item"><i style="background:${TONE_COLORS[t] || 'var(--tone-neutral)'}"></i>${TONE_TH[t] || t}</span>`
+    ).join('') + '<span class="ab-legend-item ab-legend-gap"><i class="ab-legend-gapbox"></i>ความเงียบ</span>';
+
+    abTimelines.innerHTML = variants.map((v) => {
+      const bars = v.chunks.map((c) => {
+        const left = (c.start_s / maxDur) * 100;
+        const width = Math.max(((c.end_s - c.start_s) / maxDur) * 100, 0.6);
+        const h = c.level_db == null ? 40 : 28 + ((c.level_db - quiet) / range) * 72;
+        const tone = c.tone || 'neutral';
+        const tip = `${TONE_TH[tone] || tone} · ${(c.end_s - c.start_s).toFixed(2)} วิ`
+          + (c.level_db == null ? '' : ` · ${c.level_db.toFixed(1)} dB`)
+          + (c.pace_s_per_char ? ` · ${(c.pace_s_per_char * 1000).toFixed(0)} ms/ตัวอักษร` : '');
+        return `<span class="ab-bar" style="left:${left}%;width:${width}%;height:${h}%;background:${TONE_COLORS[tone] || 'var(--tone-neutral)'}" title="${tip}"></span>`;
+      }).join('');
+      return `
+        <div class="ab-timeline-row">
+          <div class="ab-timeline-label">${v.label}</div>
+          <div class="ab-timeline-track">${bars}</div>
+          <div class="ab-timeline-dur">${v.dur_s.toFixed(2)}s</div>
+        </div>`;
+    }).join('');
+
+    abResults.classList.remove('hidden');
+  }
+
+  btnRun.addEventListener('click', async () => {
+    const txt = $('test-text-input');
+    const text = txt ? txt.value.trim() : '';
+    if (!text) {
+      abError.textContent = 'กรุณาใส่ข้อความทดสอบในข้อ 1 ก่อน';
+      abError.classList.remove('hidden');
+      if (txt) txt.focus();
+      return;
+    }
+    const ids = selected();
+    if (ids.length < 2) return;
+
+    const spk = $('speaker-select');
+    const cfg = $('param-cfg');
+    const lora = $('param-lora-mode');
+
+    abError.classList.add('hidden');
+    abResults.classList.add('hidden');
+    abStatus.classList.remove('hidden');
+    abStatusText.textContent = `กำลังสร้างเสียง 1 รอบ แล้วประมวลผล ${ids.length} สูตร...`;
+    btnRun.disabled = true;
+
+    try {
+      const res = await fetch('/synthesize/ab', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          text,
+          speaker_id: spk && spk.value ? spk.value : null,
+          cfg_value: cfg ? parseFloat(cfg.value) : 2.5,
+          lora_mode: lora ? lora.value : 'on',
+          auto_annotate: true,
+          variants: ids.map(id => ({
+            id,
+            label: VARIANT_SPECS[id].label,
+            post_process: VARIANT_SPECS[id].post_process,
+            params: VARIANT_SPECS[id].params
+          }))
+        })
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.detail || `HTTP ${res.status}`);
+      }
+      renderResults(await res.json());
+    } catch (e) {
+      abError.textContent = `สร้างไม่สำเร็จ: ${e.message}`;
+      abError.classList.remove('hidden');
+    } finally {
+      abStatus.classList.add('hidden');
+      syncPicker();
+    }
+  });
+})();

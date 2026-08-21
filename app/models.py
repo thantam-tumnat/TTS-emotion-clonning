@@ -166,6 +166,67 @@ class SynthesizeRequest(BaseModel):
     )
 
 
+class ABVariantSpec(BaseModel):
+    """One way of assembling the shared generation."""
+    id: str = Field(min_length=1, max_length=40)
+    label: str = Field(min_length=1, max_length=80)
+    post_process: bool = True
+    params: Optional[PostProcessParams] = None
+
+
+class ABChunkMetric(BaseModel):
+    """Where one chunk landed in a variant, and how loud it came out."""
+    tone: Optional[str] = None
+    start_s: float
+    end_s: float
+    dur_s: float
+    level_db: Optional[float] = None
+    text_len: int = 0
+    pace_s_per_char: Optional[float] = None
+
+
+class ABVariantResult(BaseModel):
+    id: str
+    label: str
+    filename: str
+    audio_url: str
+    dur_s: float
+    # Loudest chunk minus quietest, in dB: the single number that says how much
+    # emotional contrast survived this assembly.
+    level_spread_db: Optional[float] = None
+    # Slowest chunk's pace over the fastest, as a percentage. Pace is measured in
+    # seconds per character so chunks of different lengths stay comparable.
+    pace_spread_pct: Optional[float] = None
+    chunks: List[ABChunkMetric] = Field(default_factory=list)
+
+
+class ABSynthesizeRequest(BaseModel):
+    """Render one generation, assemble it several ways.
+
+    Sampling is not deterministic, so comparing two ordinary /synthesize calls
+    compares two different takes as well as two treatments. This renders once and
+    hands the same chunks to every variant, which is the only way the difference
+    heard is the treatment.
+    """
+    text: str = Field(min_length=1, max_length=5000)
+    speaker_id: Optional[str] = None
+    guidance: Optional[str] = None
+    model: Optional[str] = None
+    cfg_value: float = Field(default=2.5, ge=1.0, le=10.0)
+    inference_timesteps: int = Field(default=10, ge=4, le=50)
+    auto_annotate: bool = True
+    lora_mode: Optional[Literal["on", "off", "legacy"]] = "on"
+    variants: List[ABVariantSpec] = Field(min_length=1, max_length=6)
+
+
+class ABSynthesizeResponse(BaseModel):
+    run_id: str
+    sample_rate: int
+    chunk_count: int
+    tones: List[Optional[str]] = Field(default_factory=list)
+    variants: List[ABVariantResult]
+
+
 class LLMClauseItem(BaseModel):
     i: int
     text: str

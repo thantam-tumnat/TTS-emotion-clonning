@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css?v=2.0.1">
-  <link rel="stylesheet" href="/static/test.css?v=1.0.0">
+  <link rel="stylesheet" href="/static/test.css?v=1.1.0">
 </head>
 <body>
   <div class="test-app-container">
@@ -194,6 +194,138 @@
       </div>
     </section>
 
+    <!-- A/B Fair Comparison Section -->
+    <section class="card ab-card" id="ab-card">
+      <div class="config-card-header">
+        <div class="card-title-group">
+          <span class="step-num">2</span>
+          <h2>เทียบชั้นอารมณ์แบบยุติธรรม (A/B — สร้างเสียงครั้งเดียว)</h2>
+        </div>
+        <span class="ab-badge-fair">⚖️ Fair A/B</span>
+      </div>
+
+      <div class="ab-explain">
+        <span class="ab-explain-icon">💡</span>
+        <div class="ab-explain-text">
+          <strong>ทำไมต้องแยกเป็นปุ่มนี้?</strong>
+          โมเดลสุ่มใหม่ทุกครั้งที่สร้างเสียง ถ้ากดสร้าง 2 รอบแล้วเอามาเทียบ ความต่างที่ได้ยินจะปนกันระหว่าง
+          <em>ผลของ DSP</em> กับ <em>ความสุ่มของโมเดล</em> — แยกไม่ออกว่าอันไหนทำให้ต่าง
+          <br>
+          ปุ่มนี้ <strong>สร้างเสียงรอบเดียว</strong> แล้วเอาเสียงชุดเดิมไปประมวลผลหลายสูตร
+          → สิ่งที่ต่างกันคือ <strong>DSP ล้วนๆ</strong> และเสีย GPU แค่รอบเดียวไม่ว่าจะเทียบกี่สูตร
+        </div>
+      </div>
+
+      <div class="ab-uses-config" id="ab-uses-config">
+        <span class="ab-uses-label">ใช้ค่าจากข้อ 1:</span>
+        <span class="ab-chip" id="ab-echo-speaker">—</span>
+        <span class="ab-chip" id="ab-echo-cfg">—</span>
+        <span class="ab-chip" id="ab-echo-lora">—</span>
+        <span class="ab-chip ab-chip-text" id="ab-echo-text">—</span>
+      </div>
+
+      <div class="form-group ab-picker">
+        <div class="field-label-row">
+          <label class="field-label">เลือกสูตรที่จะเทียบ (2–4 สูตร):</label>
+          <span class="ab-picker-hint">สูตรแรกที่ติ๊กจะถูกใช้เป็นตัวตั้งต้นสำหรับเทียบส่วนต่าง</span>
+        </div>
+        <div class="ab-variant-grid" id="ab-variant-grid">
+          <label class="ab-variant active" data-variant="emotion_on">
+            <input type="checkbox" class="ab-variant-input" value="emotion_on" checked>
+            <span class="ab-variant-check">✓</span>
+            <span class="ab-variant-body">
+              <span class="ab-variant-title">🎚️ เปิดชั้นอารมณ์</span>
+              <span class="ab-variant-desc">ค่ามาตรฐาน — ปรับ dB และความเร็วตามอารมณ์ + เว้นจังหวะ 0.45 วิ ตอนเปลี่ยนอารมณ์</span>
+            </span>
+          </label>
+          <label class="ab-variant active" data-variant="cleanup">
+            <input type="checkbox" class="ab-variant-input" value="cleanup" checked>
+            <span class="ab-variant-check">✓</span>
+            <span class="ab-variant-body">
+              <span class="ab-variant-title">🚫 ปิดชั้นอารมณ์</span>
+              <span class="ab-variant-desc">เก็บ trim / fade / เว้นจังหวะ / peak ไว้ แต่ถอดการปรับตามอารมณ์ออกหมด</span>
+            </span>
+          </label>
+          <label class="ab-variant active" data-variant="raw">
+            <input type="checkbox" class="ab-variant-input" value="raw" checked>
+            <span class="ab-variant-check">✓</span>
+            <span class="ab-variant-body">
+              <span class="ab-variant-title">🎵 ปิด DSP ทั้งหมด</span>
+              <span class="ab-variant-desc">เสียงดิบจากโมเดล ต่อกันด้วยความเงียบ 60ms คงที่ ไม่แตะอะไรเลย</span>
+            </span>
+          </label>
+          <label class="ab-variant" data-variant="dramatic">
+            <input type="checkbox" class="ab-variant-input" value="dramatic">
+            <span class="ab-variant-check">✓</span>
+            <span class="ab-variant-body">
+              <span class="ab-variant-title">🎭 เว้นจังหวะเยอะ</span>
+              <span class="ab-variant-desc">เหมือนมาตรฐาน แต่ยืดช่องว่างทุกจุดและปล่อยไดนามิกของโมเดลผ่านมากขึ้น</span>
+            </span>
+          </label>
+          <label class="ab-variant" data-variant="narration">
+            <input type="checkbox" class="ab-variant-input" value="narration">
+            <span class="ab-variant-check">✓</span>
+            <span class="ab-variant-body">
+              <span class="ab-variant-title">📖 พูดกระชับ</span>
+              <span class="ab-variant-desc">เหมือนมาตรฐาน แต่บีบช่องว่างให้สั้นและรีดระดับเสียงให้สม่ำเสมอกว่า</span>
+            </span>
+          </label>
+        </div>
+      </div>
+
+      <div class="config-action-bar">
+        <div class="suite-info-summary">
+          <span class="info-badge">สร้างเสียง <strong>1</strong> รอบ → ได้ <strong id="ab-count">3</strong> ไฟล์ให้เทียบ</span>
+        </div>
+        <div class="action-btn-group">
+          <button type="button" id="btn-run-ab" class="btn btn-primary btn-run-large">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M16 3h5v5M21 3l-7 7M8 21H3v-5M3 21l7-7"></path>
+            </svg>
+            <span>⚖️ สร้างครั้งเดียว เทียบทั้งหมด</span>
+          </button>
+        </div>
+      </div>
+
+      <div class="ab-status hidden" id="ab-status">
+        <span class="ab-spinner"></span>
+        <span id="ab-status-text">กำลังสร้างเสียง...</span>
+      </div>
+
+      <div class="ab-error hidden" id="ab-error"></div>
+
+      <div class="ab-results hidden" id="ab-results">
+        <div class="ab-results-head">
+          <h3>ผลการเทียบ</h3>
+          <span class="ab-results-note" id="ab-results-note"></span>
+        </div>
+
+        <div class="ab-table-wrap">
+          <table class="ab-table" id="ab-table">
+            <thead>
+              <tr>
+                <th scope="col">สูตร</th>
+                <th scope="col">ความยาว</th>
+                <th scope="col" title="ท่อนที่ดังสุด ลบ ท่อนที่เบาสุด — ยิ่งมากยิ่งมีคอนทราสต์ทางอารมณ์">ช่วงห่างระดับเสียง</th>
+                <th scope="col" title="ท่อนที่ช้าสุด เทียบ ท่อนที่เร็วสุด (วินาทีต่อตัวอักษร)">ช่วงห่างจังหวะ</th>
+                <th scope="col">ฟัง</th>
+                <th scope="col">โหลด</th>
+              </tr>
+            </thead>
+            <tbody id="ab-table-body"></tbody>
+          </table>
+        </div>
+
+        <div class="ab-timeline-block">
+          <div class="ab-timeline-title">
+            แผนผังต่อท่อน — ความกว้าง = ความยาวจริง, ความสูง = ความดัง, ช่องว่าง = ความเงียบที่คั่น
+          </div>
+          <div class="ab-legend" id="ab-legend"></div>
+          <div id="ab-timelines"></div>
+        </div>
+      </div>
+    </section>
+
     <!-- Progress Indicator Card (Shown while running) -->
     <section class="card progress-card hidden" id="progress-card">
       <div class="progress-header">
@@ -215,7 +347,7 @@
     <section class="card results-card" id="results-card">
       <div class="results-card-header">
         <div class="card-title-group">
-          <span class="step-num">2</span>
+          <span class="step-num">3</span>
           <h2>ตารางผลลัพธ์การทดสอบ & เปรียบเทียบ Takes (Results Matrix)</h2>
         </div>
         <div class="results-header-actions">
@@ -291,6 +423,6 @@
   <!-- Audio Element for background playback comparison -->
   <audio id="global-suite-audio" preload="none" class="hidden"></audio>
 
-  <script src="/static/test.js?v=1.0.0"></script>
+  <script src="/static/test.js?v=1.1.0"></script>
 </body>
 </html>

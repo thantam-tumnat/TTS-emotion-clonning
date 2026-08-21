@@ -19,6 +19,10 @@ from app.models import (
     SpeakerListResponse,
     SynthesizeRequest,
     PostProcessParams,
+    ABSynthesizeRequest,
+    ABSynthesizeResponse,
+    ABVariantResult,
+    ABChunkMetric,
     PronunciationResponse,
     PronunciationUpdateRequest,
     BenchmarkSessionInitRequest,
@@ -510,6 +514,94 @@ async def synthesize_with_upload_endpoint(
         raise HTTPException(status_code=503, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Synthesis failed: {str(e)}")
+
+
+@app.post("/synthesize/ab", response_model=ABSynthesizeResponse)
+def synthesize_ab_endpoint(req: ABSynthesizeRequest):
+    """Render one generation and return it assembled several ways.
+
+    Two ordinary /synthesize calls cannot answer "did the post-processing help",
+    because the sampler produces a different take each time and that variation is
+    mixed into whatever the processing did. Here the generation happens once and
+    every variant is built from the same chunks, so the difference between the
+    returned files is only the treatment -- and it costs one generation, not one
+    per variant.
+    """
+    text = req.text.strip()
+    if not text:
+        raise HTTPException(status_code=400, detail="Text cannot be empty")
+
+    seen = {v.id for v in req.variants}
+    if len(seen) != len(req.variants):
+        raise HTTPException(status_code=400, detail="Variant ids must be unique")
+
+    parts, tones, breaks = _plan_chunks(
+        text,
+        auto_annotate=req.auto_annotate,
+        guidance=req.guidance,
+        model=req.model,
+    )
+
+    specs = [
+        {
+            "id": v.id,
+            "post_process": v.post_process,
+            "params": v.params.model_dump(exclude_none=True) if v.params else None,
+        }
+        for v in req.variants
+    ]
+
+    run_id = f"ab_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
+    try:
+        takes, sample_rate, chunk_tones = siangtts_service.synthesize_variants(
+            parts,
+            variants=specs,
+            speaker_id=req.speaker_id,
+            cfg_value=req.cfg_value,
+            inference_timesteps=req.inference_timesteps,
+            tones=tones,
+            breaks=breaks,
+            lora_mode=req.lora_mode or "on",
+        )
+    except SynthesizerUnavailable as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"A/B synthesis failed: {str(e)}")
+
+    # Written into the benchmark runs tree so the existing audio route can serve
+    # them and the existing history cleanup applies.
+    run_dir = benchmark_service._session_dir(run_id)
+
+    results = []
+    for take, spec in zip(takes, req.variants):
+        filename = f"{spec.id}.wav"
+        (run_dir / filename).write_bytes(take["wav"])
+
+        levels = [c["level_db"] for c in take["chunks"] if c["level_db"] is not None]
+        paces = [
+            c["pace_s_per_char"] for c in take["chunks"]
+            if c.get("pace_s_per_char")
+        ]
+        results.append(ABVariantResult(
+            id=spec.id,
+            label=spec.label,
+            filename=filename,
+            audio_url=f"/api/benchmark/audio/{run_id}/{filename}",
+            dur_s=take["dur_s"],
+            level_spread_db=round(max(levels) - min(levels), 2) if len(levels) > 1 else None,
+            pace_spread_pct=(
+                round((max(paces) / min(paces) - 1) * 100, 1) if len(paces) > 1 else None
+            ),
+            chunks=[ABChunkMetric(**c) for c in take["chunks"]],
+        ))
+
+    return ABSynthesizeResponse(
+        run_id=run_id,
+        sample_rate=sample_rate,
+        chunk_count=len(chunk_tones),
+        tones=chunk_tones,
+        variants=results,
+    )
 
 
 # ---------------------------------------------------------------------------
