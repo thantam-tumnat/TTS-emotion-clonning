@@ -7,6 +7,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import ValidationError
 
 from app.models import (
     AnnotateRequest,
@@ -17,6 +18,7 @@ from app.models import (
     SpeakResponse,
     SpeakerListResponse,
     SynthesizeRequest,
+    PostProcessParams,
     PronunciationResponse,
     PronunciationUpdateRequest,
     BenchmarkSessionInitRequest,
@@ -420,6 +422,10 @@ async def synthesize_endpoint(req: SynthesizeRequest):
             tones=tones,
             breaks=breaks,
             post_process=req.post_process,
+            post_process_params=(
+                req.post_process_params.model_dump(exclude_none=True)
+                if req.post_process_params else None
+            ),
             lora_mode=lora_mode,
         )
         return Response(
@@ -444,6 +450,9 @@ async def synthesize_with_upload_endpoint(
     auto_annotate: bool = Form(True),
     lora_mode: Optional[str] = Form("on"),
     post_process: bool = Form(True),
+    post_process_params: Optional[str] = Form(
+        None, description="JSON object of audio_post overrides; same shape as PostProcessParams"
+    ),
 ):
     """
     Synthesizes speech with a direct one-off uploaded reference audio file.
@@ -463,6 +472,17 @@ async def synthesize_with_upload_endpoint(
     audio_bytes = await file.read() if file else None
     ref_filename = file.filename if file else None
 
+    # Multipart carries the overrides as a JSON string; a malformed one is a client
+    # error rather than something to silently render at defaults.
+    dsp_params = None
+    if post_process_params:
+        try:
+            dsp_params = PostProcessParams.model_validate_json(post_process_params).model_dump(
+                exclude_none=True
+            )
+        except (ValidationError, ValueError) as e:
+            raise HTTPException(status_code=422, detail=f"Invalid post_process_params: {e}")
+
     active_lora_mode = lora_mode or "on"
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     lora_tag = "lora_off" if active_lora_mode == "off" else "lora_on"
@@ -478,6 +498,7 @@ async def synthesize_with_upload_endpoint(
             tones=tones,
             breaks=breaks,
             post_process=post_process,
+            post_process_params=dsp_params,
             lora_mode=active_lora_mode,
         )
         return Response(

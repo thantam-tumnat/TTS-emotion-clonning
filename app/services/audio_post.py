@@ -16,7 +16,8 @@ are placed by family and marked as such, so re-measuring can replace them.
 from __future__ import annotations
 
 import math
-from typing import List, NamedTuple, Optional, Sequence, Tuple
+from dataclasses import dataclass, field, replace as _dc_replace
+from typing import Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 import numpy as np
 
@@ -98,6 +99,55 @@ class Chunk(NamedTuple):
     # Characters of spoken body text. Rate matching needs it to tell "this chunk is
     # slow" from "this chunk is long"; without it rate matching runs open-loop.
     text_len: int = 0
+
+
+@dataclass(frozen=True)
+class PostProcessConfig:
+    """Every knob the assembler exposes, defaulted to the measured constants above.
+
+    The constants are the reference values and stay the defaults; this exists so a
+    caller -- the UI, a sweep, an A/B -- can move one of them for a single take
+    without editing the module. ``from_dict`` ignores unknown and ``None`` entries so
+    a partial payload from the client only overrides what it actually set.
+    """
+    gap_same_tone_s: float = GAP_SAME_TONE_S
+    gap_emotion_s: float = GAP_EMOTION_S
+    gap_paragraph_s: float = GAP_PARAGRAPH_S
+    match_energy: bool = True
+    match_rate: bool = True
+    energy_match: float = ENERGY_MATCH
+    max_stretch: float = MAX_STRETCH
+    trim_floor_db: float = TRIM_FLOOR_DB
+    trim_keep_s: float = TRIM_KEEP_S
+    edge_fade_s: float = EDGE_FADE_S
+    output_peak: float = OUTPUT_PEAK
+    # Per-tone overrides, merged over the module tables rather than replacing them,
+    # so a client that only cares about "sad" does not have to resend all ten.
+    tone_energy_db: Dict[str, float] = field(default_factory=dict)
+    tone_duration_ratio: Dict[str, float] = field(default_factory=dict)
+
+    @classmethod
+    def from_dict(cls, data: Optional[dict]) -> "PostProcessConfig":
+        if not data:
+            return cls()
+        known = {f for f in cls.__dataclass_fields__}
+        clean = {k: v for k, v in data.items() if k in known and v is not None}
+        return cls(**clean)
+
+    def energy_for(self, tone: Optional[str]) -> float:
+        key = tone or "neutral"
+        if key in self.tone_energy_db:
+            return float(self.tone_energy_db[key])
+        return TONE_ENERGY_DB.get(key, 0.0)
+
+    def duration_for(self, tone: Optional[str]) -> float:
+        key = tone or "neutral"
+        if key in self.tone_duration_ratio:
+            return float(self.tone_duration_ratio[key])
+        return TONE_DURATION_RATIO.get(key, 1.0)
+
+
+DEFAULT_POST_PROCESS = PostProcessConfig()
 
 
 # --------------------------------------------------------------------------- #
@@ -231,7 +281,7 @@ def time_stretch(x: np.ndarray, sr: int, ratio: float, frame_s: float = 0.040,
 # Assembly
 # --------------------------------------------------------------------------- #
 
-def _match_rate(prepared: List[Chunk], sr: int) -> List[Chunk]:
+def _match_rate(prepared: List[Chunk], sr: int, cfg: PostProcessConfig = DEFAULT_POST_PROCESS) -> List[Chunk]:
     """Nudge each chunk toward its measured pace target, correcting from where it is.
 
     This has to be closed-loop. Applying the target ratio directly assumes the model
@@ -258,7 +308,7 @@ def _match_rate(prepared: List[Chunk], sr: int) -> List[Chunk]:
     single-tone take from having its ratio applied a second time on top of whatever
     the model already did.
     """
-    wanted = [TONE_DURATION_RATIO.get(c.tone or "neutral", 1.0) for c in prepared]
+    wanted = [cfg.duration_for(c.tone) for c in prepared]
 
     lengths = [max(c.text_len, 1) if c.text_len else 1 for c in prepared]
     pace = [len(c.audio) / sr / n for c, n in zip(prepared, lengths)]
@@ -275,20 +325,22 @@ def _match_rate(prepared: List[Chunk], sr: int) -> List[Chunk]:
             retimed.append(c)
             continue
         target_pace = baseline * w
-        ratio = float(np.clip(target_pace / p, 1 - MAX_STRETCH, 1 + MAX_STRETCH))
+        ratio = float(np.clip(target_pace / p, 1 - cfg.max_stretch, 1 + cfg.max_stretch))
         retimed.append(c._replace(audio=time_stretch(c.audio, sr, ratio)))
     return retimed
 
 
-def gap_before(chunk: Chunk, prev: Optional[Chunk]) -> float:
+def gap_before(
+    chunk: Chunk, prev: Optional[Chunk], cfg: PostProcessConfig = DEFAULT_POST_PROCESS
+) -> float:
     """Seconds of silence to place ahead of ``chunk``."""
     if prev is None:
         return 0.0
     if chunk.break_before:
-        return GAP_PARAGRAPH_S
+        return cfg.gap_paragraph_s
     if chunk.tone != prev.tone:
-        return GAP_EMOTION_S
-    return GAP_SAME_TONE_S
+        return cfg.gap_emotion_s
+    return cfg.gap_same_tone_s
 
 
 Span = Tuple[float, float]
@@ -331,12 +383,13 @@ def assemble(
     chunks: Sequence[Chunk],
     sr: int,
     *,
-    match_energy: bool = True,
-    match_rate: bool = True,
+    match_energy: Optional[bool] = None,
+    match_rate: Optional[bool] = None,
+    config: Optional[PostProcessConfig] = None,
 ) -> np.ndarray:
     """Trim, level, pace and join tone chunks into one take."""
     return assemble_with_spans(
-        chunks, sr, match_energy=match_energy, match_rate=match_rate
+        chunks, sr, match_energy=match_energy, match_rate=match_rate, config=config
     )[0]
 
 
@@ -344,8 +397,9 @@ def assemble_with_spans(
     chunks: Sequence[Chunk],
     sr: int,
     *,
-    match_energy: bool = True,
-    match_rate: bool = True,
+    match_energy: Optional[bool] = None,
+    match_rate: Optional[bool] = None,
+    config: Optional[PostProcessConfig] = None,
 ) -> Tuple[np.ndarray, List[Span]]:
     """Trim, level, pace and join tone chunks, reporting where each landed.
 
@@ -356,22 +410,37 @@ def assemble_with_spans(
     from the pace it was actually rendered at toward its target, bounded to +/-15%
     so it stays transparent. See _match_rate for why that correction is closed-loop.
     """
+    cfg = config or DEFAULT_POST_PROCESS
+    # The two legacy keyword flags still win when passed, so existing callers keep
+    # their behaviour; otherwise the config carries them.
+    if match_energy is not None or match_rate is not None:
+        cfg = _dc_replace(
+            cfg,
+            match_energy=cfg.match_energy if match_energy is None else match_energy,
+            match_rate=cfg.match_rate if match_rate is None else match_rate,
+        )
+
     usable = [c for c in chunks if c.audio is not None and np.asarray(c.audio).size]
     if not usable:
         return np.zeros(0, dtype="float32"), []
 
     prepared: List[Chunk] = [
-        c._replace(audio=trim_silence(remove_dc(np.asarray(c.audio, dtype="float32")), sr))
+        c._replace(audio=trim_silence(
+            remove_dc(np.asarray(c.audio, dtype="float32")),
+            sr,
+            floor_db=cfg.trim_floor_db,
+            keep_s=cfg.trim_keep_s,
+        ))
         for c in usable
     ]
     prepared = [c for c in prepared if c.audio.size]
     if not prepared:
         return np.zeros(0, dtype="float32"), []
 
-    if match_rate:
-        prepared = _match_rate(prepared, sr)
+    if cfg.match_rate:
+        prepared = _match_rate(prepared, sr, cfg)
 
-    if match_energy:
+    if cfg.match_energy:
         levels = [voiced_rms(c.audio, sr) for c in prepared]
         usable_levels = [l for l in levels if l > 1e-6]
         baseline = float(np.median(usable_levels)) if usable_levels else 0.0
@@ -381,8 +450,8 @@ def assemble_with_spans(
                 if level <= 1e-6:
                     levelled.append(c)
                     continue
-                correction = 20 * math.log10(baseline / level) * ENERGY_MATCH
-                target = TONE_ENERGY_DB.get(c.tone or "neutral", 0.0)
+                correction = 20 * math.log10(baseline / level) * cfg.energy_match
+                target = cfg.energy_for(c.tone)
                 levelled.append(c._replace(audio=apply_gain_db(c.audio, correction + target)))
             prepared = levelled
 
@@ -391,12 +460,12 @@ def assemble_with_spans(
     prev: Optional[Chunk] = None
     cursor = 0
     for c in prepared:
-        gap = gap_before(c, prev)
+        gap = gap_before(c, prev, cfg)
         if gap > 0:
             pad = np.zeros(int(sr * gap), dtype="float32")
             pieces.append(pad)
             cursor += pad.size
-        body = fade_edges(c.audio, sr)
+        body = fade_edges(c.audio, sr, cfg.edge_fade_s)
         spans.append((cursor / sr, (cursor + body.size) / sr))
         pieces.append(body)
         cursor += body.size
@@ -405,6 +474,6 @@ def assemble_with_spans(
     audio = np.concatenate(pieces) if len(pieces) > 1 else pieces[0]
 
     peak = float(np.max(np.abs(audio))) if audio.size else 0.0
-    if peak > OUTPUT_PEAK:
-        audio = audio * (OUTPUT_PEAK / peak)
+    if peak > cfg.output_peak:
+        audio = audio * (cfg.output_peak / peak)
     return audio.astype("float32"), spans

@@ -125,6 +125,29 @@ class SpeakerListResponse(BaseModel):
     speakers: List[SpeakerInfo]
 
 
+class PostProcessParams(BaseModel):
+    """Per-request overrides for the audio_post DSP module.
+
+    Every field is optional and defaults to ``None``, which means "leave the measured
+    constant in app/services/audio_post.py alone". Only the keys the client actually
+    moved are sent, so the reference values stay the source of truth.
+    """
+    gap_same_tone_s: Optional[float] = Field(default=None, ge=0.0, le=3.0)
+    gap_emotion_s: Optional[float] = Field(default=None, ge=0.0, le=3.0)
+    gap_paragraph_s: Optional[float] = Field(default=None, ge=0.0, le=5.0)
+    match_energy: Optional[bool] = None
+    match_rate: Optional[bool] = None
+    energy_match: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    max_stretch: Optional[float] = Field(default=None, ge=0.0, le=0.5)
+    trim_floor_db: Optional[float] = Field(default=None, ge=10.0, le=80.0)
+    trim_keep_s: Optional[float] = Field(default=None, ge=0.0, le=0.5)
+    edge_fade_s: Optional[float] = Field(default=None, ge=0.0, le=0.2)
+    output_peak: Optional[float] = Field(default=None, ge=0.1, le=1.0)
+    # Per-tone overrides, merged over the module tables. Keys are Tone values.
+    tone_energy_db: Optional[dict[str, float]] = None
+    tone_duration_ratio: Optional[dict[str, float]] = None
+
+
 class SynthesizeRequest(BaseModel):
     text: str = Field(min_length=1, max_length=5000)
     speaker_id: Optional[str] = None
@@ -138,6 +161,9 @@ class SynthesizeRequest(BaseModel):
         default="on", description="LoRA mode: 'on' (Thai optimized), 'off' (Base model), or 'legacy' (shipped 2.0/2.0)"
     )
     post_process: bool = Field(default=True, description="Enable audio_post DSP processing (loudness, pace, pauses)")
+    post_process_params: Optional[PostProcessParams] = Field(
+        default=None, description="Per-request overrides for the audio_post DSP constants"
+    )
 
 
 class LLMClauseItem(BaseModel):
@@ -177,6 +203,7 @@ class BenchmarkSessionInitRequest(BaseModel):
     inference_timesteps: int = Field(default=10, ge=4, le=50)
     lora_mode: Optional[Literal["on", "off", "legacy"]] = "on"
     post_process: bool = True
+    post_process_params: Optional[PostProcessParams] = None
 
 
 class BenchmarkSessionInitResponse(BaseModel):
@@ -203,6 +230,7 @@ class BenchmarkTakeRequest(BaseModel):
     inference_timesteps: int = Field(default=10, ge=4, le=50)
     lora_mode: Optional[Literal["on", "off", "legacy"]] = "on"
     post_process: bool = True
+    post_process_params: Optional[PostProcessParams] = None
 
 
 class BenchmarkTakeResult(BaseModel):

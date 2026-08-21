@@ -327,6 +327,10 @@ class BenchmarkService:
                 tones=[req.emotion],
                 breaks=[False],
                 post_process=req.post_process,
+                post_process_params=(
+                    req.post_process_params.model_dump(exclude_none=True)
+                    if req.post_process_params else None
+                ),
                 lora_mode=req.lora_mode or "on",
             )
 

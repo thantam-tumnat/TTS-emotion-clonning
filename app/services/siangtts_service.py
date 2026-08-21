@@ -1110,6 +1110,7 @@ class SiangTTSService:
         tones: Optional[Sequence[Optional[str]]] = None,
         breaks: Optional[Sequence[bool]] = None,
         post_process: bool = True,
+        post_process_params: Optional[dict] = None,
         lora_mode: Optional[str] = "on",
     ) -> bytes:
         """Synthesize several chunks against one voice and join them into one take.
@@ -1123,10 +1124,13 @@ class SiangTTSService:
         them the chunks are still trimmed, faded and levelled, just without the
         per-emotion offsets. ``post_process=False`` returns the bare concatenation,
         which is what tools/ab_gen.py renders as the "before" take.
+
+        ``post_process_params`` overrides individual audio_post constants for this
+        take only; keys it omits keep their measured defaults.
         """
         import soundfile as sf
 
-        from app.services.audio_post import assemble, butt_join
+        from app.services.audio_post import PostProcessConfig, assemble, butt_join
 
         rendered, sample_rate = self.render_chunks(
             texts,
@@ -1140,7 +1144,11 @@ class SiangTTSService:
             lora_mode=lora_mode,
         )
 
-        audio = assemble(rendered, sample_rate) if post_process else butt_join(rendered, sample_rate)
+        if post_process:
+            config = PostProcessConfig.from_dict(post_process_params)
+            audio = assemble(rendered, sample_rate, config=config)
+        else:
+            audio = butt_join(rendered, sample_rate)
 
         out_buf = io.BytesIO()
         sf.write(out_buf, audio, sample_rate, format="WAV", subtype="PCM_16")

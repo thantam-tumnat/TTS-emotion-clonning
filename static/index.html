@@ -262,6 +262,178 @@
             <small class="param-hint">💡 ค่า CFG ควบคุมความเข้มข้นของการแสดงอารมณ์ตามแท็ก (แนะนำ 2.0 – 3.5)</small>
           </div>
 
+          <!-- Post-Process DSP Module -->
+          <div class="form-group dsp-section" id="dsp-section" style="margin-top: 14px;">
+            <div class="dsp-toggle-row">
+              <label class="dsp-switch" id="dsp-switch-label">
+                <input type="checkbox" id="chk-post-process" checked>
+                <span class="dsp-switch-track"><span class="dsp-switch-thumb"></span></span>
+                <span class="dsp-switch-text">
+                  <span class="dsp-switch-title">🎚️ Post-Process DSP</span>
+                  <span class="dsp-switch-sub" id="dsp-state-sub">เปิดอยู่ — ปรับระดับเสียง จังหวะ และช่องว่างตามอารมณ์</span>
+                </span>
+              </label>
+              <button type="button" id="btn-dsp-reset" class="btn-icon-action" title="คืนค่าเริ่มต้นทั้งหมด">
+                <span>↺ คืนค่าเริ่มต้น</span>
+              </button>
+            </div>
+
+            <div id="dsp-params" class="dsp-params">
+              <div class="dsp-preset-pills">
+                <button type="button" class="dsp-pill-btn active" data-dsp-preset="reference">⭐ มาตรฐาน (ElevenLabs ref)</button>
+                <button type="button" class="dsp-pill-btn" data-dsp-preset="narration">📖 พูดกระชับ</button>
+                <button type="button" class="dsp-pill-btn" data-dsp-preset="dramatic">🎭 เว้นจังหวะเยอะ</button>
+                <button type="button" class="dsp-pill-btn" data-dsp-preset="minimal">🪶 แตะเบาสุด</button>
+                <button type="button" class="dsp-pill-btn dsp-pill-control" data-dsp-preset="cleanup">🚫 ปิดชั้นอารมณ์ (Cleanup only)</button>
+              </div>
+
+              <div class="dsp-group">
+                <div class="dsp-group-title">⏸️ ช่องว่างระหว่างท่อน (Gap Policy)</div>
+                <div class="dsp-grid">
+                  <div class="param-item">
+                    <label for="dsp-gap-same">โทนเดิม: <span class="dsp-val" id="val-dsp-gap-same">0.20</span> วิ</label>
+                    <input type="range" id="dsp-gap-same" min="0" max="1.5" step="0.01" value="0.20" data-dsp-key="gap_same_tone_s" data-dsp-default="0.20">
+                    <small class="param-hint">คั่นระหว่างประโยคที่อารมณ์เดียวกัน</small>
+                  </div>
+                  <div class="param-item">
+                    <label for="dsp-gap-emotion">เปลี่ยนอารมณ์: <span class="dsp-val" id="val-dsp-gap-emotion">0.45</span> วิ</label>
+                    <input type="range" id="dsp-gap-emotion" min="0" max="2" step="0.01" value="0.45" data-dsp-key="gap_emotion_s" data-dsp-default="0.45">
+                    <small class="param-hint">คั่นตรงจุดที่อารมณ์เปลี่ยน</small>
+                  </div>
+                  <div class="param-item">
+                    <label for="dsp-gap-para">ขึ้นย่อหน้า: <span class="dsp-val" id="val-dsp-gap-para">1.20</span> วิ</label>
+                    <input type="range" id="dsp-gap-para" min="0" max="3" step="0.05" value="1.20" data-dsp-key="gap_paragraph_s" data-dsp-default="1.20">
+                    <small class="param-hint">คั่นตรงที่ต้นฉบับขึ้นบรรทัดใหม่</small>
+                  </div>
+                </div>
+              </div>
+
+              <div class="dsp-group">
+                <div class="dsp-group-title">🎛️ ปรับระดับเสียง &amp; ความเร็ว (Energy / Rate Match)</div>
+                <div class="dsp-subtoggles">
+                  <label class="dsp-chk">
+                    <input type="checkbox" id="dsp-match-energy" checked data-dsp-key="match_energy" data-dsp-default="true">
+                    <span>เปิดปรับระดับเสียง (Energy Match)</span>
+                  </label>
+                  <label class="dsp-chk">
+                    <input type="checkbox" id="dsp-match-rate" checked data-dsp-key="match_rate" data-dsp-default="true">
+                    <span>เปิดปรับความเร็ว (Rate Match)</span>
+                  </label>
+                </div>
+                <div class="dsp-grid">
+                  <div class="param-item">
+                    <label for="dsp-energy-match">ความแรงการปรับระดับ: <span class="dsp-val" id="val-dsp-energy-match">0.70</span></label>
+                    <input type="range" id="dsp-energy-match" min="0" max="1" step="0.05" value="0.70" data-dsp-key="energy_match" data-dsp-default="0.70">
+                    <small class="param-hint">0 = ปล่อยตามที่โมเดลปั้นมา, 1 = รีดให้เท่ากันหมดแล้วค่อยใส่ออฟเซ็ตอารมณ์</small>
+                  </div>
+                  <div class="param-item">
+                    <label for="dsp-max-stretch">ยืด/หดได้สูงสุด: <span class="dsp-val" id="val-dsp-max-stretch">15</span>%</label>
+                    <input type="range" id="dsp-max-stretch" min="0" max="40" step="1" value="15" data-dsp-key="max_stretch" data-dsp-default="15" data-dsp-scale="0.01">
+                    <small class="param-hint">เกิน 15% เริ่มได้ยินว่าโดนประมวลผล</small>
+                  </div>
+                </div>
+              </div>
+
+              <div class="dsp-group">
+                <div class="dsp-group-title">✂️ ตัดขอบ &amp; ระดับขาออก (Trim / Fade / Peak)</div>
+                <div class="dsp-grid">
+                  <div class="param-item">
+                    <label for="dsp-trim-floor">เกณฑ์ตัดความเงียบ: <span class="dsp-val" id="val-dsp-trim-floor">45</span> dB</label>
+                    <input type="range" id="dsp-trim-floor" min="15" max="70" step="1" value="45" data-dsp-key="trim_floor_db" data-dsp-default="45">
+                    <small class="param-hint">ต่ำกว่าจุดดังสุดเท่านี้ถือว่าเงียบ</small>
+                  </div>
+                  <div class="param-item">
+                    <label for="dsp-trim-keep">เผื่อขอบไว้: <span class="dsp-val" id="val-dsp-trim-keep">30</span> ms</label>
+                    <input type="range" id="dsp-trim-keep" min="0" max="200" step="5" value="30" data-dsp-key="trim_keep_s" data-dsp-default="30" data-dsp-scale="0.001">
+                    <small class="param-hint">กันเสียงเริ่มห้วนเกินไป</small>
+                  </div>
+                  <div class="param-item">
+                    <label for="dsp-edge-fade">Fade ขอบ: <span class="dsp-val" id="val-dsp-edge-fade">15</span> ms</label>
+                    <input type="range" id="dsp-edge-fade" min="0" max="80" step="1" value="15" data-dsp-key="edge_fade_s" data-dsp-default="15" data-dsp-scale="0.001">
+                    <small class="param-hint">ยาวพอกัน click สั้นพอไม่กินเสียงพยัญชนะ</small>
+                  </div>
+                  <div class="param-item">
+                    <label for="dsp-output-peak">ระดับสูงสุดขาออก: <span class="dsp-val" id="val-dsp-output-peak">0.95</span></label>
+                    <input type="range" id="dsp-output-peak" min="0.5" max="1" step="0.01" value="0.95" data-dsp-key="output_peak" data-dsp-default="0.95">
+                    <small class="param-hint">normalize ลงมาเมื่อเกินค่านี้</small>
+                  </div>
+                </div>
+              </div>
+
+              <details class="dsp-tone-details" id="dsp-tone-details">
+                <summary>🎭 ตารางต่ออารมณ์ (dB &amp; ความเร็ว)</summary>
+                <div class="dsp-tone-wrap">
+                  <table class="dsp-tone-table">
+                    <thead>
+                      <tr>
+                        <th scope="col">อารมณ์</th>
+                        <th scope="col">ระดับเสียง (dB)</th>
+                        <th scope="col">ความเร็ว (×)</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                  <tr data-tone="neutral">
+                    <th scope="row">😐 เฉยๆ</th>
+                    <td><input type="number" class="dsp-tone-energy" data-tone="neutral" step="0.1" min="-12" max="12" value="0.0" data-dsp-default="0.0"></td>
+                    <td><input type="number" class="dsp-tone-rate" data-tone="neutral" step="0.005" min="0.7" max="1.3" value="1.0" data-dsp-default="1.0"></td>
+                  </tr>
+                  <tr data-tone="happy">
+                    <th scope="row">😊 มีความสุข</th>
+                    <td><input type="number" class="dsp-tone-energy" data-tone="happy" step="0.1" min="-12" max="12" value="-0.5" data-dsp-default="-0.5"></td>
+                    <td><input type="number" class="dsp-tone-rate" data-tone="happy" step="0.005" min="0.7" max="1.3" value="0.927" data-dsp-default="0.927"></td>
+                  </tr>
+                  <tr data-tone="sad">
+                    <th scope="row">😢 เศร้า</th>
+                    <td><input type="number" class="dsp-tone-energy" data-tone="sad" step="0.1" min="-12" max="12" value="-2.0" data-dsp-default="-2.0"></td>
+                    <td><input type="number" class="dsp-tone-rate" data-tone="sad" step="0.005" min="0.7" max="1.3" value="1.035" data-dsp-default="1.035"></td>
+                  </tr>
+                  <tr data-tone="angry">
+                    <th scope="row">😠 โกรธ</th>
+                    <td><input type="number" class="dsp-tone-energy" data-tone="angry" step="0.1" min="-12" max="12" value="3.0" data-dsp-default="3.0"></td>
+                    <td><input type="number" class="dsp-tone-rate" data-tone="angry" step="0.005" min="0.7" max="1.3" value="0.95" data-dsp-default="0.95"></td>
+                  </tr>
+                  <tr data-tone="excited">
+                    <th scope="row">🤩 ตื่นเต้น</th>
+                    <td><input type="number" class="dsp-tone-energy" data-tone="excited" step="0.1" min="-12" max="12" value="2.5" data-dsp-default="2.5"></td>
+                    <td><input type="number" class="dsp-tone-rate" data-tone="excited" step="0.005" min="0.7" max="1.3" value="0.9" data-dsp-default="0.9"></td>
+                  </tr>
+                  <tr data-tone="calm">
+                    <th scope="row">😌 สงบ</th>
+                    <td><input type="number" class="dsp-tone-energy" data-tone="calm" step="0.1" min="-12" max="12" value="-2.0" data-dsp-default="-2.0"></td>
+                    <td><input type="number" class="dsp-tone-rate" data-tone="calm" step="0.005" min="0.7" max="1.3" value="1.08" data-dsp-default="1.08"></td>
+                  </tr>
+                  <tr data-tone="nervous">
+                    <th scope="row">😬 ประหม่า</th>
+                    <td><input type="number" class="dsp-tone-energy" data-tone="nervous" step="0.1" min="-12" max="12" value="-0.5" data-dsp-default="-0.5"></td>
+                    <td><input type="number" class="dsp-tone-rate" data-tone="nervous" step="0.005" min="0.7" max="1.3" value="1.0" data-dsp-default="1.0"></td>
+                  </tr>
+                  <tr data-tone="sarcastic">
+                    <th scope="row">🙄 ประชด</th>
+                    <td><input type="number" class="dsp-tone-energy" data-tone="sarcastic" step="0.1" min="-12" max="12" value="-0.5" data-dsp-default="-0.5"></td>
+                    <td><input type="number" class="dsp-tone-rate" data-tone="sarcastic" step="0.005" min="0.7" max="1.3" value="1.05" data-dsp-default="1.05"></td>
+                  </tr>
+                  <tr data-tone="scared">
+                    <th scope="row">😨 กลัว</th>
+                    <td><input type="number" class="dsp-tone-energy" data-tone="scared" step="0.1" min="-12" max="12" value="3.0" data-dsp-default="3.0"></td>
+                    <td><input type="number" class="dsp-tone-rate" data-tone="scared" step="0.005" min="0.7" max="1.3" value="0.966" data-dsp-default="0.966"></td>
+                  </tr>
+                  <tr data-tone="tired">
+                    <th scope="row">😪 เหนื่อย</th>
+                    <td><input type="number" class="dsp-tone-energy" data-tone="tired" step="0.1" min="-12" max="12" value="-1.4" data-dsp-default="-1.4"></td>
+                    <td><input type="number" class="dsp-tone-rate" data-tone="tired" step="0.005" min="0.7" max="1.3" value="1.073" data-dsp-default="1.073"></td>
+                  </tr>
+                    </tbody>
+                  </table>
+                  <small class="param-hint">💡 dB เทียบกับระดับ neutral ของ take นั้น / ความเร็ว &gt;1 = ยาวขึ้น (ช้าลง)</small>
+                </div>
+              </details>
+            </div>
+
+            <div id="dsp-off-note" class="dsp-off-note hidden">
+              🚫 ปิด DSP อยู่ — เสียงจะถูกต่อกันดิบๆ คั่น 60ms คงที่ ไม่ตัดขอบ ไม่ปรับระดับ ไม่ปรับจังหวะ
+            </div>
+          </div>
+
           <!-- Advanced Parameters Collapsible -->
           <details class="advanced-details" id="advanced-details">
             <summary>⚙️ พารามิเตอร์ขั้นสูงเพิ่มเติม (Advanced Timesteps)</summary>

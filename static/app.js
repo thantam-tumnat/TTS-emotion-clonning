@@ -104,6 +104,22 @@ document.addEventListener('DOMContentLoaded', () => {
   const loraToggleOptions = document.querySelectorAll('.lora-toggle-opt');
   const loraCheckInputs = document.querySelectorAll('input[name="lora_mode_check"]');
 
+  // Post-Process DSP module
+  const chkPostProcess = document.getElementById('chk-post-process');
+  const dspSection = document.getElementById('dsp-section');
+  const dspParams = document.getElementById('dsp-params');
+  const dspOffNote = document.getElementById('dsp-off-note');
+  const dspStateSub = document.getElementById('dsp-state-sub');
+  const btnDspReset = document.getElementById('btn-dsp-reset');
+  const dspPresetButtons = document.querySelectorAll('.dsp-pill-btn');
+  // Every control that maps onto a PostProcessParams field carries data-dsp-key,
+  // so collecting and resetting stay table-driven instead of listing ids twice.
+  const dspControls = document.querySelectorAll('[data-dsp-key]');
+  const dspToneEnergy = document.querySelectorAll('.dsp-tone-energy');
+  const dspToneRate = document.querySelectorAll('.dsp-tone-rate');
+  const dspMatchEnergy = document.getElementById('dsp-match-energy');
+  const dspMatchRate = document.getElementById('dsp-match-rate');
+
   let selectedAudioFile = null;
   let currentAudioUrlOn = null;
   let currentAudioUrlOff = null;
@@ -118,6 +134,213 @@ document.addEventListener('DOMContentLoaded', () => {
     const pad = (n) => String(n).padStart(2, '0');
     return `${now.getFullYear()}${pad(now.getMonth() + 1)}${pad(now.getDate())}_${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
   }
+
+  // --- Post-Process DSP -----------------------------------------------------
+
+  // A control's on-screen unit is not always the API's unit (ms vs s, % vs ratio);
+  // data-dsp-scale carries the multiplier so the label can stay human-readable.
+  function dspValue(el) {
+    if (el.type === 'checkbox') return el.checked;
+    const scale = parseFloat(el.dataset.dspScale || '1');
+    const raw = parseFloat(el.value);
+    return Number.isFinite(raw) ? raw * scale : null;
+  }
+
+  function isDspEnabled() {
+    return !chkPostProcess || chkPostProcess.checked;
+  }
+
+  // Only send what the user actually moved. Anything left at its default stays out
+  // of the payload so the measured constants in audio_post.py remain authoritative.
+  function collectDspParams() {
+    if (!isDspEnabled()) return null;
+    const params = {};
+
+    dspControls.forEach((el) => {
+      const key = el.dataset.dspKey;
+      if (!key) return;
+      const def = el.dataset.dspDefault;
+      if (el.type === 'checkbox') {
+        if (String(el.checked) !== def) params[key] = el.checked;
+        return;
+      }
+      if (parseFloat(el.value) !== parseFloat(def)) {
+        const v = dspValue(el);
+        if (v !== null) params[key] = v;
+      }
+    });
+
+    const energy = {};
+    dspToneEnergy.forEach((el) => {
+      const v = parseFloat(el.value);
+      if (Number.isFinite(v) && v !== parseFloat(el.dataset.dspDefault)) {
+        energy[el.dataset.tone] = v;
+      }
+    });
+    if (Object.keys(energy).length) params.tone_energy_db = energy;
+
+    const rate = {};
+    dspToneRate.forEach((el) => {
+      const v = parseFloat(el.value);
+      if (Number.isFinite(v) && v !== parseFloat(el.dataset.dspDefault)) {
+        rate[el.dataset.tone] = v;
+      }
+    });
+    if (Object.keys(rate).length) params.tone_duration_ratio = rate;
+
+    return Object.keys(params).length ? params : null;
+  }
+
+  // Sliders own their own readout span, named val-<slider id>.
+  function syncDspLabel(el) {
+    const out = document.getElementById(`val-${el.id}`);
+    if (!out) return;
+    const step = parseFloat(el.step || '1');
+    const v = parseFloat(el.value);
+    out.textContent = step < 0.05 ? v.toFixed(2) : (step < 1 ? v.toFixed(2) : String(v));
+  }
+
+  function syncAllDspLabels() {
+    dspControls.forEach((el) => {
+      if (el.type === 'range') syncDspLabel(el);
+    });
+  }
+
+  // Each column of the per-tone table is only read when its matcher is on, so a
+  // value typed into a dead column would silently do nothing. Disable it instead.
+  function syncToneTableEnabled() {
+    const energyOn = !dspMatchEnergy || dspMatchEnergy.checked;
+    const rateOn = !dspMatchRate || dspMatchRate.checked;
+    dspToneEnergy.forEach((el) => {
+      el.disabled = !energyOn;
+      el.title = energyOn ? '' : 'ปิด "เปิดปรับระดับเสียง" อยู่ — ค่าคอลัมน์นี้ไม่ถูกใช้';
+    });
+    dspToneRate.forEach((el) => {
+      el.disabled = !rateOn;
+      el.title = rateOn ? '' : 'ปิด "เปิดปรับความเร็ว" อยู่ — ค่าคอลัมน์นี้ไม่ถูกใช้';
+    });
+    const details = document.getElementById('dsp-tone-details');
+    if (details) details.classList.toggle('dsp-tone-dead', !energyOn && !rateOn);
+    const energySlider = document.getElementById('dsp-energy-match');
+    if (energySlider) energySlider.disabled = !energyOn;
+    const stretchSlider = document.getElementById('dsp-max-stretch');
+    if (stretchSlider) stretchSlider.disabled = !rateOn;
+  }
+
+  function updateDspVisibility() {
+    const on = isDspEnabled();
+    if (dspParams) dspParams.classList.toggle('hidden', !on);
+    if (dspOffNote) dspOffNote.classList.toggle('hidden', on);
+    if (dspSection) dspSection.classList.toggle('dsp-disabled', !on);
+    if (dspStateSub) {
+      dspStateSub.textContent = on
+        ? 'เปิดอยู่ — ปรับระดับเสียง จังหวะ และช่องว่างตามอารมณ์'
+        : 'ปิดอยู่ — ต่อเสียงดิบจาก TTS ตรงๆ';
+    }
+
+    // With the module off, every mode already renders raw, so the raw variant is
+    // a duplicate take -- and each take is a full generation. Lock it out rather
+    // than let it spend the GPU twice for the same thing.
+    const rawInput = document.querySelector('input[value="raw_tts"]');
+    const rawOpt = document.getElementById('opt-raw-tts');
+    if (rawInput) {
+      rawInput.disabled = !on;
+      if (!on && rawInput.checked) {
+        rawInput.checked = false;
+        if (rawOpt) rawOpt.classList.remove('active');
+      }
+    }
+    if (rawOpt) {
+      rawOpt.classList.toggle('opt-locked', !on);
+      rawOpt.title = on ? '' : 'ปิด DSP อยู่ — ทุกโหมดเป็นเสียงดิบหมดแล้ว ไม่ต้องสร้างซ้ำ';
+    }
+  }
+
+  const DSP_PRESETS = {
+    reference: {},
+    narration: {
+      'dsp-gap-same': 0.14, 'dsp-gap-emotion': 0.30, 'dsp-gap-para': 0.70,
+      'dsp-energy-match': 0.85, 'dsp-max-stretch': 12
+    },
+    dramatic: {
+      'dsp-gap-same': 0.30, 'dsp-gap-emotion': 0.70, 'dsp-gap-para': 1.60,
+      'dsp-energy-match': 0.55, 'dsp-max-stretch': 20
+    },
+    minimal: {
+      'dsp-gap-same': 0.20, 'dsp-gap-emotion': 0.45, 'dsp-gap-para': 1.20,
+      'dsp-energy-match': 0.20, 'dsp-max-stretch': 5, 'dsp-match-rate': false
+    },
+    // The control take for "is the emotion layer earning its place". Keeps every
+    // cleanup step -- DC removal, trimming, edge fades, the gap policy, peak
+    // limiting -- and drops all three things that shape emotion: the per-tone dB
+    // table, the per-tone pace table, and the extra pause at an emotion change.
+    cleanup: {
+      'dsp-match-energy': false,
+      'dsp-match-rate': false,
+      'dsp-gap-emotion': 0.20
+    }
+  };
+
+  function resetDspControls() {
+    dspControls.forEach((el) => {
+      const def = el.dataset.dspDefault;
+      if (def === undefined) return;
+      if (el.type === 'checkbox') el.checked = def === 'true';
+      else el.value = def;
+    });
+    [...dspToneEnergy, ...dspToneRate].forEach((el) => { el.value = el.dataset.dspDefault; });
+    syncAllDspLabels();
+  }
+
+  function applyDspPreset(name) {
+    resetDspControls();
+    const preset = DSP_PRESETS[name] || {};
+    Object.entries(preset).forEach(([id, value]) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      if (el.type === 'checkbox') el.checked = !!value;
+      else el.value = value;
+    });
+    syncAllDspLabels();
+    syncToneTableEnabled();
+  }
+
+  if (chkPostProcess) {
+    chkPostProcess.addEventListener('change', updateDspVisibility);
+  }
+  dspControls.forEach((el) => {
+    if (el.type === 'range') {
+      el.addEventListener('input', () => {
+        syncDspLabel(el);
+        dspPresetButtons.forEach(b => b.classList.remove('active'));
+      });
+    }
+  });
+  [dspMatchEnergy, dspMatchRate].forEach((el) => {
+    if (!el) return;
+    el.addEventListener('change', () => {
+      syncToneTableEnabled();
+      dspPresetButtons.forEach(b => b.classList.remove('active'));
+    });
+  });
+  dspPresetButtons.forEach((btn) => {
+    btn.addEventListener('click', () => {
+      applyDspPreset(btn.dataset.dspPreset);
+      dspPresetButtons.forEach(b => b.classList.toggle('active', b === btn));
+    });
+  });
+  if (btnDspReset) {
+    btnDspReset.addEventListener('click', () => {
+      resetDspControls();
+      syncToneTableEnabled();
+      dspPresetButtons.forEach(b => b.classList.toggle('active', b.dataset.dspPreset === 'reference'));
+      if (chkPostProcess) chkPostProcess.checked = true;
+      updateDspVisibility();
+    });
+  }
+  syncAllDspLabels();
+  syncToneTableEnabled();
+  updateDspVisibility();
 
   function getSelectedGenModes() {
     const checked = [...document.querySelectorAll('input[name="lora_mode_check"]:checked')].map(el => el.value);
@@ -965,7 +1188,7 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Synthesis Helper
-  async function fetchSynthesisBlob({ text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode, autoAnnotate = true, postProcess = true }) {
+  async function fetchSynthesisBlob({ text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode, autoAnnotate = true, postProcess = true, dspParams = null }) {
     if (selectedAudioFile) {
       const formData = new FormData();
       formData.append('text', text);
@@ -977,6 +1200,10 @@ document.addEventListener('DOMContentLoaded', () => {
       formData.append('auto_annotate', autoAnnotate ? 'true' : 'false');
       formData.append('lora_mode', loraMode);
       formData.append('post_process', postProcess ? 'true' : 'false');
+      // Multipart has no nested objects, so the overrides ride along as JSON.
+      if (postProcess && dspParams) {
+        formData.append('post_process_params', JSON.stringify(dspParams));
+      }
 
       const response = await fetch(`${API_BASE}/synthesize/upload`, {
         method: 'POST',
@@ -1003,7 +1230,8 @@ document.addEventListener('DOMContentLoaded', () => {
           inference_timesteps: timesteps,
           auto_annotate: autoAnnotate,
           lora_mode: loraMode,
-          post_process: postProcess
+          post_process: postProcess,
+          post_process_params: postProcess ? dspParams : null
         })
       });
       if (!response.ok) {
@@ -1034,6 +1262,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const guidance = guidanceInput.value.trim();
     const model = getSelectedModel();
     const selectedModes = getSelectedGenModes();
+    const dspOn = isDspEnabled();
+    const dspParams = collectDspParams();
     const ts = getTimestamp();
     const spkPrefix = speakerId ? `${speakerId}_` : '';
 
@@ -1058,18 +1288,20 @@ document.addEventListener('DOMContentLoaded', () => {
         let blob;
         if (mode === 'lora_on') {
           blob = await fetchSynthesisBlob({
-            text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'on', autoAnnotate: true, postProcess: true
+            text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'on', autoAnnotate: true, postProcess: dspOn, dspParams
           });
         } else if (mode === 'lora_off') {
           blob = await fetchSynthesisBlob({
-            text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'off', autoAnnotate: true, postProcess: true
+            text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'off', autoAnnotate: true, postProcess: dspOn, dspParams
           });
         } else if (mode === 'no_emotion') {
           const plainText = stripEmotionTags(text) || text;
           blob = await fetchSynthesisBlob({
-            text: plainText, speakerId, guidance: null, engine, model, cfgValue, timesteps, loraMode: 'on', autoAnnotate: false, postProcess: true
+            text: plainText, speakerId, guidance: null, engine, model, cfgValue, timesteps, loraMode: 'on', autoAnnotate: false, postProcess: dspOn, dspParams
           });
         } else if (mode === 'raw_tts') {
+          // The raw variant is the A/B reference and always bypasses the module,
+          // whatever the toggle says.
           blob = await fetchSynthesisBlob({
             text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'on', autoAnnotate: true, postProcess: false
           });
