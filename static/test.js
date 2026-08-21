@@ -20,7 +20,38 @@ document.addEventListener('DOMContentLoaded', () => {
   const paramIntensity = document.getElementById('param-intensity');
   const paramCfg = document.getElementById('param-cfg');
   const paramLoraMode = document.getElementById('param-lora-mode');
-  const paramPostProcess = document.getElementById('param-post-process');
+  const benchDspInputs = [...document.querySelectorAll('.bench-dsp-input')];
+  const benchDspCount = document.getElementById('bench-dsp-count');
+  const matrixVariantBar = document.getElementById('matrix-variant-bar');
+  const mvPills = document.getElementById('mv-pills');
+
+  // Every take result of the current run, so switching the displayed DSP variant
+  // can redraw the matrix from memory instead of re-running the sampler.
+  const takeResults = new Map();
+  let activeVariantId = null;
+
+  function getSelectedDspVariants() {
+    const ids = benchDspInputs.filter(i => i.checked).map(i => i.value);
+    return ids.length ? ids : ['emotion_on'];
+  }
+
+  function syncBenchDspPicker() {
+    const n = getSelectedDspVariants().length;
+    benchDspInputs.forEach((i) => {
+      const opt = i.closest('.bench-dsp-opt');
+      if (opt) opt.classList.toggle('active', i.checked);
+      // The endpoint accepts six; four is as many as stays readable in the matrix.
+      i.disabled = !i.checked && n >= 4;
+      if (opt) opt.classList.toggle('is-locked', i.disabled);
+    });
+    if (benchDspCount) {
+      benchDspCount.textContent = n === 1 ? '1 สูตร' : `${n} สูตร · gen รอบเดียว`;
+      benchDspCount.classList.toggle('is-multi', n > 1);
+    }
+  }
+
+  benchDspInputs.forEach(i => i.addEventListener('change', syncBenchDspPicker));
+  syncBenchDspPicker();
 
   const summaryEmotionsCount = document.getElementById('summary-emotions-count');
   const summaryTakesCount = document.getElementById('summary-takes-count');
@@ -148,11 +179,13 @@ document.addEventListener('DOMContentLoaded', () => {
         <span>${emo.icon} ${emo.name_th.split('/')[0].trim()}</span>
       `;
 
-      label.addEventListener('click', (e) => {
-        const input = label.querySelector('input');
-        if (e.target !== input) {
-          input.checked = !input.checked;
-        }
+      // A <label> wrapping its own <input> already toggles it on click, so the
+      // old handler's manual flip ran in addition to the native one and the two
+      // cancelled out -- every click left the checkbox exactly where it was.
+      // Listening to the input's own change event is what the other pickers on
+      // this page do, and it fires once per real state change.
+      const input = label.querySelector('input');
+      input.addEventListener('change', () => {
         label.classList.toggle('active', input.checked);
         updateSummaryCounters();
       });
@@ -259,7 +292,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const intensity = parseInt(paramIntensity.value || '2', 10);
     const cfgValue = parseFloat(paramCfg.value || '2.5');
     const loraMode = paramLoraMode.value || 'on';
-    const postProcess = paramPostProcess ? paramPostProcess.value === 'true' : true;
+    const dspVariants = getSelectedDspVariants();
+    const postProcess = dspVariants.length === 1
+      ? (window.DSP_VARIANT_SPECS[dspVariants[0]] || {}).post_process !== false
+      : true;
 
     // Start benchmark session
     startBenchmark({
@@ -271,6 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
       cfgValue,
       loraMode,
       postProcess,
+      dspVariants,
     });
   });
 
@@ -340,12 +377,25 @@ document.addEventListener('DOMContentLoaded', () => {
             cfg_value: config.cfgValue,
             lora_mode: config.loraMode,
             post_process: config.postProcess,
+            // One ticked variant keeps the classic single-file take (and its plain
+            // filename); more than one shares a generation across the treatments.
+            variants: config.dspVariants.length > 1
+              ? config.dspVariants.map(id => ({
+                  id,
+                  label: window.DSP_VARIANT_SPECS[id].label,
+                  post_process: window.DSP_VARIANT_SPECS[id].post_process,
+                  params: window.DSP_VARIANT_SPECS[id].params
+                }))
+              : null,
           });
         }
       });
 
       const totalTasks = queue.length;
       let completedTasks = 0;
+      takeResults.clear();
+      activeVariantId = null;
+      if (matrixVariantBar) matrixVariantBar.classList.add('hidden');
 
       // 4. Process Queue Sequentially
       for (const task of queue) {
@@ -517,8 +567,50 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  // The bar only earns its space when there is something to switch between.
+  function renderVariantBar(variants) {
+    if (!matrixVariantBar || !mvPills) return;
+    if (!variants || variants.length < 2) {
+      matrixVariantBar.classList.add('hidden');
+      activeVariantId = variants && variants.length ? variants[0].id : null;
+      return;
+    }
+    if (!activeVariantId || !variants.some(v => v.id === activeVariantId)) {
+      activeVariantId = variants[0].id;
+    }
+    mvPills.innerHTML = variants.map(v =>
+      `<button type="button" class="mv-pill${v.id === activeVariantId ? ' active' : ''}" data-variant="${v.id}">${v.label}</button>`
+    ).join('');
+    mvPills.querySelectorAll('.mv-pill').forEach((btn) => {
+      btn.addEventListener('click', () => {
+        activeVariantId = btn.dataset.variant;
+        mvPills.querySelectorAll('.mv-pill').forEach(b => b.classList.toggle('active', b === btn));
+        // Redraw every cell already collected, so the whole matrix -- players,
+        // durations and the per-emotion metric pills -- describes one variant.
+        takeResults.forEach(r => renderTakeResultCell(r));
+      });
+    });
+    matrixVariantBar.classList.remove('hidden');
+  }
+
+  // Which file this cell should show: the active variant if the take carries one,
+  // otherwise the take's own top-level fields (old sessions, single-variant runs).
+  function pickVariant(result) {
+    const list = result.variants || [];
+    if (!list.length) return null;
+    return list.find(v => v.id === activeVariantId) || list[0];
+  }
+
   function renderTakeResultCell(result) {
-    const { emotion, take_idx, instruction, audio_url, filename, metrics, elapsed_s, error } = result;
+    if (!result.error) {
+      takeResults.set(`${result.emotion}_${result.take_idx}`, result);
+      renderVariantBar(result.variants);
+    }
+    const chosen = pickVariant(result);
+    const { emotion, take_idx, instruction, elapsed_s, error } = result;
+    const audio_url = chosen ? chosen.audio_url : result.audio_url;
+    const filename = chosen ? chosen.filename : result.filename;
+    const metrics = chosen ? chosen.metrics : result.metrics;
     const cell = document.getElementById(`cell-${emotion}-${take_idx}`);
     if (!cell) return;
 
@@ -777,7 +869,10 @@ document.addEventListener('DOMContentLoaded', () => {
     const intensity = parseInt(paramIntensity.value || '2', 10);
     const cfgValue = parseFloat(paramCfg.value || '2.5');
     const loraMode = paramLoraMode.value || 'on';
-    const postProcess = paramPostProcess ? paramPostProcess.value === 'true' : true;
+    const dspVariants = getSelectedDspVariants();
+    const postProcess = dspVariants.length === 1
+      ? (window.DSP_VARIANT_SPECS[dspVariants[0]] || {}).post_process !== false
+      : true;
 
     for (let takeIdx = 1; takeIdx <= repeats; takeIdx++) {
       setCellGenerating(emotion, takeIdx);
@@ -795,6 +890,16 @@ document.addEventListener('DOMContentLoaded', () => {
             cfg_value: cfgValue,
             lora_mode: loraMode,
             post_process: postProcess,
+            // Re-running one row must produce the same set of treatments as the
+            // rest of the matrix, or the variant switcher would find gaps.
+            variants: dspVariants.length > 1
+              ? dspVariants.map(id => ({
+                  id,
+                  label: window.DSP_VARIANT_SPECS[id].label,
+                  post_process: window.DSP_VARIANT_SPECS[id].post_process,
+                  params: window.DSP_VARIANT_SPECS[id].params
+                }))
+              : null,
           }),
         });
         const data = await res.json();
@@ -895,6 +1000,9 @@ document.addEventListener('DOMContentLoaded', () => {
       resultsTableWrapper.classList.remove('hidden');
 
       renderTableSkeleton(emotions, repeats, intensity);
+      takeResults.clear();
+      activeVariantId = null;
+      if (matrixVariantBar) matrixVariantBar.classList.add('hidden');
 
       const takes = data.takes || {};
       Object.values(takes).forEach(takeRecord => {
@@ -906,6 +1014,9 @@ document.addEventListener('DOMContentLoaded', () => {
           audio_url: takeRecord.audio_url,
           filename: takeRecord.filename,
           metrics: takeRecord.metrics,
+          // Sessions recorded before variants existed simply have none, and the
+          // cell falls back to the take's own fields.
+          variants: takeRecord.variants || [],
           elapsed_s: takeRecord.elapsed_s,
           error: takeRecord.error,
         });
@@ -927,8 +1038,7 @@ document.addEventListener('DOMContentLoaded', () => {
    the treatment. This section calls /synthesize/ab, which renders once and
    assembles the same chunks every way asked for.
    ========================================================================== */
-(function () {
-  const VARIANT_SPECS = {
+window.DSP_VARIANT_SPECS = {
     emotion_on: {
       label: '🎚️ เปิดชั้นอารมณ์',
       post_process: true,
@@ -952,15 +1062,18 @@ document.addEventListener('DOMContentLoaded', () => {
         energy_match: 0.55, max_stretch: 0.20
       }
     },
-    narration: {
-      label: '📖 พูดกระชับ',
-      post_process: true,
-      params: {
-        gap_same_tone_s: 0.14, gap_emotion_s: 0.30, gap_paragraph_s: 0.70,
-        energy_match: 0.85, max_stretch: 0.12
-      }
+  narration: {
+    label: '📖 พูดกระชับ',
+    post_process: true,
+    params: {
+      gap_same_tone_s: 0.14, gap_emotion_s: 0.30, gap_paragraph_s: 0.70,
+      energy_match: 0.85, max_stretch: 0.12
     }
-  };
+  }
+};
+
+(function () {
+  const VARIANT_SPECS = window.DSP_VARIANT_SPECS;
 
   const TONE_COLORS = {
     neutral: 'var(--tone-neutral)', sad: 'var(--tone-sad)', happy: 'var(--tone-happy)',

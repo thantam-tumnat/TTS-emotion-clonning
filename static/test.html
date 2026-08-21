@@ -7,8 +7,8 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="/static/style.css?v=2.0.1">
-  <link rel="stylesheet" href="/static/test.css?v=1.1.0">
+  <link rel="stylesheet" href="/static/style.css?v=2.1.0">
+  <link rel="stylesheet" href="/static/test.css?v=1.2.0">
 </head>
 <body>
   <div class="test-app-container">
@@ -153,12 +153,34 @@
               </select>
             </div>
 
-            <div class="param-box">
-              <label for="param-post-process" class="field-label">Post-Processing (DSP):</label>
-              <select id="param-post-process" class="custom-select-sm">
-                <option value="true" selected>🎚️ เปิด (Post-Processed)</option>
-                <option value="false">🎵 ปิด (Raw Audio เสียงสด)</option>
-              </select>
+            <div class="param-box param-box-full">
+              <div class="field-label-row">
+                <label class="field-label">Post-Processing (DSP) — ติ๊กหลายสูตรเพื่อเทียบในรอบเดียว:</label>
+                <span class="bench-dsp-count" id="bench-dsp-count">1 สูตร</span>
+              </div>
+              <div class="bench-dsp-picker" id="bench-dsp-picker">
+                <label class="bench-dsp-opt active">
+                  <input type="checkbox" class="bench-dsp-input" value="emotion_on" checked>
+                  <span>🎚️ เปิดชั้นอารมณ์</span>
+                </label>
+                <label class="bench-dsp-opt">
+                  <input type="checkbox" class="bench-dsp-input" value="cleanup">
+                  <span>🚫 ปิดชั้นอารมณ์</span>
+                </label>
+                <label class="bench-dsp-opt">
+                  <input type="checkbox" class="bench-dsp-input" value="raw">
+                  <span>🎵 ปิด DSP</span>
+                </label>
+                <label class="bench-dsp-opt">
+                  <input type="checkbox" class="bench-dsp-input" value="dramatic">
+                  <span>🎭 เว้นจังหวะเยอะ</span>
+                </label>
+                <label class="bench-dsp-opt">
+                  <input type="checkbox" class="bench-dsp-input" value="narration">
+                  <span>📖 พูดกระชับ</span>
+                </label>
+              </div>
+              <small class="field-hint" id="bench-dsp-hint">💡 ติ๊กมากกว่า 1 สูตร = สร้างเสียง <strong>รอบเดียว</strong> แล้วประมวลผลหลายแบบจากเสียงชุดเดิม → เทียบได้ยุติธรรมและไม่เปลือง GPU เพิ่ม</small>
             </div>
           </div>
         </div>
@@ -372,6 +394,11 @@
 
       <!-- Results Table -->
       <div class="table-responsive hidden" id="results-table-wrapper">
+        <div class="matrix-variant-bar hidden" id="matrix-variant-bar">
+          <span class="mv-label">🎛️ กำลังดูสูตร DSP:</span>
+          <div class="mv-pills" id="mv-pills"></div>
+          <span class="mv-note">ทุกสูตรมาจากเสียงชุดเดียวกัน — สลับดูได้โดยไม่ต้องรันใหม่</span>
+        </div>
         <table class="benchmark-table" id="benchmark-table">
           <thead>
             <tr>
@@ -423,6 +450,6 @@
   <!-- Audio Element for background playback comparison -->
   <audio id="global-suite-audio" preload="none" class="hidden"></audio>
 
-  <script src="/static/test.js?v=1.1.0"></script>
+  <script src="/static/test.js?v=1.2.1"></script>
 </body>
 </html>

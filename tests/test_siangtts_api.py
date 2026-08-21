@@ -205,14 +205,62 @@ def test_auto_consistency_can_be_disabled(monkeypatch):
     assert seen == [None, None]
 
 
-def test_auto_consistency_skipped_for_single_chunk(monkeypatch):
-    """One chunk cannot drift, so it must not pay for a needless clone."""
+def _fresh_seed(monkeypatch, service):
+    """Force the seed to be minted in this test rather than inherited from another."""
+    monkeypatch.setattr(service, "_seed_voice", None, raising=False)
+    monkeypatch.setattr(service, "_seed_voice_failed", False, raising=False)
+
+
+def test_single_chunk_still_gets_the_shared_seed(monkeypatch):
+    """A one-chunk request must be the same speaker as every other request.
+
+    This used to be skipped on the grounds that one chunk cannot drift against
+    itself and so should not pay for a clone. It drifts against *other requests*
+    instead: unpinned, VoxCPM2 samples a fresh speaker per call, so the benchmark
+    -- which sends exactly one chunk per take -- rendered every take as a
+    different person (median F0 141.6 / 152.9 / 202.1 Hz on identical text).
+
+    The cost argument only ever applied to the first request: the seed is minted
+    once and then served from memory and voice_cache/_auto_seed.pt.
+    """
     monkeypatch.setattr(svc.settings, "siangtts_auto_voice_consistency", True, raising=False)
     service, seen = _spy_prompt_caches(monkeypatch)
+    _fresh_seed(monkeypatch, service)
 
     service.synthesize_many(["(happy)หนึ่งเดียว"])
 
-    assert seen == [None]
+    # Minting the seed is itself a generation, and it is the unpinned one; the
+    # chunk the caller asked for is the last and must carry the seed.
+    assert seen[-1] is not None, "a lone chunk must still be pinned to the seed voice"
+
+
+def test_seed_is_minted_once_and_reused(monkeypatch):
+    """The second single-chunk request must not pay to build the seed again."""
+    monkeypatch.setattr(svc.settings, "siangtts_auto_voice_consistency", True, raising=False)
+    service, seen = _spy_prompt_caches(monkeypatch)
+    _fresh_seed(monkeypatch, service)
+
+    service.synthesize_many(["(happy)หนึ่ง"])
+    first_count = len(seen)
+    service.synthesize_many(["(sad)สอง"])
+
+    assert len(seen) - first_count == 1, "reusing the cached seed costs one generation"
+    assert seen[-1] == seen[first_count - 1], "both requests are the same speaker"
+
+
+def test_single_chunk_seed_matches_multi_chunk_seed(monkeypatch):
+    """One take and a multi-chunk run have to land on the same speaker."""
+    monkeypatch.setattr(svc.settings, "siangtts_auto_voice_consistency", True, raising=False)
+    service, seen = _spy_prompt_caches(monkeypatch)
+    _fresh_seed(monkeypatch, service)
+
+    service.synthesize_many(["(happy)หนึ่งเดียว"])
+    lone = seen[-1]
+    service.synthesize_many(["(happy)หนึ่ง", "(sad)สอง"])
+    multi = seen[-2:]
+
+    assert lone is not None
+    assert all(c == lone for c in multi), "every chunk shares one seed voice"
 
 
 def test_explicit_speaker_is_not_overridden(monkeypatch):

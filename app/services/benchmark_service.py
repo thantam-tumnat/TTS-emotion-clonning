@@ -21,6 +21,8 @@ from app.models import (
     BenchmarkTakeRequest,
     BenchmarkTakeResult,
     BenchmarkSessionSummary,
+    BenchmarkTakeVariant,
+    ABVariantSpec,
 )
 from app.renderers.voxcpm import format_voxcpm_instruction, VOXCPM_INSTRUCTION_MAP, STYLE_VOCABULARY
 from app.services.siangtts_service import siangtts_service, prepare_text
@@ -314,31 +316,62 @@ class BenchmarkService:
         # Prepare full synthesized text
         clean_text = req.text.strip()
         full_text = f"{instruction}{clean_text}" if instruction else clean_text
-        filename = f"{req.emotion}_take_{req.take_idx}.wav"
+
+        # One entry means the classic single-file take; more means the generation is
+        # shared and only the assembly differs between the files written.
+        specs = req.variants or [
+            ABVariantSpec(
+                id="default",
+                label="Post-Processed" if req.post_process else "Raw",
+                post_process=req.post_process,
+                params=req.post_process_params,
+            )
+        ]
+        single = len(specs) == 1 and not req.variants
+
+        def _name(spec: ABVariantSpec) -> str:
+            base = f"{req.emotion}_take_{req.take_idx}"
+            return f"{base}.wav" if single else f"{base}__{spec.id}.wav"
+
+        filename = _name(specs[0])
         out_wav_path = s_dir / filename
 
         try:
-            # Synthesize via siangtts_service
-            wav_bytes = siangtts_service.synthesize_many(
+            takes, sr_out, _tones = siangtts_service.synthesize_variants(
                 [full_text],
+                variants=[
+                    {
+                        "id": v.id,
+                        "post_process": v.post_process,
+                        "params": v.params.model_dump(exclude_none=True) if v.params else None,
+                    }
+                    for v in specs
+                ],
                 speaker_id=req.speaker_id,
                 cfg_value=req.cfg_value,
                 inference_timesteps=req.inference_timesteps,
                 tones=[req.emotion],
                 breaks=[False],
-                post_process=req.post_process,
-                post_process_params=(
-                    req.post_process_params.model_dump(exclude_none=True)
-                    if req.post_process_params else None
-                ),
                 lora_mode=req.lora_mode or "on",
             )
 
-            out_wav_path.write_bytes(wav_bytes)
+            variant_records = []
+            for take, spec in zip(takes, specs):
+                v_name = _name(spec)
+                (s_dir / v_name).write_bytes(take["wav"])
+                audio_arr, sr = sf.read(io.BytesIO(take["wav"]), dtype="float32")
+                variant_records.append({
+                    "id": spec.id,
+                    "label": spec.label,
+                    "filename": v_name,
+                    "audio_url": f"/api/benchmark/audio/{req.session_id}/{v_name}",
+                    "metrics": extract_audio_metrics(audio_arr, sr),
+                })
 
-            # Compute metrics
-            audio_arr, sr = sf.read(io.BytesIO(wav_bytes), dtype="float32")
-            metrics = extract_audio_metrics(audio_arr, sr)
+            # The first variant stands in for the take at the top level, so every
+            # existing reader -- the results matrix, the ZIP export, old session
+            # files -- keeps working without knowing about variants at all.
+            metrics = variant_records[0]["metrics"]
             elapsed_s = round(time.time() - start_t, 2)
 
             take_record = {
@@ -349,6 +382,7 @@ class BenchmarkService:
                 "filename": filename,
                 "audio_url": f"/api/benchmark/audio/{req.session_id}/{filename}",
                 "metrics": metrics,
+                "variants": variant_records,
                 "elapsed_s": elapsed_s,
                 "error": None,
                 "timestamp": datetime.now().isoformat(),
@@ -369,6 +403,7 @@ class BenchmarkService:
                 audio_url=take_record["audio_url"],
                 filename=filename,
                 metrics=metrics,
+                variants=[BenchmarkTakeVariant(**v) for v in variant_records],
                 elapsed_s=elapsed_s,
                 error=None,
             )

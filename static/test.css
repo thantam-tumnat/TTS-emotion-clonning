@@ -1252,3 +1252,104 @@
   .ab-timeline-row { grid-template-columns: 96px 1fr 46px; }
   .ab-timeline-label { font-size: 0.66rem; }
 }
+
+/* ==========================================================================
+   Benchmark DSP variant picker + matrix variant switcher
+   ========================================================================== */
+.param-box-full { grid-column: 1 / -1; }
+
+.bench-dsp-count {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-family: var(--font-code);
+  white-space: nowrap;
+}
+
+.bench-dsp-count.is-multi {
+  color: #2dd4bf;
+  font-weight: 600;
+}
+
+.bench-dsp-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 6px;
+}
+
+.bench-dsp-opt {
+  display: inline-flex;
+  align-items: center;
+  border: 1px solid var(--border-color);
+  border-radius: 16px;
+  padding: 4px 11px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.bench-dsp-opt:hover { border-color: var(--border-hover); color: var(--text-primary); }
+
+.bench-dsp-opt.active {
+  background: rgba(45, 212, 191, 0.15);
+  border-color: #2dd4bf;
+  color: #2dd4bf;
+  font-weight: 600;
+}
+
+.bench-dsp-opt.is-locked { opacity: 0.35; cursor: not-allowed; }
+
+.bench-dsp-opt input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+.matrix-variant-bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 12px;
+  margin-bottom: 10px;
+  border: 1px solid rgba(45, 212, 191, 0.3);
+  background: rgba(45, 212, 191, 0.07);
+  border-radius: var(--radius-md);
+}
+
+.matrix-variant-bar.hidden { display: none; }
+
+.mv-label {
+  font-size: 0.74rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+}
+
+.mv-pills { display: flex; flex-wrap: wrap; gap: 5px; }
+
+.mv-pill {
+  background: var(--bg-input);
+  border: 1px solid var(--border-color);
+  border-radius: 14px;
+  padding: 3px 11px;
+  color: var(--text-secondary);
+  font-size: 0.71rem;
+  font-family: var(--font-thai);
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.mv-pill:hover { border-color: var(--border-hover); color: var(--text-primary); }
+
+.mv-pill.active {
+  background: #2dd4bf;
+  border-color: #2dd4bf;
+  color: #06231f;
+  font-weight: 600;
+}
+
+.mv-note {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  margin-left: auto;
+}

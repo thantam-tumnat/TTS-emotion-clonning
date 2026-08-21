@@ -292,6 +292,19 @@ class BenchmarkTakeRequest(BaseModel):
     lora_mode: Optional[Literal["on", "off", "legacy"]] = "on"
     post_process: bool = True
     post_process_params: Optional[PostProcessParams] = None
+    # When present, the take is generated once and assembled this many ways, which
+    # is the only way a DSP comparison is not also a comparison of two samplings.
+    # Empty means the single-take behaviour driven by post_process above.
+    variants: Optional[List[ABVariantSpec]] = Field(default=None, max_length=6)
+
+
+class BenchmarkTakeVariant(BaseModel):
+    """One DSP treatment of a take, built from the same generation as its siblings."""
+    id: str
+    label: str
+    filename: str
+    audio_url: str
+    metrics: Optional[dict] = None
 
 
 class BenchmarkTakeResult(BaseModel):
@@ -305,6 +318,8 @@ class BenchmarkTakeResult(BaseModel):
     metrics: Optional[dict] = None
     elapsed_s: float = 0.0
     error: Optional[str] = None
+    # Every DSP treatment of this take, first entry mirroring the fields above.
+    variants: List[BenchmarkTakeVariant] = Field(default_factory=list)
 
 
 class BenchmarkSessionSummary(BaseModel):

@@ -1018,9 +1018,14 @@ class SiangTTSService:
             # every chunk on it. Seeding from a *neutral* line rather than from
             # chunk 1 is what keeps the style tags independent: cloning chunk 1
             # carried its emotion into chunk 2 and flattened the contrast.
+            # The seed is not only about drift *within* one request: an unpinned
+            # single-chunk request is a fresh speaker every time, so two calls on
+            # the same text came back in different voices. That is what the
+            # benchmark does -- one chunk per take -- and it made every take a
+            # different person. The seed is minted once and cached, so applying it
+            # to single-chunk requests too costs nothing after the first.
             if (
                 settings.siangtts_auto_voice_consistency
-                and len(planned) > 1
                 and prompt_cache is None
                 and ref_audio_path is None
             ):
