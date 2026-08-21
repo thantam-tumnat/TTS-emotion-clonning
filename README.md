@@ -39,7 +39,7 @@ High-performance, ultra-low latency Job Queue Gateway for SiangTTS and VoxCPM2 V
 
 ### 1. Build and Run
 ```bash
-cd voice-cloning-queue-go
+cd voice-clonning-queue-go
 go run main.go
 ```
 Or run `start_queue.bat` on Windows.

@@ -73,10 +73,15 @@ func main() {
 	// 6. Voice, Speaker & Health Routes (Proxied to Python GPU :8021)
 	app.Post("/v2/voices/resolve", proxyH.Forward)
 	app.Post("/v2/voices", proxyH.Forward)
-	app.Get("/v2/voices/:handle", proxyH.Forward)
+	app.Get("/v2/voices", proxyH.Forward)
+	// Static paths first: Fiber matches in registration order, so ":handle"
+	// and ":speaker_id" must not be allowed to swallow "seed".
 	app.Post("/v2/voices/seed", proxyH.Forward)
 	app.Delete("/v2/voices/seed", proxyH.Forward)
-	app.Get("/v2/speakers", proxyH.Forward)
+	app.Get("/v2/voices/:handle", proxyH.Forward)
+	// Two segments -- ":handle" alone never matches this.
+	app.Get("/v2/voices/:speaker_id/audio", proxyH.Forward)
+	app.Delete("/v2/voices/:speaker_id", proxyH.Forward)
 	app.Get("/health", proxyH.Forward)
 
 	// 7. Web Dashboard UI
