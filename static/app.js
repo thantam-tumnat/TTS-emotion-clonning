@@ -225,6 +225,12 @@ document.addEventListener('DOMContentLoaded', () => {
     if (energySlider) energySlider.disabled = !energyOn;
     const stretchSlider = document.getElementById('dsp-max-stretch');
     if (stretchSlider) stretchSlider.disabled = !rateOn;
+    const pitchChk = document.getElementById('dsp-match-pitch');
+    const pitchOn = !pitchChk || pitchChk.checked;
+    ['dsp-pitch-match', 'dsp-max-pitch'].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.disabled = !pitchOn;
+    });
   }
 
   function updateDspVisibility() {
@@ -316,7 +322,7 @@ document.addEventListener('DOMContentLoaded', () => {
       });
     }
   });
-  [dspMatchEnergy, dspMatchRate].forEach((el) => {
+  [dspMatchEnergy, dspMatchRate, document.getElementById('dsp-match-pitch')].forEach((el) => {
     if (!el) return;
     el.addEventListener('change', () => {
       syncToneTableEnabled();
@@ -576,20 +582,43 @@ document.addEventListener('DOMContentLoaded', () => {
     loadAvailableModels(false);
   }
 
+  if (speakerSelect) {
+    speakerSelect.addEventListener('change', () => {
+      // '' (base voice) is stored too: choosing it on purpose must survive reload.
+      localStorage.setItem('siangtts_speaker', speakerSelect.value);
+    });
+  }
+
   async function loadSpeakersList() {
     try {
       const res = await fetch(`${API_BASE}/speakers`);
       if (res.ok) {
         const data = await res.json();
         const prevVal = speakerSelect.value;
-        speakerSelect.innerHTML = '<option value="">-- ไม่ใช้เสียงโคลน (Base Voice) --</option>';
+        speakerSelect.innerHTML = '<option value="">-- ไม่ใช้เสียงโคลน (Base Voice — เสียงอาจแกว่งเมื่อหลายอารมณ์) --</option>';
         (data.speakers || []).forEach(spk => {
           const opt = document.createElement('option');
           opt.value = spk.id;
           opt.textContent = `🎙️ ${spk.name} (${spk.filename})`;
           speakerSelect.appendChild(opt);
         });
-        if (prevVal) speakerSelect.value = prevVal;
+        // The unpinned "base voice" resamples its speaker under strong emotion
+        // instructions -- measured 26% median-F0 spread across one five-emotion
+        // script, against 4% for a registered speaker -- so it is a bad silent
+        // default. Prefer, in order: what this dropdown already showed, what the
+        // user picked last time, then the first real speaker.
+        const remembered = localStorage.getItem('siangtts_speaker');
+        const has = (v) => v && [...speakerSelect.options].some(o => o.value === v);
+        if (has(prevVal)) speakerSelect.value = prevVal;
+        else if (has(remembered) || remembered === '') speakerSelect.value = remembered;
+        else {
+          // Most entries are one-off uploads filed under a uuid; a *named* speaker
+          // is one somebody deliberately registered, so it makes the sanest default.
+          const uuidRe = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+          const named = [...speakerSelect.options].find(o => o.value && !uuidRe.test(o.value));
+          if (named) speakerSelect.value = named.value;
+          else if (speakerSelect.options.length > 1) speakerSelect.selectedIndex = 1;
+        }
         syncSpeakerControls();
       }
     } catch (e) {

@@ -229,6 +229,12 @@ class BenchmarkService:
                     "color_class": v["color_class"],
                     "description": v["description"],
                     "default_instruction": format_voxcpm_instruction(Tone(k), 2),
+                    # So the matrix can print the real instruction for a row
+                    # before that row has been generated.
+                    "instructions": {
+                        str(lv): format_voxcpm_instruction(Tone(k), lv)
+                        for lv in (1, 2, 3)
+                    },
                 }
                 for k, v in EMOTION_META.items()
             ],
@@ -237,6 +243,7 @@ class BenchmarkService:
                 "text": PRESET_SENTENCES[0]["text"],
                 "repeats": 3,
                 "intensity": 2,
+                "intensities": [2],
                 "cfg_value": 2.5,
                 "inference_timesteps": 10,
                 "lora_mode": "on",
@@ -251,7 +258,13 @@ class BenchmarkService:
         s_dir = self._session_dir(session_id)
 
         emotions = req.emotions if req.emotions else [t.value for t in Tone]
-        total_takes = len(emotions) * req.repeats
+        # Levels are de-duplicated and ordered so the matrix rows and the summary
+        # counter agree no matter what order the checkboxes were ticked in.
+        levels = sorted({
+            max(1, min(3, int(lv)))
+            for lv in (req.intensities or [req.intensity])
+        }) or [req.intensity]
+        total_takes = len(emotions) * len(levels) * req.repeats
 
         session_data = {
             "session_id": session_id,
@@ -261,10 +274,12 @@ class BenchmarkService:
             "text": req.text,
             "emotions": emotions,
             "repeats": req.repeats,
+            "intensities": levels,
             "total_takes": total_takes,
             "completed_takes": 0,
             "params": {
-                "intensity": req.intensity,
+                "intensity": levels[0],
+                "intensities": levels,
                 "cfg_value": req.cfg_value,
                 "inference_timesteps": req.inference_timesteps,
                 "lora_mode": req.lora_mode or "on",
@@ -283,6 +298,7 @@ class BenchmarkService:
             text=req.text,
             emotions=emotions,
             repeats=req.repeats,
+            intensities=levels,
             total_takes=total_takes,
             params=session_data["params"],
         )
@@ -329,8 +345,12 @@ class BenchmarkService:
         ]
         single = len(specs) == 1 and not req.variants
 
+        # With several intensity levels in one run an emotion owns one row per
+        # level, so "angry take 1" is no longer a unique name -- the row key is.
+        row_key = re.sub(r"[^a-zA-Z0-9_\-]", "_", req.row_key) if req.row_key else req.emotion
+
         def _name(spec: ABVariantSpec) -> str:
-            base = f"{req.emotion}_take_{req.take_idx}"
+            base = f"{row_key}_take_{req.take_idx}"
             return f"{base}.wav" if single else f"{base}__{spec.id}.wav"
 
         filename = _name(specs[0])
@@ -376,6 +396,8 @@ class BenchmarkService:
 
             take_record = {
                 "emotion": req.emotion,
+                "row_key": row_key,
+                "intensity": req.intensity,
                 "take_idx": req.take_idx,
                 "instruction": instruction,
                 "spoken_text": clean_text,
@@ -389,7 +411,7 @@ class BenchmarkService:
             }
 
             # Update session JSON
-            take_key = f"{req.emotion}_{req.take_idx}"
+            take_key = f"{row_key}_{req.take_idx}"
             session_data.setdefault("takes", {})[take_key] = take_record
             session_data["completed_takes"] = len([t for t in session_data["takes"].values() if not t.get("error")])
             meta_file.write_text(json.dumps(session_data, ensure_ascii=False, indent=2), encoding="utf-8")
@@ -397,6 +419,8 @@ class BenchmarkService:
             return BenchmarkTakeResult(
                 session_id=req.session_id,
                 emotion=req.emotion,
+                row_key=row_key,
+                intensity=req.intensity,
                 take_idx=req.take_idx,
                 instruction=instruction,
                 spoken_text=clean_text,
@@ -413,6 +437,8 @@ class BenchmarkService:
             err_msg = str(e)
             take_record = {
                 "emotion": req.emotion,
+                "row_key": row_key,
+                "intensity": req.intensity,
                 "take_idx": req.take_idx,
                 "instruction": instruction,
                 "spoken_text": clean_text,
@@ -423,13 +449,15 @@ class BenchmarkService:
                 "error": err_msg,
                 "timestamp": datetime.now().isoformat(),
             }
-            take_key = f"{req.emotion}_{req.take_idx}"
+            take_key = f"{row_key}_{req.take_idx}"
             session_data.setdefault("takes", {})[take_key] = take_record
             meta_file.write_text(json.dumps(session_data, ensure_ascii=False, indent=2), encoding="utf-8")
 
             return BenchmarkTakeResult(
                 session_id=req.session_id,
                 emotion=req.emotion,
+                row_key=row_key,
+                intensity=req.intensity,
                 take_idx=req.take_idx,
                 instruction=instruction,
                 spoken_text=clean_text,
@@ -506,8 +534,9 @@ class BenchmarkService:
             return None
 
         # Build CSV Summary
+        default_intensity = (data.get("params") or {}).get("intensity", 2)
         csv_lines = [
-            "session_id,speaker_id,emotion,take_idx,duration_s,rms,energy_dbfs,f0_med_hz,f0_spread_st,instruction,filename"
+            "session_id,speaker_id,emotion,intensity,take_idx,duration_s,rms,energy_dbfs,f0_med_hz,f0_spread_st,instruction,filename"
         ]
         takes = data.get("takes", {})
         for k, v in sorted(takes.items()):
@@ -516,7 +545,8 @@ class BenchmarkService:
             m = v.get("metrics") or {}
             instr = f'"{v.get("instruction", "")}"'
             csv_lines.append(
-                f"{session_id},{data.get('speaker_id', 'base')},{v.get('emotion')},{v.get('take_idx')},"
+                f"{session_id},{data.get('speaker_id', 'base')},{v.get('emotion')},"
+                f"{v.get('intensity', default_intensity)},{v.get('take_idx')},"
                 f"{m.get('dur_s', '')},{m.get('rms', '')},{m.get('energy_dbfs', '')},{m.get('f0_med_hz', '')},"
                 f"{m.get('f0_spread_st', '')},{instr},{v.get('filename')}"
             )

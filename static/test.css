@@ -1353,3 +1353,102 @@
   color: var(--text-muted);
   margin-left: auto;
 }
+
+/* ==========================================================================
+   Intensity level picker + per-row level chips
+   ==========================================================================
+   Ticking more than one level splits every emotion into one matrix row per
+   level, so the level has to be visible on the row as well as in the picker. */
+.bench-lvl-count {
+  font-size: 0.68rem;
+  color: var(--text-muted);
+  font-family: var(--font-code);
+  white-space: nowrap;
+}
+
+.bench-lvl-count.is-multi {
+  color: #f0abfc;
+  font-weight: 600;
+}
+
+.bench-lvl-picker {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.bench-lvl-opt {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  flex: 1 1 0;
+  border: 1px solid var(--border-color);
+  border-radius: 6px;
+  padding: 4px 8px;
+  background: var(--bg-input);
+  color: var(--text-secondary);
+  font-size: 0.72rem;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+}
+
+.bench-lvl-opt:hover { border-color: var(--border-hover); color: var(--text-primary); }
+
+.bench-lvl-opt.active {
+  background: rgba(217, 70, 239, 0.15);
+  border-color: #d946ef;
+  color: #f0abfc;
+  font-weight: 600;
+}
+
+.bench-lvl-opt input { position: absolute; opacity: 0; width: 0; height: 0; }
+
+#bench-lvl-hint { margin-top: 5px; }
+
+/* Level badge shown on each results-matrix row. */
+.level-chip {
+  display: inline-flex;
+  align-items: center;
+  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
+  font-size: 10.5px;
+  font-weight: 600;
+  padding: 2px 6px;
+  border-radius: 5px;
+  border: 1px solid rgba(217, 70, 239, 0.35);
+  background: rgba(217, 70, 239, 0.12);
+  color: #f0abfc;
+}
+
+.level-chip.lvl-1 {
+  border-color: rgba(148, 163, 184, 0.35);
+  background: rgba(148, 163, 184, 0.12);
+  color: #cbd5e1;
+}
+
+.level-chip.lvl-3 {
+  border-color: rgba(248, 113, 113, 0.4);
+  background: rgba(248, 113, 113, 0.14);
+  color: #fca5a5;
+}
+
+/* Plays take 1 of the same emotion at each level, back to back. */
+.btn-compare-levels {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  margin-top: 5px;
+  padding: 3px 9px;
+  border-radius: 6px;
+  border: 1px solid rgba(217, 70, 239, 0.35);
+  background: rgba(217, 70, 239, 0.1);
+  color: #f0abfc;
+  font-size: 11px;
+  font-family: inherit;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: all 0.15s ease;
+}
+
+.btn-compare-levels:hover { background: rgba(217, 70, 239, 0.2); }
+.btn-compare-levels.playing { background: rgba(217, 70, 239, 0.3); color: #fff; }

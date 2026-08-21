@@ -319,6 +319,10 @@
                     <input type="checkbox" id="dsp-match-rate" checked data-dsp-key="match_rate" data-dsp-default="true">
                     <span>เปิดปรับความเร็ว (Rate Match)</span>
                   </label>
+                  <label class="dsp-chk">
+                    <input type="checkbox" id="dsp-match-pitch" checked data-dsp-key="match_pitch" data-dsp-default="true">
+                    <span>ล็อกโทนผู้พูด (Pitch Match)</span>
+                  </label>
                 </div>
                 <div class="dsp-grid">
                   <div class="param-item">
@@ -330,6 +334,16 @@
                     <label for="dsp-max-stretch">ยืด/หดได้สูงสุด: <span class="dsp-val" id="val-dsp-max-stretch">15</span>%</label>
                     <input type="range" id="dsp-max-stretch" min="0" max="40" step="1" value="15" data-dsp-key="max_stretch" data-dsp-default="15" data-dsp-scale="0.01">
                     <small class="param-hint">เกิน 15% เริ่มได้ยินว่าโดนประมวลผล</small>
+                  </div>
+                  <div class="param-item">
+                    <label for="dsp-pitch-match">ความแรงล็อกโทน: <span class="dsp-val" id="val-dsp-pitch-match">0.85</span></label>
+                    <input type="range" id="dsp-pitch-match" min="0" max="1" step="0.05" value="0.85" data-dsp-key="pitch_match" data-dsp-default="0.85">
+                    <small class="param-hint">ดึง pitch กลางของทุกท่อนเข้าหากัน ให้ฟังเป็นผู้พูดคนเดิมแม้อารมณ์เปลี่ยน (0 = ปล่อยตามโมเดล)</small>
+                  </div>
+                  <div class="param-item">
+                    <label for="dsp-max-pitch">เลื่อน pitch ได้สูงสุด: <span class="dsp-val" id="val-dsp-max-pitch">3.0</span> st</label>
+                    <input type="range" id="dsp-max-pitch" min="0" max="6" step="0.5" value="3.0" data-dsp-key="max_pitch_st" data-dsp-default="3.0">
+                    <small class="param-hint">เกิน ~3 semitone เสียงเริ่มเพี้ยนเหมือนถูกบีบ</small>
                   </div>
                 </div>
               </div>
@@ -745,6 +759,6 @@
     </footer>
   </div>
 
-  <script src="/static/app.js?v=2.1.0"></script>
+  <script src="/static/app.js?v=2.2.0"></script>
 </body>
 </html>

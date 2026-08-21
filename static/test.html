@@ -8,7 +8,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Noto+Sans+Thai:wght@300;400;500;600;700&family=Plus+Jakarta+Sans:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="/static/style.css?v=2.1.0">
-  <link rel="stylesheet" href="/static/test.css?v=1.2.0">
+  <link rel="stylesheet" href="/static/test.css?v=1.3.0">
 </head>
 <body>
   <div class="test-app-container">
@@ -125,12 +125,25 @@
             </div>
 
             <div class="param-box">
-              <label for="param-intensity" class="field-label">ระดับความเข้ม (Intensity):</label>
-              <select id="param-intensity" class="custom-select-sm">
-                <option value="1">Level 1 (แผ่วเบา / Slight)</option>
-                <option value="2" selected>Level 2 (มาตรฐาน / Moderate)</option>
-                <option value="3">Level 3 (รุนแรง / Intense)</option>
-              </select>
+              <div class="field-label-row">
+                <label class="field-label">ระดับความเข้ม (Intensity):</label>
+                <span class="bench-lvl-count" id="bench-lvl-count">1 ระดับ</span>
+              </div>
+              <div class="bench-lvl-picker" id="bench-lvl-picker">
+                <label class="bench-lvl-opt" title="Level 1 — แผ่วเบา / Slight">
+                  <input type="checkbox" class="bench-lvl-input" value="1">
+                  <span>Lv.1</span>
+                </label>
+                <label class="bench-lvl-opt active" title="Level 2 — มาตรฐาน / Moderate">
+                  <input type="checkbox" class="bench-lvl-input" value="2" checked>
+                  <span>Lv.2 ⭐</span>
+                </label>
+                <label class="bench-lvl-opt" title="Level 3 — รุนแรง / Intense">
+                  <input type="checkbox" class="bench-lvl-input" value="3">
+                  <span>Lv.3</span>
+                </label>
+              </div>
+              <small class="field-hint" id="bench-lvl-hint">💡 ติ๊กหลายระดับ = แยกเป็นคนละแถวในตาราง</small>
             </div>
 
             <div class="param-box">
@@ -189,7 +202,7 @@
       <!-- Action Bar -->
       <div class="config-action-bar">
         <div class="suite-info-summary" id="suite-info-summary">
-          <span class="info-badge">พร้อมทดสอบ: <strong id="summary-emotions-count">10</strong> อารมณ์ × <strong id="summary-takes-count">3</strong> รอบ = รวม <strong id="summary-total-takes">30</strong> Takes</span>
+          <span class="info-badge">พร้อมทดสอบ: <strong id="summary-emotions-count">10</strong> อารมณ์ × <strong id="summary-levels-count">1</strong> ระดับ × <strong id="summary-takes-count">3</strong> รอบ = รวม <strong id="summary-total-takes">30</strong> Takes</span>
         </div>
         <div class="action-btn-group">
           <button type="button" id="btn-run-benchmark" class="btn btn-primary btn-run-large">
@@ -450,6 +463,6 @@
   <!-- Audio Element for background playback comparison -->
   <audio id="global-suite-audio" preload="none" class="hidden"></audio>
 
-  <script src="/static/test.js?v=1.2.1"></script>
+  <script src="/static/test.js?v=1.3.0"></script>
 </body>
 </html>

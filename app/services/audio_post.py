@@ -71,6 +71,24 @@ TRIM_FLOOR_DB = 45.0
 # Time-stretch beyond this stops being transparent and starts sounding processed.
 MAX_STRETCH = 0.15
 
+# How much of each chunk's median-F0 deviation from the take is corrected away.
+# The model re-samples its speaker per chunk when nothing but a synthetic seed is
+# pinning it, which lands neighbouring chunks a different *person* rather than the
+# same person in a different mood -- measured at 39% of median F0 across a
+# five-emotion script on the auto seed, against 13% with a real reference clip.
+# Correcting fully would also erase the pitch movement that carries the emotion,
+# so this is partial, and bounded by MAX_PITCH_ST below.
+PITCH_MATCH = 0.85
+
+# The ElevenLabs reference holds median F0 within 1.75 semitones across its four
+# emotions (see the module docstring). The clamp sits above that because the drift
+# being corrected is larger than the spread being kept: an auto-seed take measured
+# chunks a full 6 st apart, and a 2 st clamp left them audibly different people
+# (37% -> 23% of median F0), while 3 st brought a comparable take from 27% to 5%.
+# Beyond ~3 st the formant shift that comes with resampling is clearly audible,
+# so what remains past the clamp stays.
+MAX_PITCH_ST = 3.0
+
 OUTPUT_PEAK = 0.95
 
 # How much of each chunk's own level is corrected away before the per-tone target is
@@ -115,8 +133,11 @@ class PostProcessConfig:
     gap_paragraph_s: float = GAP_PARAGRAPH_S
     match_energy: bool = True
     match_rate: bool = True
+    match_pitch: bool = True
     energy_match: float = ENERGY_MATCH
     max_stretch: float = MAX_STRETCH
+    pitch_match: float = PITCH_MATCH
+    max_pitch_st: float = MAX_PITCH_ST
     trim_floor_db: float = TRIM_FLOOR_DB
     trim_keep_s: float = TRIM_KEEP_S
     edge_fade_s: float = EDGE_FADE_S
@@ -275,6 +296,98 @@ def time_stretch(x: np.ndarray, sr: int, ratio: float, frame_s: float = 0.040,
     out, wsum = out[:keep], wsum[:keep]
     out = np.divide(out, wsum, out=np.zeros_like(out), where=wsum > 1e-6)
     return out.astype("float32")
+
+
+def median_f0(x: np.ndarray, sr: int, fmin: float = 60.0, fmax: float = 450.0) -> float:
+    """Median F0 over voiced frames, by normalised autocorrelation.
+
+    Only the median is needed -- this is asking "what speaker is this", not tracking
+    a contour -- so frames are scored independently and unvoiced ones dropped.
+    Returns 0.0 when nothing voiced is found.
+    """
+    x = np.asarray(x, dtype="float64")
+    win, hop = int(sr * 0.040), int(sr * 0.020)
+    if win < 8 or x.size < win:
+        return 0.0
+
+    lo, hi = max(1, int(sr / fmax)), min(win - 1, int(sr / fmin))
+    if hi <= lo:
+        return 0.0
+
+    rms_all = float(np.sqrt(np.mean(x ** 2))) if x.size else 0.0
+    if rms_all < 1e-6:
+        return 0.0
+
+    out: List[float] = []
+    for i in range(0, x.size - win, hop):
+        frame = x[i:i + win]
+        rms = float(np.sqrt(np.mean(frame ** 2)))
+        if rms < rms_all * 0.3:
+            continue
+        frame = frame - frame.mean()
+        ac = np.correlate(frame, frame, mode="full")[win - 1:]
+        if ac[0] <= 0:
+            continue
+        seg = ac[lo:hi]
+        if seg.size == 0:
+            continue
+        lag = lo + int(np.argmax(seg))
+        # A weak peak means the frame is not really periodic; guessing from it
+        # would drag the median toward noise.
+        if ac[lag] / ac[0] < 0.3:
+            continue
+        out.append(sr / lag)
+
+    return float(np.median(out)) if out else 0.0
+
+
+def pitch_shift(x: np.ndarray, sr: int, semitones: float) -> np.ndarray:
+    """Shift pitch by ``semitones``, keeping the duration.
+
+    Resampling moves pitch and duration together; time-stretching by the inverse
+    puts the duration back. Formants move with the pitch, which is wanted here --
+    the chunks differ because the model rendered a differently-sized speaker, so
+    the whole voice has to move, not just its fundamental.
+    """
+    x = np.asarray(x, dtype="float32")
+    if abs(semitones) < 0.01 or x.size < 4:
+        return x
+    ratio = float(2 ** (semitones / 12.0))
+    n_out = max(4, int(round(x.size / ratio)))
+    resampled = np.interp(
+        np.arange(n_out) * ratio, np.arange(x.size), x.astype("float64")
+    ).astype("float32")
+    return time_stretch(resampled, sr, ratio)
+
+
+def _match_pitch(prepared: List[Chunk], sr: int, cfg: "PostProcessConfig") -> List[Chunk]:
+    """Pull every chunk's median F0 toward the take's, so it stays one speaker.
+
+    The target is the take's own median rather than a fixed pitch: the point is
+    internal consistency, not imposing a voice. The correction is partial and
+    clamped so the pitch movement that carries the emotion survives -- what gets
+    removed is the part that reads as a different person.
+    """
+    f0s = [median_f0(c.audio, sr) for c in prepared]
+    voiced = [f for f in f0s if f > 0]
+    if len(voiced) < 2:
+        return prepared
+
+    target = float(np.median(voiced))
+    if target <= 0:
+        return prepared
+
+    out: List[Chunk] = []
+    for c, f in zip(prepared, f0s):
+        if f <= 0:
+            out.append(c)
+            continue
+        deviation_st = 12.0 * math.log2(target / f)
+        correction = float(np.clip(
+            deviation_st * cfg.pitch_match, -cfg.max_pitch_st, cfg.max_pitch_st
+        ))
+        out.append(c._replace(audio=pitch_shift(c.audio, sr, correction)))
+    return out
 
 
 # --------------------------------------------------------------------------- #
@@ -439,6 +552,11 @@ def assemble_with_spans(
 
     if cfg.match_rate:
         prepared = _match_rate(prepared, sr, cfg)
+
+    # Before levelling: pitch shifting resamples, which moves the level a little,
+    # and the energy stage should be the one that has the last word on level.
+    if cfg.match_pitch:
+        prepared = _match_pitch(prepared, sr, cfg)
 
     if cfg.match_energy:
         levels = [voiced_rms(c.audio, sr) for c in prepared]

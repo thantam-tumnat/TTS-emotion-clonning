@@ -137,8 +137,11 @@ class PostProcessParams(BaseModel):
     gap_paragraph_s: Optional[float] = Field(default=None, ge=0.0, le=5.0)
     match_energy: Optional[bool] = None
     match_rate: Optional[bool] = None
+    match_pitch: Optional[bool] = None
     energy_match: Optional[float] = Field(default=None, ge=0.0, le=1.0)
     max_stretch: Optional[float] = Field(default=None, ge=0.0, le=0.5)
+    pitch_match: Optional[float] = Field(default=None, ge=0.0, le=1.0)
+    max_pitch_st: Optional[float] = Field(default=None, ge=0.0, le=6.0)
     trim_floor_db: Optional[float] = Field(default=None, ge=10.0, le=80.0)
     trim_keep_s: Optional[float] = Field(default=None, ge=0.0, le=0.5)
     edge_fade_s: Optional[float] = Field(default=None, ge=0.0, le=0.2)
@@ -260,6 +263,10 @@ class BenchmarkSessionInitRequest(BaseModel):
     emotions: List[str] = Field(default_factory=lambda: [t.value for t in Tone])
     repeats: int = Field(default=3, ge=1, le=10)
     intensity: int = Field(default=2, ge=1, le=3)
+    # Every level ticked in the UI. One entry is the classic run; more than one
+    # multiplies the matrix so the same emotion is heard at each strength.
+    # Absent means "just `intensity`", which is what older clients send.
+    intensities: Optional[List[int]] = Field(default=None, max_length=3)
     cfg_value: float = Field(default=2.5, ge=1.0, le=10.0)
     inference_timesteps: int = Field(default=10, ge=4, le=50)
     lora_mode: Optional[Literal["on", "off", "legacy"]] = "on"
@@ -275,6 +282,7 @@ class BenchmarkSessionInitResponse(BaseModel):
     text: str
     emotions: List[str]
     repeats: int
+    intensities: List[int] = Field(default_factory=lambda: [2])
     total_takes: int
     params: dict
 
@@ -282,6 +290,10 @@ class BenchmarkSessionInitResponse(BaseModel):
 class BenchmarkTakeRequest(BaseModel):
     session_id: str
     emotion: str
+    # Identifies the matrix row this take belongs to. With several intensity
+    # levels in one run an emotion owns one row per level, so the emotion alone
+    # no longer separates their files or their session entries.
+    row_key: Optional[str] = None
     take_idx: int = Field(default=1, ge=1, le=10)
     text: str = Field(min_length=1, max_length=5000)
     instruction: Optional[str] = None
@@ -310,6 +322,8 @@ class BenchmarkTakeVariant(BaseModel):
 class BenchmarkTakeResult(BaseModel):
     session_id: str
     emotion: str
+    row_key: str = ""
+    intensity: int = 2
     take_idx: int
     instruction: str
     spoken_text: str

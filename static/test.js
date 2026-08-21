@@ -17,7 +17,8 @@ document.addEventListener('DOMContentLoaded', () => {
   
   const repeatsPicker = document.getElementById('repeats-picker');
   const paramRepeats = document.getElementById('param-repeats');
-  const paramIntensity = document.getElementById('param-intensity');
+  const benchLvlInputs = [...document.querySelectorAll('.bench-lvl-input')];
+  const benchLvlCount = document.getElementById('bench-lvl-count');
   const paramCfg = document.getElementById('param-cfg');
   const paramLoraMode = document.getElementById('param-lora-mode');
   const benchDspInputs = [...document.querySelectorAll('.bench-dsp-input')];
@@ -54,8 +55,65 @@ document.addEventListener('DOMContentLoaded', () => {
   syncBenchDspPicker();
 
   const summaryEmotionsCount = document.getElementById('summary-emotions-count');
+  const summaryLevelsCount = document.getElementById('summary-levels-count');
   const summaryTakesCount = document.getElementById('summary-takes-count');
   const summaryTotalTakes = document.getElementById('summary-total-takes');
+
+  // Intensity levels to test. One level is the classic run; ticking several
+  // splits every emotion into one matrix row per level, all from the same
+  // speaker and sentence, so the levels can be heard against each other.
+  function getSelectedIntensities() {
+    const levels = benchLvlInputs
+      .filter(i => i.checked)
+      .map(i => parseInt(i.value, 10))
+      .sort((a, b) => a - b);
+    return levels.length ? levels : [2];
+  }
+
+  function syncBenchLvlPicker() {
+    const n = getSelectedIntensities().length;
+    benchLvlInputs.forEach((i) => {
+      const opt = i.closest('.bench-lvl-opt');
+      if (opt) opt.classList.toggle('active', i.checked);
+    });
+    if (benchLvlCount) {
+      benchLvlCount.textContent = n === 1 ? '1 ระดับ' : `${n} ระดับ · แยกแถว`;
+      benchLvlCount.classList.toggle('is-multi', n > 1);
+    }
+    updateSummaryCounters();
+  }
+
+  benchLvlInputs.forEach(i => i.addEventListener('change', syncBenchLvlPicker));
+
+  // A row is one emotion at one level. The key stays the bare emotion while a
+  // single level is tested, so old sessions and their filenames keep matching.
+  function buildRows(emotions, intensities) {
+    const multi = intensities.length > 1;
+    const rows = [];
+    emotions.forEach((emotion) => {
+      intensities.forEach((intensity, idx) => {
+        rows.push({
+          emotion,
+          intensity,
+          key: multi ? `${emotion}__lv${intensity}` : emotion,
+          isFirstOfEmotion: idx === 0,
+          levelCount: intensities.length,
+        });
+      });
+    });
+    return rows;
+  }
+
+  // An emotion with no instruction at all (neutral) legitimately has null at
+  // every level, so a present-but-null entry must not fall through to level 2.
+  function instructionFor(emo, intensity) {
+    const byLevel = emo.instructions;
+    const key = String(intensity);
+    if (byLevel && Object.prototype.hasOwnProperty.call(byLevel, key)) {
+      return byLevel[key] || '';
+    }
+    return emo.default_instruction || '';
+  }
 
   const btnRunBenchmark = document.getElementById('btn-run-benchmark');
   const btnStopBenchmark = document.getElementById('btn-stop-benchmark');
@@ -201,9 +259,11 @@ document.addEventListener('DOMContentLoaded', () => {
   function updateSummaryCounters() {
     const selected = getSelectedEmotions();
     const repeats = parseInt(paramRepeats.value || '3', 10);
+    const levels = getSelectedIntensities();
     summaryEmotionsCount.textContent = selected.length;
+    if (summaryLevelsCount) summaryLevelsCount.textContent = levels.length;
     summaryTakesCount.textContent = repeats;
-    summaryTotalTakes.textContent = selected.length * repeats;
+    summaryTotalTakes.textContent = selected.length * levels.length * repeats;
 
     // Toggle take header columns in table
     for (let i = 1; i <= 5; i++) {
@@ -289,7 +349,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const repeats = parseInt(paramRepeats.value || '3', 10);
     const speakerId = speakerSelect.value.trim() || null;
-    const intensity = parseInt(paramIntensity.value || '2', 10);
+    const intensities = getSelectedIntensities();
     const cfgValue = parseFloat(paramCfg.value || '2.5');
     const loraMode = paramLoraMode.value || 'on';
     const dspVariants = getSelectedDspVariants();
@@ -303,7 +363,7 @@ document.addEventListener('DOMContentLoaded', () => {
       emotions: selectedEmotions,
       repeats,
       speakerId,
-      intensity,
+      intensities,
       cfgValue,
       loraMode,
       postProcess,
@@ -339,7 +399,8 @@ document.addEventListener('DOMContentLoaded', () => {
         text: config.text,
         emotions: config.emotions,
         repeats: config.repeats,
-        intensity: config.intensity,
+        intensity: config.intensities[0],
+        intensities: config.intensities,
         cfg_value: config.cfgValue,
         inference_timesteps: 10,
         lora_mode: config.loraMode,
@@ -361,32 +422,37 @@ document.addEventListener('DOMContentLoaded', () => {
       currentSessionTag.textContent = `Session: ${currentSessionId}`;
 
       // 2. Render Empty Skeleton Table Rows
-      renderTableSkeleton(config.emotions, config.repeats, config.intensity);
+      const rows = buildRows(config.emotions, config.intensities);
+      renderTableSkeleton(rows, config.repeats);
 
       // 3. Build Task Queue
       const queue = [];
-      config.emotions.forEach(emotion => {
+      rows.forEach(row => {
         for (let takeIdx = 1; takeIdx <= config.repeats; takeIdx++) {
           queue.push({
-            session_id: currentSessionId,
-            emotion,
-            take_idx: takeIdx,
-            text: config.text,
-            intensity: config.intensity,
-            speaker_id: config.speakerId,
-            cfg_value: config.cfgValue,
-            lora_mode: config.loraMode,
-            post_process: config.postProcess,
-            // One ticked variant keeps the classic single-file take (and its plain
-            // filename); more than one shares a generation across the treatments.
-            variants: config.dspVariants.length > 1
-              ? config.dspVariants.map(id => ({
-                  id,
-                  label: window.DSP_VARIANT_SPECS[id].label,
-                  post_process: window.DSP_VARIANT_SPECS[id].post_process,
-                  params: window.DSP_VARIANT_SPECS[id].params
-                }))
-              : null,
+            row,
+            payload: {
+              session_id: currentSessionId,
+              emotion: row.emotion,
+              row_key: row.key,
+              take_idx: takeIdx,
+              text: config.text,
+              intensity: row.intensity,
+              speaker_id: config.speakerId,
+              cfg_value: config.cfgValue,
+              lora_mode: config.loraMode,
+              post_process: config.postProcess,
+              // One ticked variant keeps the classic single-file take (and its plain
+              // filename); more than one shares a generation across the treatments.
+              variants: config.dspVariants.length > 1
+                ? config.dspVariants.map(id => ({
+                    id,
+                    label: window.DSP_VARIANT_SPECS[id].label,
+                    post_process: window.DSP_VARIANT_SPECS[id].post_process,
+                    params: window.DSP_VARIANT_SPECS[id].params
+                  }))
+                : null,
+            },
           });
         }
       });
@@ -404,19 +470,21 @@ document.addEventListener('DOMContentLoaded', () => {
           break;
         }
 
-        const emotionMeta = allEmotions.find(e => e.id === task.emotion) || { name_th: task.emotion, icon: '🎙️' };
-        progressTextLabel.textContent = `กำลังสร้าง: [${task.emotion}] ${emotionMeta.name_th} — Take ${task.take_idx}/${config.repeats}...`;
+        const { row, payload } = task;
+        const emotionMeta = allEmotions.find(e => e.id === row.emotion) || { name_th: row.emotion, icon: '🎙️' };
+        const lvlTag = row.levelCount > 1 ? ` Lv.${row.intensity}` : '';
+        progressTextLabel.textContent = `กำลังสร้าง: [${row.emotion}] ${emotionMeta.name_th}${lvlTag} — Take ${payload.take_idx}/${config.repeats}...`;
         statCompletedCount.textContent = `${completedTasks} / ${totalTasks} Takes`;
         progressBarFill.style.width = `${Math.round((completedTasks / totalTasks) * 100)}%`;
 
         // Mark cell as generating
-        setCellGenerating(task.emotion, task.take_idx);
+        setCellGenerating(row.key, payload.take_idx);
 
         try {
           const takeRes = await fetch('/api/benchmark/run-take', {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(task),
+            body: JSON.stringify(payload),
           });
 
           const takeResult = await takeRes.json();
@@ -424,7 +492,7 @@ document.addEventListener('DOMContentLoaded', () => {
           completedTasks++;
         } catch (err) {
           console.error('Take execution error:', err);
-          renderTakeErrorCell(task.emotion, task.take_idx, err.message);
+          renderTakeErrorCell(row.key, payload.take_idx, err.message);
           completedTasks++;
         }
 
@@ -471,27 +539,33 @@ document.addEventListener('DOMContentLoaded', () => {
   // Table Rendering & Cell Updates
   // ---------------------------------------------------------------------------
 
-  function renderTableSkeleton(emotions, repeats, intensity) {
+  // `rows` is the (emotion x intensity) matrix from buildRows(). Everything the
+  // table addresses -- cells, players, metrics -- is keyed by row.key rather
+  // than by emotion, because one emotion can now occupy several rows.
+  function renderTableSkeleton(rows, repeats) {
     benchmarkTbody.innerHTML = '';
 
-    emotions.forEach(emoId => {
-      const emo = allEmotions.find(e => e.id === emoId) || {
-        id: emoId,
-        name_th: emoId,
+    rows.forEach(row => {
+      const emo = allEmotions.find(e => e.id === row.emotion) || {
+        id: row.emotion,
+        name_th: row.emotion,
         icon: '🎙️',
         color_class: 'tone-neutral',
         default_instruction: '',
       };
 
       const tr = document.createElement('tr');
-      tr.id = `row-${emo.id}`;
-      tr.dataset.emotion = emo.id;
+      tr.id = `row-${row.key}`;
+      tr.dataset.emotion = row.emotion;
+      tr.dataset.rowKey = row.key;
+      tr.dataset.intensity = row.intensity;
 
-      // Column 1: Emotion badge
+      // Column 1: Emotion badge + the level this row was generated at
       const tdEmo = document.createElement('td');
       tdEmo.innerHTML = `
         <div class="emotion-badge-cell">
           <span class="emotion-tag-badge ${emo.color_class}">${emo.icon} ${emo.id}</span>
+          <span class="level-chip lvl-${row.intensity}" title="ระดับความเข้มของอารมณ์">Lv.${row.intensity}</span>
           <small style="color:#94a3b8;font-size:11.5px;">${emo.name_th}</small>
         </div>
       `;
@@ -499,13 +573,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Column 2: Instruction
       const tdInstr = document.createElement('td');
-      tdInstr.innerHTML = `<span class="instruction-code" id="instr-${emo.id}">${emo.default_instruction || '(Default Tone)'}</span>`;
+      const instr = instructionFor(emo, row.intensity);
+      tdInstr.innerHTML = `<span class="instruction-code" id="instr-${row.key}">${instr || '(Default Tone)'}</span>`;
       tr.appendChild(tdInstr);
 
       // Columns 3-7: Takes
       for (let i = 1; i <= 5; i++) {
         const tdTake = document.createElement('td');
-        tdTake.id = `cell-${emo.id}-${i}`;
+        tdTake.id = `cell-${row.key}-${i}`;
         tdTake.className = 'td-take-cell';
         if (i > repeats) {
           tdTake.style.display = 'none';
@@ -519,35 +594,48 @@ document.addEventListener('DOMContentLoaded', () => {
         tr.appendChild(tdTake);
       }
 
-      // Column 8: Compare All Takes Button
+      // Column 8: Compare buttons -- across takes always, and across levels on
+      // the first row of an emotion when the run covers more than one level.
       const tdCompare = document.createElement('td');
       tdCompare.innerHTML = `
-        <button type="button" class="btn-compare-play" id="btn-compare-${emo.id}" title="เล่นเทียบ Take 1 -> 2 -> 3">
+        <button type="button" class="btn-compare-play" id="btn-compare-${row.key}" title="เล่นเทียบ Take 1 -> 2 -> 3">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
           <span>เล่นเทียบ ${repeats} Takes</span>
         </button>
       `;
       tdCompare.querySelector('button').addEventListener('click', () => {
-        playSequentialRow(emo.id, repeats);
+        playSequentialRow(row.key, repeats);
       });
+
+      if (row.levelCount > 1 && row.isFirstOfEmotion) {
+        const levels = rows.filter(r => r.emotion === row.emotion).map(r => r.intensity);
+        const btnLv = document.createElement('button');
+        btnLv.type = 'button';
+        btnLv.className = 'btn-compare-levels';
+        btnLv.id = `btn-compare-lv-${row.emotion}`;
+        btnLv.title = 'เล่น Take 1 ของอารมณ์นี้ไล่ทีละระดับ';
+        btnLv.innerHTML = `<span>🎚️ เทียบระดับ ${levels.map(l => 'Lv.' + l).join(' → ')}</span>`;
+        btnLv.addEventListener('click', () => playSequentialLevels(row.emotion, levels));
+        tdCompare.appendChild(btnLv);
+      }
       tr.appendChild(tdCompare);
 
       // Column 9: Metrics Cell
       const tdMetrics = document.createElement('td');
-      tdMetrics.id = `metrics-${emo.id}`;
+      tdMetrics.id = `metrics-${row.key}`;
       tdMetrics.innerHTML = `<div class="metrics-pill-group"><span class="metric-pill" style="color:#64748b;">—</span></div>`;
       tr.appendChild(tdMetrics);
 
       // Column 10: Rerun row button
       const tdAction = document.createElement('td');
       tdAction.innerHTML = `
-        <button type="button" class="btn-rerun-row" title="รันซ้ำเฉพาะอารมณ์นี้">
+        <button type="button" class="btn-rerun-row" title="รันซ้ำเฉพาะแถวนี้">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21.5 2v6h-6M21.34 15.57a10 10 0 1 1-.57-8.38l5.67-5.67"/></svg>
           <span>รันซ้ำ</span>
         </button>
       `;
       tdAction.querySelector('button').addEventListener('click', () => {
-        rerunSingleEmotion(emo.id, repeats);
+        rerunSingleRow(row, repeats);
       });
       tr.appendChild(tdAction);
 
@@ -555,8 +643,8 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  function setCellGenerating(emotion, takeIdx) {
-    const cell = document.getElementById(`cell-${emotion}-${takeIdx}`);
+  function setCellGenerating(rowKey, takeIdx) {
+    const cell = document.getElementById(`cell-${rowKey}-${takeIdx}`);
     if (cell) {
       cell.innerHTML = `
         <div class="mini-take-player is-generating">
@@ -602,33 +690,36 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderTakeResultCell(result) {
+    // Sessions and runs from before multi-level testing carry no row_key, and
+    // for them the emotion is still the row.
+    const rowKey = result.row_key || result.emotion;
     if (!result.error) {
-      takeResults.set(`${result.emotion}_${result.take_idx}`, result);
+      takeResults.set(`${rowKey}_${result.take_idx}`, result);
       renderVariantBar(result.variants);
     }
     const chosen = pickVariant(result);
-    const { emotion, take_idx, instruction, elapsed_s, error } = result;
+    const { take_idx, instruction, elapsed_s, error } = result;
     const audio_url = chosen ? chosen.audio_url : result.audio_url;
     const filename = chosen ? chosen.filename : result.filename;
     const metrics = chosen ? chosen.metrics : result.metrics;
-    const cell = document.getElementById(`cell-${emotion}-${take_idx}`);
+    const cell = document.getElementById(`cell-${rowKey}-${take_idx}`);
     if (!cell) return;
 
     if (error || !audio_url) {
-      renderTakeErrorCell(emotion, take_idx, error || 'Failed');
+      renderTakeErrorCell(rowKey, take_idx, error || 'Failed');
       return;
     }
 
     // Update instruction text if arrived
     if (instruction) {
-      const instrEl = document.getElementById(`instr-${emotion}`);
+      const instrEl = document.getElementById(`instr-${rowKey}`);
       if (instrEl) instrEl.textContent = instruction;
     }
 
     const dur = metrics ? `${metrics.dur_s}s` : '—';
 
     cell.innerHTML = `
-      <div class="mini-take-player" id="player-${emotion}-${take_idx}" data-url="${audio_url}">
+      <div class="mini-take-player" id="player-${rowKey}-${take_idx}" data-url="${audio_url}">
         <button type="button" class="btn-mini-play" title="เล่นเสียง">
           <svg class="play-svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
           <svg class="pause-svg hidden" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
@@ -651,12 +742,12 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Update Metrics in Row
     if (metrics) {
-      updateRowMetrics(emotion, metrics);
+      updateRowMetrics(rowKey, metrics);
     }
   }
 
-  function renderTakeErrorCell(emotion, takeIdx, errMsg) {
-    const cell = document.getElementById(`cell-${emotion}-${takeIdx}`);
+  function renderTakeErrorCell(rowKey, takeIdx, errMsg) {
+    const cell = document.getElementById(`cell-${rowKey}-${takeIdx}`);
     if (cell) {
       cell.innerHTML = `
         <div class="mini-take-player is-pending" style="border-color:#ef4444;color:#f87171;" title="${errMsg}">
@@ -666,8 +757,8 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  function updateRowMetrics(emotion, m) {
-    const metricsCell = document.getElementById(`metrics-${emotion}`);
+  function updateRowMetrics(rowKey, m) {
+    const metricsCell = document.getElementById(`metrics-${rowKey}`);
     if (!metricsCell) return;
 
     metricsCell.innerHTML = `
@@ -731,17 +822,17 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   // Sequential Compare Play (A/B/C)
-  function playSequentialRow(emotion, repeats) {
+  function playSequentialRow(rowKey, repeats) {
     stopSequentialTour();
 
-    const row = document.getElementById(`row-${emotion}`);
-    const compareBtn = document.getElementById(`btn-compare-${emotion}`);
+    const row = document.getElementById(`row-${rowKey}`);
+    const compareBtn = document.getElementById(`btn-compare-${rowKey}`);
     if (!row) return;
 
     // Collect URLs from row takes
     const urls = [];
     for (let i = 1; i <= repeats; i++) {
-      const p = document.getElementById(`player-${emotion}-${i}`);
+      const p = document.getElementById(`player-${rowKey}-${i}`);
       if (p && p.dataset.url) {
         urls.push({
           url: p.dataset.url,
@@ -789,10 +880,69 @@ document.addEventListener('DOMContentLoaded', () => {
     playNext();
   }
 
+  // The point of testing several levels is hearing them next to each other,
+  // which the per-row compare button cannot do -- it stays inside one level.
+  // This walks take 1 of one emotion up (or down) the levels that were run.
+  function playSequentialLevels(emotion, levels) {
+    stopSequentialTour();
+
+    const btn = document.getElementById(`btn-compare-lv-${emotion}`);
+    const items = [];
+    levels.forEach((lv) => {
+      const player = document.getElementById(`player-${emotion}__lv${lv}-1`);
+      const row = document.getElementById(`row-${emotion}__lv${lv}`);
+      if (player && player.dataset.url) {
+        items.push({ url: player.dataset.url, playerBox: player, row, level: lv });
+      }
+    });
+
+    if (items.length === 0) {
+      alert('ยังไม่มีเสียงที่สังเคราะห์เสร็จของอารมณ์นี้');
+      return;
+    }
+
+    const restore = () => {
+      if (btn) {
+        btn.classList.remove('playing');
+        btn.innerHTML = `<span>🎚️ เทียบระดับ ${levels.map(l => 'Lv.' + l).join(' → ')}</span>`;
+      }
+      document.querySelectorAll('.mini-take-player').forEach(el => el.classList.remove('is-playing'));
+      document.querySelectorAll('tr').forEach(r => r.classList.remove('row-active-highlight'));
+    };
+
+    if (btn) btn.classList.add('playing');
+
+    let idx = 0;
+    function playNext() {
+      if (idx >= items.length) {
+        restore();
+        return;
+      }
+      const item = items[idx];
+      if (btn) btn.innerHTML = `<span>กำลังเล่น Lv.${item.level} (${idx + 1}/${items.length})...</span>`;
+      document.querySelectorAll('.mini-take-player').forEach(el => el.classList.remove('is-playing'));
+      document.querySelectorAll('tr').forEach(r => r.classList.remove('row-active-highlight'));
+      item.playerBox.classList.add('is-playing');
+      if (item.row) item.row.classList.add('row-active-highlight');
+
+      globalSuiteAudio.src = item.url;
+      globalSuiteAudio.play();
+      globalSuiteAudio.onended = () => {
+        idx++;
+        setTimeout(playNext, 250);
+      };
+    }
+
+    playNext();
+  }
+
   function stopSequentialTour() {
     globalSuiteAudio.pause();
     globalSuiteAudio.onended = null;
     document.querySelectorAll('.btn-compare-play').forEach(btn => {
+      btn.classList.remove('playing');
+    });
+    document.querySelectorAll('.btn-compare-levels').forEach(btn => {
       btn.classList.remove('playing');
     });
     document.querySelectorAll('.mini-take-player').forEach(el => el.classList.remove('is-playing'));
@@ -852,8 +1002,9 @@ document.addEventListener('DOMContentLoaded', () => {
     playNextTour();
   });
 
-  // Re-run single emotion row
-  async function rerunSingleEmotion(emotion, repeats) {
+  // Re-run a single matrix row, keeping the level the row was built for so a
+  // rerun cannot silently move the row to whatever the picker says right now.
+  async function rerunSingleRow(row, repeats) {
     if (isRunning) {
       alert('กรุณารอการทดสอบปัจจุบันเสร็จสิ้นก่อน');
       return;
@@ -866,7 +1017,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const text = testTextInput.value.trim();
     const speakerId = speakerSelect.value.trim() || null;
-    const intensity = parseInt(paramIntensity.value || '2', 10);
+    const intensity = row.intensity;
     const cfgValue = parseFloat(paramCfg.value || '2.5');
     const loraMode = paramLoraMode.value || 'on';
     const dspVariants = getSelectedDspVariants();
@@ -875,14 +1026,15 @@ document.addEventListener('DOMContentLoaded', () => {
       : true;
 
     for (let takeIdx = 1; takeIdx <= repeats; takeIdx++) {
-      setCellGenerating(emotion, takeIdx);
+      setCellGenerating(row.key, takeIdx);
       try {
         const res = await fetch('/api/benchmark/run-take', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             session_id: currentSessionId,
-            emotion,
+            emotion: row.emotion,
+            row_key: row.key,
             take_idx: takeIdx,
             text,
             intensity,
@@ -905,7 +1057,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const data = await res.json();
         renderTakeResultCell(data);
       } catch (err) {
-        renderTakeErrorCell(emotion, takeIdx, err.message);
+        renderTakeErrorCell(row.key, takeIdx, err.message);
       }
     }
   }
@@ -940,11 +1092,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const dateStr = sess.created_at ? new Date(sess.created_at).toLocaleString('th-TH') : '—';
         const spk = sess.speaker_id || 'Base Seed Voice';
         const takes = `${sess.completed_takes || 0}/${sess.total_takes || 0} Takes`;
+        const sp = sess.params || {};
+        const lv = (sp.intensities && sp.intensities.length ? sp.intensities : [sp.intensity || 2])
+          .map(l => `Lv.${l}`).join(', ');
 
         item.innerHTML = `
           <div class="history-meta">
             <span class="history-title">${sess.name}</span>
-            <span class="history-sub">📅 ${dateStr} · 🎙️ ${spk} · ⚡ ${takes}</span>
+            <span class="history-sub">📅 ${dateStr} · 🎙️ ${spk} · 🎚️ ${lv} · ⚡ ${takes}</span>
             <span class="history-text-snippet">"${sess.text || ''}"</span>
           </div>
           <button type="button" class="btn-load-history" data-session="${sess.session_id}">
@@ -994,12 +1149,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
       const emotions = data.emotions || [];
       const repeats = data.repeats || 3;
-      const intensity = (data.params && data.params.intensity) || 2;
+      const params = data.params || {};
+      // Sessions recorded before multi-level runs only have the single value.
+      const intensities = (data.intensities && data.intensities.length)
+        ? data.intensities
+        : (params.intensities && params.intensities.length ? params.intensities : [params.intensity || 2]);
+
+      // Put the picker back where the session left it, so a rerun of a row --
+      // or a fresh run off the loaded settings -- matches what is on screen.
+      benchLvlInputs.forEach((i) => {
+        i.checked = intensities.includes(parseInt(i.value, 10));
+      });
+      syncBenchLvlPicker();
 
       resultsEmptyState.classList.add('hidden');
       resultsTableWrapper.classList.remove('hidden');
 
-      renderTableSkeleton(emotions, repeats, intensity);
+      renderTableSkeleton(buildRows(emotions, intensities), repeats);
       takeResults.clear();
       activeVariantId = null;
       if (matrixVariantBar) matrixVariantBar.classList.add('hidden');
@@ -1009,6 +1175,8 @@ document.addEventListener('DOMContentLoaded', () => {
         renderTakeResultCell({
           session_id: currentSessionId,
           emotion: takeRecord.emotion,
+          row_key: takeRecord.row_key || takeRecord.emotion,
+          intensity: takeRecord.intensity,
           take_idx: takeRecord.take_idx,
           instruction: takeRecord.instruction,
           audio_url: takeRecord.audio_url,
