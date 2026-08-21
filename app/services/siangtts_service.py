@@ -748,7 +748,7 @@ class SiangTTSService:
             # registered through the other pipeline works here too.
             resolver = getattr(synth, "resolve_speaker", None)
             if resolver is not None:
-                handle = resolver(speaker_id)
+                handle = resolver(speaker_id, allow_sidecar=False)
                 if handle:
                     self._voices[speaker_id] = handle
                     return handle, None, None

@@ -9,6 +9,7 @@ from app.renderers.voxcpm import (
     resolve_style_tag,
     split_style_chunk_specs,
     STYLE_VOCABULARY,
+    VOXCPM_INSTRUCTION_MAP,
 )
 from app.renderers import get_renderer
 
@@ -40,7 +41,7 @@ def test_voxcpm_renderer_calm_prompt():
     (Tone.CALM, 1, "Slightly calm"),
     (Tone.CALM, 2, "Calm and soothing"),
     (Tone.CALM, 3, "Deeply calm"),
-    (Tone.SAD, 2, "Sad and melancholic"),
+    (Tone.SAD, 2, "Sad voice, quiet and downcast"),
     (Tone.ANGRY, 2, "Angry, firm and aggressive"),
     (Tone.HAPPY, 2, "Happy and cheerful"),
     (Tone.EXCITED, 2, "Excited and energetic"),
@@ -51,6 +52,37 @@ def test_voxcpm_renderer_tones_and_intensities(tone, intensity, expected_substr)
     instr = format_voxcpm_instruction(tone, intensity)
     assert instr is not None
     assert expected_substr.lower() in instr.lower()
+
+
+# Wordings measured to make VoxCPM2 drop out of control mode and *speak* the
+# direction ahead of the line, in English, instead of obeying it. Nothing detects
+# that downstream: the audio arrives, no error is raised, and the prosody metrics
+# still report plausible numbers because the leaked English is real speech. The
+# trigger is the exact phrasing rather than any one word -- tired@3 carries "heavy
+# sighs" and never leaked -- so this is a list of known-bad strings, not a rule.
+# Add to it from tools/instruction_leak_audit.py rather than by intuition.
+KNOWN_LEAKING_INSTRUCTIONS = {
+    # Leaked 6 takes out of 6 against a pinned speaker; Whisper transcribed
+    # "Sad and Melancholic Voice Slight Sighs" ahead of the Thai, +2.5 s of audio.
+    "(Sad and melancholic voice, slight sighs)",
+    # Leaked 4 takes in 30 -- "Heavy, Sarcastic and Cynical" -- sometimes garbling
+    # the Thai behind it. Intermittent is the harder case: one run of 6 came back
+    # clean, so only a multi-rep audit finds it. The replacement went 0 in 21.
+    "(Heavy sarcastic and cynical tone)",
+}
+
+
+def test_no_known_leaking_instructions():
+    """No shipped direction may be one VoxCPM2 is known to read aloud."""
+    shipped = {
+        instruction
+        for by_intensity in VOXCPM_INSTRUCTION_MAP.values()
+        for instruction in by_intensity.values()
+        if instruction
+    } | {
+        instruction for instruction, _family in STYLE_VOCABULARY.values() if instruction
+    }
+    assert not (shipped & KNOWN_LEAKING_INSTRUCTIONS)
 
 
 def test_voxcpm_renderer_factory():

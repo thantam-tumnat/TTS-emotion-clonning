@@ -37,7 +37,7 @@ Uploaded Reference Audio / Registered Speaker ────────► 2. VOI
 | Tone | VoxCPM2 / SiangTTS Instruction | ElevenLabs Tag | Gemini Prompt (Thai) |
 |---|---|---|---|
 | `neutral` | *(no instruction)* | *(no tag)* | น้ำเสียงปกติ เป็นกลาง |
-| `sad` | `(Sad and melancholic voice, slight sighs)` | `[sad]` | เศร้า สะเทือนใจ |
+| `sad` | `(Sad voice, quiet and downcast)` | `[sad]` | เศร้า สะเทือนใจ |
 | `happy` | `(Happy and cheerful voice, smiling while speaking)` | `[happily]` | ร่าเริง ยิ้มขณะพูด |
 | `angry` | `(Angry, firm and aggressive tone)` | `[angry]` | โกรธ เสียงแข็ง |
 | `excited` | `(Excited and energetic tone)` | `[excited]` | ตื่นเต้น กระตือรือร้น |
@@ -46,6 +46,12 @@ Uploaded Reference Audio / Registered Speaker ────────► 2. VOI
 | `sarcastic` | `(Sarcastic and mocking tone)` | `[sarcastic]` | ประชด แดกดัน |
 
 Intensity levels for VoxCPM (1: Mild / 2: Standard / 3: Strong).
+
+Reword these only with `tools/instruction_leak_audit.py` in hand. On some phrasings
+VoxCPM2 stops treating the parenthetical as direction and reads it aloud in English
+ahead of the line — the tag still "works" as far as every check in this repo is
+concerned, it just also speaks the stage direction. The audit renders each wording
+and transcribes it, which is the only way that shows up.
 
 ---
 

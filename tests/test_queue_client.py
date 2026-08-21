@@ -131,6 +131,8 @@ def test_named_speaker_is_resolved_rather_than_uploaded(wired):
 
     synth.render_batch(["x"], speaker_id="thai_female")
 
+    resolve_call = [c for c in log if "resolve" in c["url"]][0]
+    assert resolve_call["json"]["allow_sidecar"] is False, "tone studio must disable sidecar to keep reference mode"
     assert log[-1]["json"]["voice"] == {"handle": "vh_named"}
     assert not any("files" in c for c in log), "no clip should be uploaded for a named voice"
 

@@ -296,6 +296,20 @@ def collect_tag_warnings(text: str) -> List[str]:
 # Appending explicit prosody ("bright high pitch, lively quick pace") DILUTED it to
 # +4.4 / -2.2, and bare "(happy)" / "(sad)" tags were worse still at -15.0 / -6.1.
 # Re-measure before rewording.
+#
+# Wording also decides whether the direction is *obeyed at all*. VoxCPM2 can drop
+# out of control mode on a particular phrasing and read the parenthetical aloud in
+# English ahead of the line -- audible, and invisible to every prosody metric.
+# Sad@2 used to be "(Sad and melancholic voice, slight sighs)", which leaked in 6 of
+# 6 takes (Whisper heard "Sad and Melancholic Voice Slight Sighs", +2.5 s of audio);
+# the wording below leaked 0 of 3, at lower F0 and slower pace than neutral.
+#
+# The trigger is the exact phrasing, not any one word: tired@3 carries "heavy sighs"
+# with no leak at all. So there is no rule to encode here -- re-run
+# tools/instruction_leak_audit.py after any edit, at enough reps to matter.
+# Sarcastic@3 is why "enough reps": "(Heavy sarcastic and cynical tone)" leaked 4
+# takes in 30, and one run of 6 came back clean. A three-rep spot check passes it
+# roughly two times in three; a listener hears it within the afternoon.
 VOXCPM_INSTRUCTION_MAP = {
     Tone.NEUTRAL: {
         1: None,
@@ -309,7 +323,7 @@ VOXCPM_INSTRUCTION_MAP = {
     },
     Tone.SAD: {
         1: "(Slightly sad tone)",
-        2: "(Sad and melancholic voice, slight sighs)",
+        2: "(Sad voice, quiet and downcast)",
         3: "(Deeply sorrowful and crying voice, trembling)",
     },
     Tone.HAPPY: {
@@ -335,7 +349,7 @@ VOXCPM_INSTRUCTION_MAP = {
     Tone.SARCASTIC: {
         1: "(Slightly sarcastic tone)",
         2: "(Sarcastic and mocking tone)",
-        3: "(Heavy sarcastic and cynical tone)",
+        3: "(Deeply sarcastic and cynical tone)",
     },
     Tone.SCARED: {
         1: "(Slightly uneasy and wary voice)",

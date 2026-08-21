@@ -103,7 +103,12 @@ class QueueSynthesizer:
     # Voices
     # ------------------------------------------------------------------ #
 
-    def resolve_speaker(self, speaker_id: str, ref_text: str = "") -> Optional[str]:
+    def resolve_speaker(
+        self,
+        speaker_id: str,
+        ref_text: str = "",
+        allow_sidecar: bool = False,
+    ) -> Optional[str]:
         """Handle for a voice the *service* has in its reference directory.
 
         Returns None when it does not know the speaker, so the caller can fall back
@@ -113,7 +118,11 @@ class QueueSynthesizer:
             with self._client(timeout=60.0) as c:
                 res = c.post(
                     "/v2/voices/resolve",
-                    json={"speaker_id": speaker_id, "ref_text": ref_text},
+                    json={
+                        "speaker_id": speaker_id,
+                        "ref_text": ref_text,
+                        "allow_sidecar": allow_sidecar,
+                    },
                 )
             if res.status_code == 200:
                 return res.json()["voice_handle"]
@@ -240,7 +249,7 @@ class QueueSynthesizer:
         if isinstance(prompt_cache, str) and prompt_cache:
             return {"handle": prompt_cache}
         if speaker_id:
-            handle = self.resolve_speaker(speaker_id)
+            handle = self.resolve_speaker(speaker_id, allow_sidecar=False)
             if handle:
                 return {"handle": handle}
         if ref_audio and os.path.exists(ref_audio):
