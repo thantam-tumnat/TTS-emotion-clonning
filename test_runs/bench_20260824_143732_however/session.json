@@ -1,0 +1,840 @@
+{
+  "session_id": "bench_20260824_143732_however",
+  "name": "Emotion Benchmark (20260824_143732)",
+  "created_at": "2026-08-24T14:37:32.120114",
+  "speaker_id": "however",
+  "text": "บอกกี่ครั้งแล้วว่าอย่ามายุ่ง! Get out of my face right now, leave me alone!!",
+  "emotions": [
+    "neutral",
+    "happy",
+    "sad",
+    "angry"
+  ],
+  "repeats": 3,
+  "total_takes": 12,
+  "completed_takes": 12,
+  "params": {
+    "intensity": 3,
+    "cfg_value": 3.5,
+    "inference_timesteps": 10,
+    "lora_mode": "on"
+  },
+  "takes": {
+    "neutral_1": {
+      "emotion": "neutral",
+      "take_idx": 1,
+      "instruction": "",
+      "spoken_text": "บอกกี่ครั้งแล้วว่าอย่ามายุ่ง! Get out of my face right now, leave me alone!!",
+      "filename": "neutral_take_1__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/neutral_take_1__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.21,
+        "rms": 0.1764,
+        "energy_dbfs": -15.1,
+        "f0_med_hz": 296.3,
+        "f0_p10_hz": 248.7,
+        "f0_p90_hz": 352.9,
+        "f0_spread_st": 6.06
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "neutral_take_1__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/neutral_take_1__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.21,
+            "rms": 0.1764,
+            "energy_dbfs": -15.1,
+            "f0_med_hz": 296.3,
+            "f0_p10_hz": 248.7,
+            "f0_p90_hz": 352.9,
+            "f0_spread_st": 6.06
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "neutral_take_1__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/neutral_take_1__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.21,
+            "rms": 0.1764,
+            "energy_dbfs": -15.1,
+            "f0_med_hz": 296.3,
+            "f0_p10_hz": 248.7,
+            "f0_p90_hz": 352.9,
+            "f0_spread_st": 6.06
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "neutral_take_1__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/neutral_take_1__raw.wav",
+          "metrics": {
+            "dur_s": 5.44,
+            "rms": 0.1725,
+            "energy_dbfs": -15.3,
+            "f0_med_hz": 296.3,
+            "f0_p10_hz": 248.7,
+            "f0_p90_hz": 352.9,
+            "f0_spread_st": 6.06
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 13.31,
+      "error": null,
+      "timestamp": "2026-08-24T14:37:45.437409"
+    },
+    "neutral_2": {
+      "emotion": "neutral",
+      "take_idx": 2,
+      "instruction": "",
+      "spoken_text": "บอกกี่ครั้งแล้วว่าอย่ามายุ่ง! Get out of my face right now, leave me alone!!",
+      "filename": "neutral_take_2__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/neutral_take_2__emotion_on.wav",
+      "metrics": {
+        "dur_s": 4.95,
+        "rms": 0.2133,
+        "energy_dbfs": -13.4,
+        "f0_med_hz": 296.3,
+        "f0_p10_hz": 247.4,
+        "f0_p90_hz": 335.7,
+        "f0_spread_st": 5.28
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "neutral_take_2__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/neutral_take_2__emotion_on.wav",
+          "metrics": {
+            "dur_s": 4.95,
+            "rms": 0.2133,
+            "energy_dbfs": -13.4,
+            "f0_med_hz": 296.3,
+            "f0_p10_hz": 247.4,
+            "f0_p90_hz": 335.7,
+            "f0_spread_st": 5.28
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "neutral_take_2__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/neutral_take_2__cleanup.wav",
+          "metrics": {
+            "dur_s": 4.95,
+            "rms": 0.2133,
+            "energy_dbfs": -13.4,
+            "f0_med_hz": 296.3,
+            "f0_p10_hz": 247.4,
+            "f0_p90_hz": 335.7,
+            "f0_spread_st": 5.28
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "neutral_take_2__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/neutral_take_2__raw.wav",
+          "metrics": {
+            "dur_s": 5.12,
+            "rms": 0.216,
+            "energy_dbfs": -13.3,
+            "f0_med_hz": 296.3,
+            "f0_p10_hz": 247.4,
+            "f0_p90_hz": 335.7,
+            "f0_spread_st": 5.28
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 12.04,
+      "error": null,
+      "timestamp": "2026-08-24T14:37:57.483043"
+    },
+    "neutral_3": {
+      "emotion": "neutral",
+      "take_idx": 3,
+      "instruction": "",
+      "spoken_text": "บอกกี่ครั้งแล้วว่าอย่ามายุ่ง! Get out of my face right now, leave me alone!!",
+      "filename": "neutral_take_3__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/neutral_take_3__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.03,
+        "rms": 0.2223,
+        "energy_dbfs": -13.1,
+        "f0_med_hz": 309.7,
+        "f0_p10_hz": 251.3,
+        "f0_p90_hz": 341.6,
+        "f0_spread_st": 5.32
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "neutral_take_3__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/neutral_take_3__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.03,
+            "rms": 0.2223,
+            "energy_dbfs": -13.1,
+            "f0_med_hz": 309.7,
+            "f0_p10_hz": 251.3,
+            "f0_p90_hz": 341.6,
+            "f0_spread_st": 5.32
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "neutral_take_3__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/neutral_take_3__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.03,
+            "rms": 0.2223,
+            "energy_dbfs": -13.1,
+            "f0_med_hz": 309.7,
+            "f0_p10_hz": 251.3,
+            "f0_p90_hz": 341.6,
+            "f0_spread_st": 5.32
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "neutral_take_3__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/neutral_take_3__raw.wav",
+          "metrics": {
+            "dur_s": 5.44,
+            "rms": 0.2238,
+            "energy_dbfs": -13.0,
+            "f0_med_hz": 309.7,
+            "f0_p10_hz": 251.3,
+            "f0_p90_hz": 341.4,
+            "f0_spread_st": 5.3
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 13.1,
+      "error": null,
+      "timestamp": "2026-08-24T14:38:10.586089"
+    },
+    "happy_1": {
+      "emotion": "happy",
+      "take_idx": 1,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "บอกกี่ครั้งแล้วว่าอย่ามายุ่ง! Get out of my face right now, leave me alone!!",
+      "filename": "happy_take_1__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/happy_take_1__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.43,
+        "rms": 0.1842,
+        "energy_dbfs": -14.7,
+        "f0_med_hz": 307.7,
+        "f0_p10_hz": 271.2,
+        "f0_p90_hz": 369.2,
+        "f0_spread_st": 5.34
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "happy_take_1__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/happy_take_1__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.43,
+            "rms": 0.1842,
+            "energy_dbfs": -14.7,
+            "f0_med_hz": 307.7,
+            "f0_p10_hz": 271.2,
+            "f0_p90_hz": 369.2,
+            "f0_spread_st": 5.34
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "happy_take_1__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/happy_take_1__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.43,
+            "rms": 0.1873,
+            "energy_dbfs": -14.6,
+            "f0_med_hz": 307.7,
+            "f0_p10_hz": 271.2,
+            "f0_p90_hz": 369.2,
+            "f0_spread_st": 5.34
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "happy_take_1__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/happy_take_1__raw.wav",
+          "metrics": {
+            "dur_s": 5.76,
+            "rms": 0.1896,
+            "energy_dbfs": -14.4,
+            "f0_med_hz": 307.7,
+            "f0_p10_hz": 271.2,
+            "f0_p90_hz": 369.2,
+            "f0_spread_st": 5.34
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 13.41,
+      "error": null,
+      "timestamp": "2026-08-24T14:38:24.006323"
+    },
+    "happy_2": {
+      "emotion": "happy",
+      "take_idx": 2,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "บอกกี่ครั้งแล้วว่าอย่ามายุ่ง! Get out of my face right now, leave me alone!!",
+      "filename": "happy_take_2__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/happy_take_2__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.11,
+        "rms": 0.2475,
+        "energy_dbfs": -12.1,
+        "f0_med_hz": 305.7,
+        "f0_p10_hz": 247.8,
+        "f0_p90_hz": 350.4,
+        "f0_spread_st": 6.0
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "happy_take_2__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/happy_take_2__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.11,
+            "rms": 0.2475,
+            "energy_dbfs": -12.1,
+            "f0_med_hz": 305.7,
+            "f0_p10_hz": 247.8,
+            "f0_p90_hz": 350.4,
+            "f0_spread_st": 6.0
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "happy_take_2__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/happy_take_2__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.11,
+            "rms": 0.25,
+            "energy_dbfs": -12.0,
+            "f0_med_hz": 305.7,
+            "f0_p10_hz": 247.8,
+            "f0_p90_hz": 350.4,
+            "f0_spread_st": 6.0
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "happy_take_2__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/happy_take_2__raw.wav",
+          "metrics": {
+            "dur_s": 5.44,
+            "rms": 0.254,
+            "energy_dbfs": -11.9,
+            "f0_med_hz": 305.7,
+            "f0_p10_hz": 247.9,
+            "f0_p90_hz": 350.4,
+            "f0_spread_st": 5.99
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 12.82,
+      "error": null,
+      "timestamp": "2026-08-24T14:38:36.835250"
+    },
+    "happy_3": {
+      "emotion": "happy",
+      "take_idx": 3,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "บอกกี่ครั้งแล้วว่าอย่ามายุ่ง! Get out of my face right now, leave me alone!!",
+      "filename": "happy_take_3__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/happy_take_3__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.59,
+        "rms": 0.1926,
+        "energy_dbfs": -14.3,
+        "f0_med_hz": 303.8,
+        "f0_p10_hz": 250.0,
+        "f0_p90_hz": 342.9,
+        "f0_spread_st": 5.47
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "happy_take_3__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/happy_take_3__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.59,
+            "rms": 0.1926,
+            "energy_dbfs": -14.3,
+            "f0_med_hz": 303.8,
+            "f0_p10_hz": 250.0,
+            "f0_p90_hz": 342.9,
+            "f0_spread_st": 5.47
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "happy_take_3__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/happy_take_3__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.59,
+            "rms": 0.1989,
+            "energy_dbfs": -14.0,
+            "f0_med_hz": 303.8,
+            "f0_p10_hz": 250.0,
+            "f0_p90_hz": 342.9,
+            "f0_spread_st": 5.47
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "happy_take_3__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/happy_take_3__raw.wav",
+          "metrics": {
+            "dur_s": 5.92,
+            "rms": 0.1983,
+            "energy_dbfs": -14.1,
+            "f0_med_hz": 303.8,
+            "f0_p10_hz": 250.0,
+            "f0_p90_hz": 342.9,
+            "f0_spread_st": 5.47
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 13.9,
+      "error": null,
+      "timestamp": "2026-08-24T14:38:50.743608"
+    },
+    "sad_1": {
+      "emotion": "sad",
+      "take_idx": 1,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "บอกกี่ครั้งแล้วว่าอย่ามายุ่ง! Get out of my face right now, leave me alone!!",
+      "filename": "sad_take_1__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/sad_take_1__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.13,
+        "rms": 0.1521,
+        "energy_dbfs": -16.4,
+        "f0_med_hz": 282.4,
+        "f0_p10_hz": 231.9,
+        "f0_p90_hz": 326.5,
+        "f0_spread_st": 5.93
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "sad_take_1__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/sad_take_1__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.13,
+            "rms": 0.1521,
+            "energy_dbfs": -16.4,
+            "f0_med_hz": 282.4,
+            "f0_p10_hz": 231.9,
+            "f0_p90_hz": 326.5,
+            "f0_spread_st": 5.93
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "sad_take_1__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/sad_take_1__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.13,
+            "rms": 0.1915,
+            "energy_dbfs": -14.4,
+            "f0_med_hz": 282.4,
+            "f0_p10_hz": 231.9,
+            "f0_p90_hz": 326.5,
+            "f0_spread_st": 5.93
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "sad_take_1__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/sad_take_1__raw.wav",
+          "metrics": {
+            "dur_s": 6.24,
+            "rms": 0.1737,
+            "energy_dbfs": -15.2,
+            "f0_med_hz": 282.4,
+            "f0_p10_hz": 232.0,
+            "f0_p90_hz": 326.5,
+            "f0_spread_st": 5.92
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 14.47,
+      "error": null,
+      "timestamp": "2026-08-24T14:39:05.220533"
+    },
+    "sad_2": {
+      "emotion": "sad",
+      "take_idx": 2,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "บอกกี่ครั้งแล้วว่าอย่ามายุ่ง! Get out of my face right now, leave me alone!!",
+      "filename": "sad_take_2__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/sad_take_2__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.33,
+        "rms": 0.1632,
+        "energy_dbfs": -15.7,
+        "f0_med_hz": 300.0,
+        "f0_p10_hz": 240.0,
+        "f0_p90_hz": 335.7,
+        "f0_spread_st": 5.81
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "sad_take_2__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/sad_take_2__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.33,
+            "rms": 0.1632,
+            "energy_dbfs": -15.7,
+            "f0_med_hz": 300.0,
+            "f0_p10_hz": 240.0,
+            "f0_p90_hz": 335.7,
+            "f0_spread_st": 5.81
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "sad_take_2__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/sad_take_2__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.33,
+            "rms": 0.1995,
+            "energy_dbfs": -14.0,
+            "f0_med_hz": 300.0,
+            "f0_p10_hz": 240.0,
+            "f0_p90_hz": 335.7,
+            "f0_spread_st": 5.81
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "sad_take_2__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/sad_take_2__raw.wav",
+          "metrics": {
+            "dur_s": 6.4,
+            "rms": 0.1876,
+            "energy_dbfs": -14.5,
+            "f0_med_hz": 300.0,
+            "f0_p10_hz": 240.0,
+            "f0_p90_hz": 335.4,
+            "f0_spread_st": 5.8
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 15.19,
+      "error": null,
+      "timestamp": "2026-08-24T14:39:20.414557"
+    },
+    "sad_3": {
+      "emotion": "sad",
+      "take_idx": 3,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "บอกกี่ครั้งแล้วว่าอย่ามายุ่ง! Get out of my face right now, leave me alone!!",
+      "filename": "sad_take_3__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/sad_take_3__emotion_on.wav",
+      "metrics": {
+        "dur_s": 4.83,
+        "rms": 0.2099,
+        "energy_dbfs": -13.6,
+        "f0_med_hz": 298.1,
+        "f0_p10_hz": 237.3,
+        "f0_p90_hz": 347.8,
+        "f0_spread_st": 6.62
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "sad_take_3__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/sad_take_3__emotion_on.wav",
+          "metrics": {
+            "dur_s": 4.83,
+            "rms": 0.2099,
+            "energy_dbfs": -13.6,
+            "f0_med_hz": 298.1,
+            "f0_p10_hz": 237.3,
+            "f0_p90_hz": 347.8,
+            "f0_spread_st": 6.62
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "sad_take_3__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/sad_take_3__cleanup.wav",
+          "metrics": {
+            "dur_s": 4.83,
+            "rms": 0.2526,
+            "energy_dbfs": -12.0,
+            "f0_med_hz": 298.1,
+            "f0_p10_hz": 237.3,
+            "f0_p90_hz": 347.8,
+            "f0_spread_st": 6.62
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "sad_take_3__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/sad_take_3__raw.wav",
+          "metrics": {
+            "dur_s": 5.12,
+            "rms": 0.2568,
+            "energy_dbfs": -11.8,
+            "f0_med_hz": 298.1,
+            "f0_p10_hz": 237.5,
+            "f0_p90_hz": 347.8,
+            "f0_spread_st": 6.6
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 12.03,
+      "error": null,
+      "timestamp": "2026-08-24T14:39:32.448813"
+    },
+    "angry_1": {
+      "emotion": "angry",
+      "take_idx": 1,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "บอกกี่ครั้งแล้วว่าอย่ามายุ่ง! Get out of my face right now, leave me alone!!",
+      "filename": "angry_take_1__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/angry_take_1__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.12,
+        "rms": 0.2189,
+        "energy_dbfs": -13.2,
+        "f0_med_hz": 311.7,
+        "f0_p10_hz": 252.6,
+        "f0_p90_hz": 366.4,
+        "f0_spread_st": 6.44
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "angry_take_1__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/angry_take_1__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.12,
+            "rms": 0.2189,
+            "energy_dbfs": -13.2,
+            "f0_med_hz": 311.7,
+            "f0_p10_hz": 252.6,
+            "f0_p90_hz": 366.4,
+            "f0_spread_st": 6.44
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "angry_take_1__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/angry_take_1__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.12,
+            "rms": 0.2189,
+            "energy_dbfs": -13.2,
+            "f0_med_hz": 311.7,
+            "f0_p10_hz": 252.6,
+            "f0_p90_hz": 366.4,
+            "f0_spread_st": 6.44
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "angry_take_1__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/angry_take_1__raw.wav",
+          "metrics": {
+            "dur_s": 5.44,
+            "rms": 0.2151,
+            "energy_dbfs": -13.3,
+            "f0_med_hz": 311.7,
+            "f0_p10_hz": 252.6,
+            "f0_p90_hz": 366.4,
+            "f0_spread_st": 6.44
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 12.8,
+      "error": null,
+      "timestamp": "2026-08-24T14:39:45.255607"
+    },
+    "angry_2": {
+      "emotion": "angry",
+      "take_idx": 2,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "บอกกี่ครั้งแล้วว่าอย่ามายุ่ง! Get out of my face right now, leave me alone!!",
+      "filename": "angry_take_2__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/angry_take_2__emotion_on.wav",
+      "metrics": {
+        "dur_s": 4.89,
+        "rms": 0.2898,
+        "energy_dbfs": -10.8,
+        "f0_med_hz": 309.7,
+        "f0_p10_hz": 260.9,
+        "f0_p90_hz": 377.1,
+        "f0_spread_st": 6.38
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "angry_take_2__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/angry_take_2__emotion_on.wav",
+          "metrics": {
+            "dur_s": 4.89,
+            "rms": 0.2898,
+            "energy_dbfs": -10.8,
+            "f0_med_hz": 309.7,
+            "f0_p10_hz": 260.9,
+            "f0_p90_hz": 377.1,
+            "f0_spread_st": 6.38
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "angry_take_2__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/angry_take_2__cleanup.wav",
+          "metrics": {
+            "dur_s": 4.89,
+            "rms": 0.2898,
+            "energy_dbfs": -10.8,
+            "f0_med_hz": 309.7,
+            "f0_p10_hz": 260.9,
+            "f0_p90_hz": 377.1,
+            "f0_spread_st": 6.38
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "angry_take_2__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/angry_take_2__raw.wav",
+          "metrics": {
+            "dur_s": 5.12,
+            "rms": 0.297,
+            "energy_dbfs": -10.5,
+            "f0_med_hz": 309.7,
+            "f0_p10_hz": 260.9,
+            "f0_p90_hz": 377.1,
+            "f0_spread_st": 6.38
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 12.44,
+      "error": null,
+      "timestamp": "2026-08-24T14:39:57.702504"
+    },
+    "angry_3": {
+      "emotion": "angry",
+      "take_idx": 3,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "บอกกี่ครั้งแล้วว่าอย่ามายุ่ง! Get out of my face right now, leave me alone!!",
+      "filename": "angry_take_3__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/angry_take_3__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.39,
+        "rms": 0.2198,
+        "energy_dbfs": -13.2,
+        "f0_med_hz": 290.9,
+        "f0_p10_hz": 250.0,
+        "f0_p90_hz": 333.3,
+        "f0_spread_st": 4.98
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "angry_take_3__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/angry_take_3__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.39,
+            "rms": 0.2198,
+            "energy_dbfs": -13.2,
+            "f0_med_hz": 290.9,
+            "f0_p10_hz": 250.0,
+            "f0_p90_hz": 333.3,
+            "f0_spread_st": 4.98
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "angry_take_3__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/angry_take_3__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.39,
+            "rms": 0.2198,
+            "energy_dbfs": -13.2,
+            "f0_med_hz": 290.9,
+            "f0_p10_hz": 250.0,
+            "f0_p90_hz": 333.3,
+            "f0_spread_st": 4.98
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "angry_take_3__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143732_however/angry_take_3__raw.wav",
+          "metrics": {
+            "dur_s": 6.24,
+            "rms": 0.2113,
+            "energy_dbfs": -13.5,
+            "f0_med_hz": 289.2,
+            "f0_p10_hz": 250.0,
+            "f0_p90_hz": 333.3,
+            "f0_spread_st": 4.98
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 15.43,
+      "error": null,
+      "timestamp": "2026-08-24T14:40:13.134833"
+    }
+  }
+}

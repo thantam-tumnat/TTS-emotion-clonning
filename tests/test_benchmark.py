@@ -23,6 +23,39 @@ def test_benchmark_ui_routes():
     assert res_bench.status_code == 200
 
 
+def test_run_take_reports_voice_anchor():
+    """A take carries how its voice was anchored, so the UI can warn when nothing
+    pinned the timbre (an unconditioned take is a different speaker each time)."""
+    init = client.post(
+        "/api/benchmark/session/init",
+        json={
+            "text": "ข้อความทดสอบเสียง",
+            "emotions": ["neutral"],
+            "repeats": 1,
+            "intensity": 2,
+        },
+    )
+    assert init.status_code == 200
+    session_id = init.json()["session_id"]
+
+    take = client.post(
+        "/api/benchmark/run-take",
+        json={
+            "session_id": session_id,
+            "emotion": "neutral",
+            "take_idx": 1,
+            "text": "ข้อความทดสอบเสียง",
+            "speaker_id": None,
+        },
+    )
+    assert take.status_code == 200
+    data = take.json()
+    assert "voice_anchor" in data
+    # No speaker pinned: with the consistency guard on (default) it is the shared
+    # seed; the point is the field is present and never silently absent.
+    assert data["voice_anchor"] in {"seed", "none", "speaker", "reference"}
+
+
 def test_benchmark_session_lifecycle():
     # Init
     init_res = client.post(

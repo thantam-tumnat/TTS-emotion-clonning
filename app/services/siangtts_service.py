@@ -366,6 +366,12 @@ class SiangTTSService:
         # at most once; see _build_seed_voice.
         self._seed_voice: Any = None
         self._seed_voice_failed: bool = False
+        # How the most recent render anchored its voice: "speaker", "seed",
+        # "reference", or "none". "none" means nothing pinned the timbre, so the
+        # generation is a fresh random speaker -- the thing that makes two takes
+        # sound like two people. Set by render_chunks; read by callers that want to
+        # warn instead of shipping a silently-inconsistent take. See last_voice_anchor.
+        self._last_voice_anchor: Optional[str] = None
         # Ultimate-cloning-vs-style-tags is a property of the voice, not the
         # request, so say it once rather than on every chunk.
         self._hifi_warned: bool = False
@@ -864,6 +870,18 @@ class SiangTTSService:
             print(f"[SiangTTS] Could not delete seed voice: {e}", file=sys.stderr)
             return False
 
+    def last_voice_anchor(self) -> Optional[str]:
+        """How the most recent render_chunks call anchored its voice.
+
+        One of "speaker" (a pinned voice), "seed" (the shared auto-seed),
+        "reference" (an uploaded clip), or "none" -- nothing pinned the timbre, so
+        that generation is a fresh random speaker. Callers render one take at a
+        time, so this reflects that take; it is only meaningful read right after
+        the synth call that produced the take. ``None`` means nothing has rendered
+        yet.
+        """
+        return self._last_voice_anchor
+
     def _build_seed_voice(
         self, synth: Any, sample_rate: int, cfg_value: float, inference_timesteps: int
     ) -> Any:
@@ -1041,6 +1059,25 @@ class SiangTTSService:
                 shared = self._voice_from_path(synth, ref_audio_path)
                 if shared is not None:
                     prompt_cache, ref_audio_path = shared, None
+
+            # Record how the voice ended up anchored, now that seed-minting and
+            # reference pre-encoding have settled. "none" is the case a caller may
+            # want to refuse or flag: nothing pins the timbre, so the take is a
+            # fresh random speaker and two takes will not match.
+            if prompt_cache is not None:
+                self._last_voice_anchor = "speaker" if speaker_id else "seed"
+            elif ref_audio_path is not None:
+                self._last_voice_anchor = "reference"
+            else:
+                self._last_voice_anchor = "none"
+                print(
+                    "[SiangTTS] WARNING: no voice anchor for this generation "
+                    f"(speaker_id={speaker_id!r}, auto_seed="
+                    f"{settings.siangtts_auto_voice_consistency}). The take is an "
+                    "unconditioned sample -- successive takes will sound like "
+                    "different people.",
+                    file=sys.stderr,
+                )
 
             self._warn_if_instructions_are_dead(prompt_cache, planned)
 

@@ -394,6 +394,12 @@ class BenchmarkService:
             metrics = variant_records[0]["metrics"]
             elapsed_s = round(time.time() - start_t, 2)
 
+            # How this take's voice was pinned. "none" means nothing anchored the
+            # timbre, so the take is a fresh random speaker -- surfaced so the UI can
+            # warn instead of leaving the listener to notice each take is a
+            # different person. Read right after synthesis, take-by-take.
+            voice_anchor = siangtts_service.last_voice_anchor()
+
             take_record = {
                 "emotion": req.emotion,
                 "row_key": row_key,
@@ -405,6 +411,7 @@ class BenchmarkService:
                 "audio_url": f"/api/benchmark/audio/{req.session_id}/{filename}",
                 "metrics": metrics,
                 "variants": variant_records,
+                "voice_anchor": voice_anchor,
                 "elapsed_s": elapsed_s,
                 "error": None,
                 "timestamp": datetime.now().isoformat(),
@@ -428,6 +435,7 @@ class BenchmarkService:
                 filename=filename,
                 metrics=metrics,
                 variants=[BenchmarkTakeVariant(**v) for v in variant_records],
+                voice_anchor=voice_anchor,
                 elapsed_s=elapsed_s,
                 error=None,
             )

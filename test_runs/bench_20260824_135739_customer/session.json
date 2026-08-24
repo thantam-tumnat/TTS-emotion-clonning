@@ -1,0 +1,327 @@
+{
+  "session_id": "bench_20260824_135739_customer",
+  "name": "Emotion Benchmark (20260824_135739)",
+  "created_at": "2026-08-24T13:57:39.576592",
+  "speaker_id": "customer",
+  "text": "โอ้โห! ไม่อยากจะเชื่อเลยว่าเราชนะที่หนึ่ง! This is the best day ever, I'm so thrilled!",
+  "emotions": [
+    "happy",
+    "sad",
+    "angry"
+  ],
+  "repeats": 3,
+  "total_takes": 9,
+  "completed_takes": 8,
+  "params": {
+    "intensity": 3,
+    "cfg_value": 3.5,
+    "inference_timesteps": 10,
+    "lora_mode": "on"
+  },
+  "takes": {
+    "happy_1": {
+      "emotion": "happy",
+      "take_idx": 1,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "โอ้โห! ไม่อยากจะเชื่อเลยว่าเราชนะที่หนึ่ง! This is the best day ever, I'm so thrilled!",
+      "filename": "happy_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/happy_take_1.wav",
+      "metrics": {
+        "dur_s": 5.24,
+        "rms": 0.2289,
+        "energy_dbfs": -12.8,
+        "f0_med_hz": 225.4,
+        "f0_p10_hz": 192.8,
+        "f0_p90_hz": 290.9,
+        "f0_spread_st": 7.12
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "happy_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/happy_take_1.wav",
+          "metrics": {
+            "dur_s": 5.24,
+            "rms": 0.2289,
+            "energy_dbfs": -12.8,
+            "f0_med_hz": 225.4,
+            "f0_p10_hz": 192.8,
+            "f0_p90_hz": 290.9,
+            "f0_spread_st": 7.12
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 14.89,
+      "error": null,
+      "timestamp": "2026-08-24T13:57:54.477936"
+    },
+    "happy_2": {
+      "emotion": "happy",
+      "take_idx": 2,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "โอ้โห! ไม่อยากจะเชื่อเลยว่าเราชนะที่หนึ่ง! This is the best day ever, I'm so thrilled!",
+      "filename": "happy_take_2.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/happy_take_2.wav",
+      "metrics": {
+        "dur_s": 5.17,
+        "rms": 0.2159,
+        "energy_dbfs": -13.3,
+        "f0_med_hz": 256.7,
+        "f0_p10_hz": 200.0,
+        "f0_p90_hz": 342.9,
+        "f0_spread_st": 9.33
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "happy_take_2.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/happy_take_2.wav",
+          "metrics": {
+            "dur_s": 5.17,
+            "rms": 0.2159,
+            "energy_dbfs": -13.3,
+            "f0_med_hz": 256.7,
+            "f0_p10_hz": 200.0,
+            "f0_p90_hz": 342.9,
+            "f0_spread_st": 9.33
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 29.7,
+      "error": null,
+      "timestamp": "2026-08-24T13:58:24.184865"
+    },
+    "happy_3": {
+      "emotion": "happy",
+      "take_idx": 3,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "โอ้โห! ไม่อยากจะเชื่อเลยว่าเราชนะที่หนึ่ง! This is the best day ever, I'm so thrilled!",
+      "filename": "happy_take_3.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/happy_take_3.wav",
+      "metrics": {
+        "dur_s": 6.14,
+        "rms": 0.29,
+        "energy_dbfs": -10.8,
+        "f0_med_hz": 251.3,
+        "f0_p10_hz": 200.0,
+        "f0_p90_hz": 322.1,
+        "f0_spread_st": 8.25
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "happy_take_3.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/happy_take_3.wav",
+          "metrics": {
+            "dur_s": 6.14,
+            "rms": 0.29,
+            "energy_dbfs": -10.8,
+            "f0_med_hz": 251.3,
+            "f0_p10_hz": 200.0,
+            "f0_p90_hz": 322.1,
+            "f0_spread_st": 8.25
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 30.63,
+      "error": null,
+      "timestamp": "2026-08-24T13:58:54.818533"
+    },
+    "sad_1": {
+      "emotion": "sad",
+      "take_idx": 1,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "โอ้โห! ไม่อยากจะเชื่อเลยว่าเราชนะที่หนึ่ง! This is the best day ever, I'm so thrilled!",
+      "filename": "sad_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/sad_take_1.wav",
+      "metrics": {
+        "dur_s": 6.38,
+        "rms": 0.1999,
+        "energy_dbfs": -14.0,
+        "f0_med_hz": 244.9,
+        "f0_p10_hz": 202.7,
+        "f0_p90_hz": 452.8,
+        "f0_spread_st": 13.92
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "sad_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/sad_take_1.wav",
+          "metrics": {
+            "dur_s": 6.38,
+            "rms": 0.1999,
+            "energy_dbfs": -14.0,
+            "f0_med_hz": 244.9,
+            "f0_p10_hz": 202.7,
+            "f0_p90_hz": 452.8,
+            "f0_spread_st": 13.92
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 35.33,
+      "error": null,
+      "timestamp": "2026-08-24T13:59:30.151926"
+    },
+    "sad_2": {
+      "emotion": "sad",
+      "take_idx": 2,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "โอ้โห! ไม่อยากจะเชื่อเลยว่าเราชนะที่หนึ่ง! This is the best day ever, I'm so thrilled!",
+      "filename": "sad_take_2.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/sad_take_2.wav",
+      "metrics": {
+        "dur_s": 5.22,
+        "rms": 0.2686,
+        "energy_dbfs": -11.4,
+        "f0_med_hz": 250.0,
+        "f0_p10_hz": 201.7,
+        "f0_p90_hz": 304.6,
+        "f0_spread_st": 7.14
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "sad_take_2.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/sad_take_2.wav",
+          "metrics": {
+            "dur_s": 5.22,
+            "rms": 0.2686,
+            "energy_dbfs": -11.4,
+            "f0_med_hz": 250.0,
+            "f0_p10_hz": 201.7,
+            "f0_p90_hz": 304.6,
+            "f0_spread_st": 7.14
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 43.3,
+      "error": null,
+      "timestamp": "2026-08-24T14:00:13.456869"
+    },
+    "sad_3": {
+      "emotion": "sad",
+      "take_idx": 3,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "โอ้โห! ไม่อยากจะเชื่อเลยว่าเราชนะที่หนึ่ง! This is the best day ever, I'm so thrilled!",
+      "filename": "sad_take_3.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/sad_take_3.wav",
+      "metrics": {
+        "dur_s": 7.87,
+        "rms": 0.1343,
+        "energy_dbfs": -17.4,
+        "f0_med_hz": 252.6,
+        "f0_p10_hz": 216.2,
+        "f0_p90_hz": 313.1,
+        "f0_spread_st": 6.41
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "sad_take_3.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/sad_take_3.wav",
+          "metrics": {
+            "dur_s": 7.87,
+            "rms": 0.1343,
+            "energy_dbfs": -17.4,
+            "f0_med_hz": 252.6,
+            "f0_p10_hz": 216.2,
+            "f0_p90_hz": 313.1,
+            "f0_spread_st": 6.41
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 50.39,
+      "error": null,
+      "timestamp": "2026-08-24T14:01:03.852559"
+    },
+    "angry_1": {
+      "emotion": "angry",
+      "take_idx": 1,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "โอ้โห! ไม่อยากจะเชื่อเลยว่าเราชนะที่หนึ่ง! This is the best day ever, I'm so thrilled!",
+      "filename": "angry_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/angry_take_1.wav",
+      "metrics": {
+        "dur_s": 5.74,
+        "rms": 0.2831,
+        "energy_dbfs": -11.0,
+        "f0_med_hz": 271.2,
+        "f0_p10_hz": 205.9,
+        "f0_p90_hz": 343.1,
+        "f0_spread_st": 8.84
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "angry_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/angry_take_1.wav",
+          "metrics": {
+            "dur_s": 5.74,
+            "rms": 0.2831,
+            "energy_dbfs": -11.0,
+            "f0_med_hz": 271.2,
+            "f0_p10_hz": 205.9,
+            "f0_p90_hz": 343.1,
+            "f0_spread_st": 8.84
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 50.23,
+      "error": null,
+      "timestamp": "2026-08-24T14:01:54.088521"
+    },
+    "angry_2": {
+      "emotion": "angry",
+      "take_idx": 2,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "โอ้โห! ไม่อยากจะเชื่อเลยว่าเราชนะที่หนึ่ง! This is the best day ever, I'm so thrilled!",
+      "filename": "angry_take_2.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/angry_take_2.wav",
+      "metrics": {
+        "dur_s": 5.62,
+        "rms": 0.2653,
+        "energy_dbfs": -11.5,
+        "f0_med_hz": 277.5,
+        "f0_p10_hz": 231.4,
+        "f0_p90_hz": 350.4,
+        "f0_spread_st": 7.18
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "angry_take_2.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135739_customer/angry_take_2.wav",
+          "metrics": {
+            "dur_s": 5.62,
+            "rms": 0.2653,
+            "energy_dbfs": -11.5,
+            "f0_med_hz": 277.5,
+            "f0_p10_hz": 231.4,
+            "f0_p90_hz": 350.4,
+            "f0_spread_st": 7.18
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 65.18,
+      "error": null,
+      "timestamp": "2026-08-24T14:02:59.274620"
+    }
+  }
+}

@@ -1,0 +1,840 @@
+{
+  "session_id": "bench_20260824_143254_celebrate",
+  "name": "Emotion Benchmark (20260824_143254)",
+  "created_at": "2026-08-24T14:32:54.679013",
+  "speaker_id": "celebrate",
+  "text": "เย้! ในที่สุดงานเราก็เสร็จเรียบร้อยแล้ว We finally did it, thank you so much everyone!",
+  "emotions": [
+    "neutral",
+    "happy",
+    "sad",
+    "angry"
+  ],
+  "repeats": 3,
+  "total_takes": 12,
+  "completed_takes": 12,
+  "params": {
+    "intensity": 2,
+    "cfg_value": 2.5,
+    "inference_timesteps": 10,
+    "lora_mode": "on"
+  },
+  "takes": {
+    "neutral_1": {
+      "emotion": "neutral",
+      "take_idx": 1,
+      "instruction": "",
+      "spoken_text": "เย้! ในที่สุดงานเราก็เสร็จเรียบร้อยแล้ว We finally did it, thank you so much everyone!",
+      "filename": "neutral_take_1__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/neutral_take_1__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.38,
+        "rms": 0.0425,
+        "energy_dbfs": -27.4,
+        "f0_med_hz": 109.8,
+        "f0_p10_hz": 96.2,
+        "f0_p90_hz": 313.9,
+        "f0_spread_st": 20.48
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "neutral_take_1__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/neutral_take_1__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.38,
+            "rms": 0.0425,
+            "energy_dbfs": -27.4,
+            "f0_med_hz": 109.8,
+            "f0_p10_hz": 96.2,
+            "f0_p90_hz": 313.9,
+            "f0_spread_st": 20.48
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "neutral_take_1__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/neutral_take_1__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.38,
+            "rms": 0.0425,
+            "energy_dbfs": -27.4,
+            "f0_med_hz": 109.8,
+            "f0_p10_hz": 96.2,
+            "f0_p90_hz": 313.9,
+            "f0_spread_st": 20.48
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "neutral_take_1__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/neutral_take_1__raw.wav",
+          "metrics": {
+            "dur_s": 5.6,
+            "rms": 0.0417,
+            "energy_dbfs": -27.6,
+            "f0_med_hz": 109.8,
+            "f0_p10_hz": 96.2,
+            "f0_p90_hz": 313.7,
+            "f0_spread_st": 20.47
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 13.62,
+      "error": null,
+      "timestamp": "2026-08-24T14:33:08.306254"
+    },
+    "neutral_2": {
+      "emotion": "neutral",
+      "take_idx": 2,
+      "instruction": "",
+      "spoken_text": "เย้! ในที่สุดงานเราก็เสร็จเรียบร้อยแล้ว We finally did it, thank you so much everyone!",
+      "filename": "neutral_take_2__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/neutral_take_2__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.67,
+        "rms": 0.04,
+        "energy_dbfs": -28.0,
+        "f0_med_hz": 114.3,
+        "f0_p10_hz": 99.2,
+        "f0_p90_hz": 318.9,
+        "f0_spread_st": 20.22
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "neutral_take_2__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/neutral_take_2__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.67,
+            "rms": 0.04,
+            "energy_dbfs": -28.0,
+            "f0_med_hz": 114.3,
+            "f0_p10_hz": 99.2,
+            "f0_p90_hz": 318.9,
+            "f0_spread_st": 20.22
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "neutral_take_2__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/neutral_take_2__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.67,
+            "rms": 0.04,
+            "energy_dbfs": -28.0,
+            "f0_med_hz": 114.3,
+            "f0_p10_hz": 99.2,
+            "f0_p90_hz": 318.9,
+            "f0_spread_st": 20.22
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "neutral_take_2__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/neutral_take_2__raw.wav",
+          "metrics": {
+            "dur_s": 6.88,
+            "rms": 0.0363,
+            "energy_dbfs": -28.8,
+            "f0_med_hz": 114.6,
+            "f0_p10_hz": 99.2,
+            "f0_p90_hz": 322.1,
+            "f0_spread_st": 20.4
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 15.8,
+      "error": null,
+      "timestamp": "2026-08-24T14:33:24.111441"
+    },
+    "neutral_3": {
+      "emotion": "neutral",
+      "take_idx": 3,
+      "instruction": "",
+      "spoken_text": "เย้! ในที่สุดงานเราก็เสร็จเรียบร้อยแล้ว We finally did it, thank you so much everyone!",
+      "filename": "neutral_take_3__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/neutral_take_3__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.29,
+        "rms": 0.0314,
+        "energy_dbfs": -30.1,
+        "f0_med_hz": 114.3,
+        "f0_p10_hz": 96.4,
+        "f0_p90_hz": 314.8,
+        "f0_spread_st": 20.49
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "neutral_take_3__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/neutral_take_3__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.29,
+            "rms": 0.0314,
+            "energy_dbfs": -30.1,
+            "f0_med_hz": 114.3,
+            "f0_p10_hz": 96.4,
+            "f0_p90_hz": 314.8,
+            "f0_spread_st": 20.49
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "neutral_take_3__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/neutral_take_3__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.29,
+            "rms": 0.0314,
+            "energy_dbfs": -30.1,
+            "f0_med_hz": 114.3,
+            "f0_p10_hz": 96.4,
+            "f0_p90_hz": 314.8,
+            "f0_spread_st": 20.49
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "neutral_take_3__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/neutral_take_3__raw.wav",
+          "metrics": {
+            "dur_s": 5.76,
+            "rms": 0.0301,
+            "energy_dbfs": -30.4,
+            "f0_med_hz": 114.3,
+            "f0_p10_hz": 96.4,
+            "f0_p90_hz": 314.8,
+            "f0_spread_st": 20.49
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 13.33,
+      "error": null,
+      "timestamp": "2026-08-24T14:33:37.443988"
+    },
+    "happy_1": {
+      "emotion": "happy",
+      "take_idx": 1,
+      "instruction": "(Happy and cheerful voice, smiling while speaking)",
+      "spoken_text": "เย้! ในที่สุดงานเราก็เสร็จเรียบร้อยแล้ว We finally did it, thank you so much everyone!",
+      "filename": "happy_take_1__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/happy_take_1__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.07,
+        "rms": 0.0472,
+        "energy_dbfs": -26.5,
+        "f0_med_hz": 131.7,
+        "f0_p10_hz": 100.2,
+        "f0_p90_hz": 378.0,
+        "f0_spread_st": 22.98
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "happy_take_1__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/happy_take_1__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.07,
+            "rms": 0.0472,
+            "energy_dbfs": -26.5,
+            "f0_med_hz": 131.7,
+            "f0_p10_hz": 100.2,
+            "f0_p90_hz": 378.0,
+            "f0_spread_st": 22.98
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "happy_take_1__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/happy_take_1__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.07,
+            "rms": 0.05,
+            "energy_dbfs": -26.0,
+            "f0_med_hz": 131.7,
+            "f0_p10_hz": 100.2,
+            "f0_p90_hz": 378.0,
+            "f0_spread_st": 22.98
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "happy_take_1__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/happy_take_1__raw.wav",
+          "metrics": {
+            "dur_s": 6.56,
+            "rms": 0.0439,
+            "energy_dbfs": -27.2,
+            "f0_med_hz": 132.6,
+            "f0_p10_hz": 100.3,
+            "f0_p90_hz": 379.5,
+            "f0_spread_st": 23.03
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 15.57,
+      "error": null,
+      "timestamp": "2026-08-24T14:33:53.017532"
+    },
+    "happy_2": {
+      "emotion": "happy",
+      "take_idx": 2,
+      "instruction": "(Happy and cheerful voice, smiling while speaking)",
+      "spoken_text": "เย้! ในที่สุดงานเราก็เสร็จเรียบร้อยแล้ว We finally did it, thank you so much everyone!",
+      "filename": "happy_take_2__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/happy_take_2__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.41,
+        "rms": 0.0496,
+        "energy_dbfs": -26.1,
+        "f0_med_hz": 123.4,
+        "f0_p10_hz": 105.5,
+        "f0_p90_hz": 305.7,
+        "f0_spread_st": 18.42
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "happy_take_2__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/happy_take_2__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.41,
+            "rms": 0.0496,
+            "energy_dbfs": -26.1,
+            "f0_med_hz": 123.4,
+            "f0_p10_hz": 105.5,
+            "f0_p90_hz": 305.7,
+            "f0_spread_st": 18.42
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "happy_take_2__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/happy_take_2__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.41,
+            "rms": 0.0526,
+            "energy_dbfs": -25.6,
+            "f0_med_hz": 123.4,
+            "f0_p10_hz": 105.5,
+            "f0_p90_hz": 305.7,
+            "f0_spread_st": 18.42
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "happy_take_2__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/happy_take_2__raw.wav",
+          "metrics": {
+            "dur_s": 6.88,
+            "rms": 0.0466,
+            "energy_dbfs": -26.6,
+            "f0_med_hz": 123.7,
+            "f0_p10_hz": 105.5,
+            "f0_p90_hz": 309.7,
+            "f0_spread_st": 18.64
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 16.33,
+      "error": null,
+      "timestamp": "2026-08-24T14:34:09.354103"
+    },
+    "happy_3": {
+      "emotion": "happy",
+      "take_idx": 3,
+      "instruction": "(Happy and cheerful voice, smiling while speaking)",
+      "spoken_text": "เย้! ในที่สุดงานเราก็เสร็จเรียบร้อยแล้ว We finally did it, thank you so much everyone!",
+      "filename": "happy_take_3__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/happy_take_3__emotion_on.wav",
+      "metrics": {
+        "dur_s": 6.14,
+        "rms": 0.035,
+        "energy_dbfs": -29.1,
+        "f0_med_hz": 122.1,
+        "f0_p10_hz": 100.0,
+        "f0_p90_hz": 309.7,
+        "f0_spread_st": 19.58
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "happy_take_3__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/happy_take_3__emotion_on.wav",
+          "metrics": {
+            "dur_s": 6.14,
+            "rms": 0.035,
+            "energy_dbfs": -29.1,
+            "f0_med_hz": 122.1,
+            "f0_p10_hz": 100.0,
+            "f0_p90_hz": 309.7,
+            "f0_spread_st": 19.58
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "happy_take_3__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/happy_take_3__cleanup.wav",
+          "metrics": {
+            "dur_s": 6.14,
+            "rms": 0.0371,
+            "energy_dbfs": -28.6,
+            "f0_med_hz": 122.1,
+            "f0_p10_hz": 100.0,
+            "f0_p90_hz": 309.7,
+            "f0_spread_st": 19.58
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "happy_take_3__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/happy_take_3__raw.wav",
+          "metrics": {
+            "dur_s": 6.72,
+            "rms": 0.0354,
+            "energy_dbfs": -29.0,
+            "f0_med_hz": 122.1,
+            "f0_p10_hz": 100.0,
+            "f0_p90_hz": 309.7,
+            "f0_spread_st": 19.56
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 16.35,
+      "error": null,
+      "timestamp": "2026-08-24T14:34:25.707028"
+    },
+    "sad_1": {
+      "emotion": "sad",
+      "take_idx": 1,
+      "instruction": "(Sad voice, quiet and downcast)",
+      "spoken_text": "เย้! ในที่สุดงานเราก็เสร็จเรียบร้อยแล้ว We finally did it, thank you so much everyone!",
+      "filename": "sad_take_1__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/sad_take_1__emotion_on.wav",
+      "metrics": {
+        "dur_s": 6.22,
+        "rms": 0.0822,
+        "energy_dbfs": -21.7,
+        "f0_med_hz": 130.4,
+        "f0_p10_hz": 95.8,
+        "f0_p90_hz": 384.0,
+        "f0_spread_st": 24.03
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "sad_take_1__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/sad_take_1__emotion_on.wav",
+          "metrics": {
+            "dur_s": 6.22,
+            "rms": 0.0822,
+            "energy_dbfs": -21.7,
+            "f0_med_hz": 130.4,
+            "f0_p10_hz": 95.8,
+            "f0_p90_hz": 384.0,
+            "f0_spread_st": 24.03
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "sad_take_1__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/sad_take_1__cleanup.wav",
+          "metrics": {
+            "dur_s": 6.22,
+            "rms": 0.1035,
+            "energy_dbfs": -19.7,
+            "f0_med_hz": 130.4,
+            "f0_p10_hz": 95.8,
+            "f0_p90_hz": 384.0,
+            "f0_spread_st": 24.03
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "sad_take_1__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/sad_take_1__raw.wav",
+          "metrics": {
+            "dur_s": 7.2,
+            "rms": 0.0963,
+            "energy_dbfs": -20.3,
+            "f0_med_hz": 131.1,
+            "f0_p10_hz": 95.8,
+            "f0_p90_hz": 384.0,
+            "f0_spread_st": 24.03
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 17.55,
+      "error": null,
+      "timestamp": "2026-08-24T14:34:43.260967"
+    },
+    "sad_2": {
+      "emotion": "sad",
+      "take_idx": 2,
+      "instruction": "(Sad voice, quiet and downcast)",
+      "spoken_text": "เย้! ในที่สุดงานเราก็เสร็จเรียบร้อยแล้ว We finally did it, thank you so much everyone!",
+      "filename": "sad_take_2__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/sad_take_2__emotion_on.wav",
+      "metrics": {
+        "dur_s": 6.28,
+        "rms": 0.0595,
+        "energy_dbfs": -24.5,
+        "f0_med_hz": 122.4,
+        "f0_p10_hz": 103.2,
+        "f0_p90_hz": 336.6,
+        "f0_spread_st": 20.46
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "sad_take_2__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/sad_take_2__emotion_on.wav",
+          "metrics": {
+            "dur_s": 6.28,
+            "rms": 0.0595,
+            "energy_dbfs": -24.5,
+            "f0_med_hz": 122.4,
+            "f0_p10_hz": 103.2,
+            "f0_p90_hz": 336.6,
+            "f0_spread_st": 20.46
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "sad_take_2__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/sad_take_2__cleanup.wav",
+          "metrics": {
+            "dur_s": 6.28,
+            "rms": 0.0749,
+            "energy_dbfs": -22.5,
+            "f0_med_hz": 122.4,
+            "f0_p10_hz": 103.2,
+            "f0_p90_hz": 336.6,
+            "f0_spread_st": 20.46
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "sad_take_2__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/sad_take_2__raw.wav",
+          "metrics": {
+            "dur_s": 7.52,
+            "rms": 0.0684,
+            "energy_dbfs": -23.3,
+            "f0_med_hz": 125.3,
+            "f0_p10_hz": 103.2,
+            "f0_p90_hz": 342.4,
+            "f0_spread_st": 20.76
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 19.85,
+      "error": null,
+      "timestamp": "2026-08-24T14:35:03.121148"
+    },
+    "sad_3": {
+      "emotion": "sad",
+      "take_idx": 3,
+      "instruction": "(Sad voice, quiet and downcast)",
+      "spoken_text": "เย้! ในที่สุดงานเราก็เสร็จเรียบร้อยแล้ว We finally did it, thank you so much everyone!",
+      "filename": "sad_take_3__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/sad_take_3__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.09,
+        "rms": 0.044,
+        "energy_dbfs": -27.1,
+        "f0_med_hz": 127.8,
+        "f0_p10_hz": 101.3,
+        "f0_p90_hz": 342.9,
+        "f0_spread_st": 21.1
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "sad_take_3__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/sad_take_3__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.09,
+            "rms": 0.044,
+            "energy_dbfs": -27.1,
+            "f0_med_hz": 127.8,
+            "f0_p10_hz": 101.3,
+            "f0_p90_hz": 342.9,
+            "f0_spread_st": 21.1
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "sad_take_3__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/sad_take_3__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.09,
+            "rms": 0.0553,
+            "energy_dbfs": -25.1,
+            "f0_med_hz": 127.8,
+            "f0_p10_hz": 101.3,
+            "f0_p90_hz": 342.9,
+            "f0_spread_st": 21.1
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "sad_take_3__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/sad_take_3__raw.wav",
+          "metrics": {
+            "dur_s": 6.72,
+            "rms": 0.0482,
+            "energy_dbfs": -26.3,
+            "f0_med_hz": 128.7,
+            "f0_p10_hz": 101.3,
+            "f0_p90_hz": 342.9,
+            "f0_spread_st": 21.11
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 17.23,
+      "error": null,
+      "timestamp": "2026-08-24T14:35:20.360910"
+    },
+    "angry_1": {
+      "emotion": "angry",
+      "take_idx": 1,
+      "instruction": "(Angry, firm and aggressive tone)",
+      "spoken_text": "เย้! ในที่สุดงานเราก็เสร็จเรียบร้อยแล้ว We finally did it, thank you so much everyone!",
+      "filename": "angry_take_1__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/angry_take_1__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.17,
+        "rms": 0.0815,
+        "energy_dbfs": -21.8,
+        "f0_med_hz": 120.0,
+        "f0_p10_hz": 97.6,
+        "f0_p90_hz": 317.9,
+        "f0_spread_st": 20.45
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "angry_take_1__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/angry_take_1__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.17,
+            "rms": 0.0815,
+            "energy_dbfs": -21.8,
+            "f0_med_hz": 120.0,
+            "f0_p10_hz": 97.6,
+            "f0_p90_hz": 317.9,
+            "f0_spread_st": 20.45
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "angry_take_1__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/angry_take_1__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.17,
+            "rms": 0.0577,
+            "energy_dbfs": -24.8,
+            "f0_med_hz": 120.0,
+            "f0_p10_hz": 97.6,
+            "f0_p90_hz": 317.9,
+            "f0_spread_st": 20.45
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "angry_take_1__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/angry_take_1__raw.wav",
+          "metrics": {
+            "dur_s": 6.56,
+            "rms": 0.0513,
+            "energy_dbfs": -25.8,
+            "f0_med_hz": 120.2,
+            "f0_p10_hz": 97.6,
+            "f0_p90_hz": 316.6,
+            "f0_spread_st": 20.38
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 15.94,
+      "error": null,
+      "timestamp": "2026-08-24T14:35:36.305785"
+    },
+    "angry_2": {
+      "emotion": "angry",
+      "take_idx": 2,
+      "instruction": "(Angry, firm and aggressive tone)",
+      "spoken_text": "เย้! ในที่สุดงานเราก็เสร็จเรียบร้อยแล้ว We finally did it, thank you so much everyone!",
+      "filename": "angry_take_2__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/angry_take_2__emotion_on.wav",
+      "metrics": {
+        "dur_s": 4.24,
+        "rms": 0.0799,
+        "energy_dbfs": -21.9,
+        "f0_med_hz": 128.7,
+        "f0_p10_hz": 105.0,
+        "f0_p90_hz": 311.7,
+        "f0_spread_st": 18.84
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "angry_take_2__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/angry_take_2__emotion_on.wav",
+          "metrics": {
+            "dur_s": 4.24,
+            "rms": 0.0799,
+            "energy_dbfs": -21.9,
+            "f0_med_hz": 128.7,
+            "f0_p10_hz": 105.0,
+            "f0_p90_hz": 311.7,
+            "f0_spread_st": 18.84
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "angry_take_2__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/angry_take_2__cleanup.wav",
+          "metrics": {
+            "dur_s": 4.24,
+            "rms": 0.0566,
+            "energy_dbfs": -24.9,
+            "f0_med_hz": 128.7,
+            "f0_p10_hz": 105.0,
+            "f0_p90_hz": 311.7,
+            "f0_spread_st": 18.84
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "angry_take_2__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/angry_take_2__raw.wav",
+          "metrics": {
+            "dur_s": 5.44,
+            "rms": 0.0499,
+            "energy_dbfs": -26.0,
+            "f0_med_hz": 129.7,
+            "f0_p10_hz": 105.0,
+            "f0_p90_hz": 312.7,
+            "f0_spread_st": 18.89
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 13.54,
+      "error": null,
+      "timestamp": "2026-08-24T14:35:49.854451"
+    },
+    "angry_3": {
+      "emotion": "angry",
+      "take_idx": 3,
+      "instruction": "(Angry, firm and aggressive tone)",
+      "spoken_text": "เย้! ในที่สุดงานเราก็เสร็จเรียบร้อยแล้ว We finally did it, thank you so much everyone!",
+      "filename": "angry_take_3__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/angry_take_3__emotion_on.wav",
+      "metrics": {
+        "dur_s": 4.92,
+        "rms": 0.0709,
+        "energy_dbfs": -23.0,
+        "f0_med_hz": 132.6,
+        "f0_p10_hz": 99.4,
+        "f0_p90_hz": 307.7,
+        "f0_spread_st": 19.57
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "angry_take_3__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/angry_take_3__emotion_on.wav",
+          "metrics": {
+            "dur_s": 4.92,
+            "rms": 0.0709,
+            "energy_dbfs": -23.0,
+            "f0_med_hz": 132.6,
+            "f0_p10_hz": 99.4,
+            "f0_p90_hz": 307.7,
+            "f0_spread_st": 19.57
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "angry_take_3__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/angry_take_3__cleanup.wav",
+          "metrics": {
+            "dur_s": 4.92,
+            "rms": 0.0502,
+            "energy_dbfs": -26.0,
+            "f0_med_hz": 132.6,
+            "f0_p10_hz": 99.4,
+            "f0_p90_hz": 307.7,
+            "f0_spread_st": 19.57
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "angry_take_3__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_143254_celebrate/angry_take_3__raw.wav",
+          "metrics": {
+            "dur_s": 6.24,
+            "rms": 0.0446,
+            "energy_dbfs": -27.0,
+            "f0_med_hz": 132.6,
+            "f0_p10_hz": 99.4,
+            "f0_p90_hz": 307.3,
+            "f0_spread_st": 19.54
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 16.19,
+      "error": null,
+      "timestamp": "2026-08-24T14:36:06.047446"
+    }
+  }
+}

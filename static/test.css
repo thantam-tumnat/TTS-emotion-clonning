@@ -1452,3 +1452,28 @@
 
 .btn-compare-levels:hover { background: rgba(217, 70, 239, 0.2); }
 .btn-compare-levels.playing { background: rgba(217, 70, 239, 0.3); color: #fff; }
+
+/* Voice-anchor guard: flag takes generated without a pinned voice.
+   Such takes are unconditioned samples -- a different speaker each time --
+   so they are called out rather than left for the ear to catch. */
+.mini-voice-warn {
+  color: #f59e0b;
+  font-weight: 700;
+  margin-left: 4px;
+  cursor: help;
+}
+.mini-take-player.is-unpinned {
+  border-color: #f59e0b !important;
+  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35);
+}
+.voice-anchor-warning {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid #f59e0b;
+  border-radius: 8px;
+  background: rgba(245, 158, 11, 0.10);
+  color: #b45309;
+  font-size: 0.8rem;
+  line-height: 1.5;
+}
+.voice-anchor-warning strong { color: #92400e; }

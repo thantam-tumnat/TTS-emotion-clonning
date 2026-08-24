@@ -334,6 +334,11 @@ class BenchmarkTakeResult(BaseModel):
     error: Optional[str] = None
     # Every DSP treatment of this take, first entry mirroring the fields above.
     variants: List[BenchmarkTakeVariant] = Field(default_factory=list)
+    # How the take's voice was pinned: "speaker", "seed", "reference", or "none".
+    # "none" means nothing anchored the timbre, so this take is a fresh random
+    # speaker and will not match the others -- the UI flags it. Optional so old
+    # session files without the field still load.
+    voice_anchor: Optional[str] = None
 
 
 class BenchmarkSessionSummary(BaseModel):

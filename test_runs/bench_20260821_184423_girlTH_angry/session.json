@@ -1,0 +1,442 @@
+{
+  "session_id": "bench_20260821_184423_girlTH.angry",
+  "name": "Emotion Benchmark (20260821_184423)",
+  "created_at": "2026-08-21T18:44:23.419443",
+  "speaker_id": "girlTH.angry",
+  "text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ สิ่งนี้ถูกเรียกว่า  ซึ่งเป็นกลไกตามธรรมชาติที่ช่วยให้บรรพบุรุษของเรารอดชีวิตจากภัยอันตรายในอดีต",
+  "emotions": [
+    "calm",
+    "happy",
+    "sad",
+    "angry",
+    "scared",
+    "tired"
+  ],
+  "repeats": 3,
+  "total_takes": 18,
+  "completed_takes": 10,
+  "params": {
+    "intensity": 3,
+    "cfg_value": 3.5,
+    "inference_timesteps": 10,
+    "lora_mode": "on"
+  },
+  "takes": {
+    "calm_1": {
+      "emotion": "calm",
+      "take_idx": 1,
+      "instruction": "(Deeply calm and relaxing tone, very slow pace)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ สิ่งนี้ถูกเรียกว่า  ซึ่งเป็นกลไกตามธรรมชาติที่ช่วยให้บรรพบุรุษของเรารอดชีวิตจากภัยอันตรายในอดีต",
+      "seed": 1375343895,
+      "filename": "calm_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/calm_take_1.wav",
+      "metrics": {
+        "dur_s": 16.0,
+        "rms": 0.1945,
+        "energy_dbfs": -14.2,
+        "f0_med_hz": 246.8,
+        "f0_p10_hz": 207.8,
+        "f0_p90_hz": 311.7,
+        "f0_spread_st": 7.02
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "calm_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/calm_take_1.wav",
+          "metrics": {
+            "dur_s": 16.0,
+            "rms": 0.1945,
+            "energy_dbfs": -14.2,
+            "f0_med_hz": 246.8,
+            "f0_p10_hz": 207.8,
+            "f0_p90_hz": 311.7,
+            "f0_spread_st": 7.02
+          }
+        }
+      ],
+      "elapsed_s": 40.35,
+      "error": null,
+      "timestamp": "2026-08-21T18:45:03.781369"
+    },
+    "calm_2": {
+      "emotion": "calm",
+      "take_idx": 2,
+      "instruction": "(Deeply calm and relaxing tone, very slow pace)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ สิ่งนี้ถูกเรียกว่า  ซึ่งเป็นกลไกตามธรรมชาติที่ช่วยให้บรรพบุรุษของเรารอดชีวิตจากภัยอันตรายในอดีต",
+      "seed": 1272586667,
+      "filename": "calm_take_2.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/calm_take_2.wav",
+      "metrics": {
+        "dur_s": 14.5,
+        "rms": 0.129,
+        "energy_dbfs": -17.8,
+        "f0_med_hz": 222.2,
+        "f0_p10_hz": 185.5,
+        "f0_p90_hz": 285.7,
+        "f0_spread_st": 7.48
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "calm_take_2.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/calm_take_2.wav",
+          "metrics": {
+            "dur_s": 14.5,
+            "rms": 0.129,
+            "energy_dbfs": -17.8,
+            "f0_med_hz": 222.2,
+            "f0_p10_hz": 185.5,
+            "f0_p90_hz": 285.7,
+            "f0_spread_st": 7.48
+          }
+        }
+      ],
+      "elapsed_s": 37.85,
+      "error": null,
+      "timestamp": "2026-08-21T18:45:41.640126"
+    },
+    "calm_3": {
+      "emotion": "calm",
+      "take_idx": 3,
+      "instruction": "(Deeply calm and relaxing tone, very slow pace)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ สิ่งนี้ถูกเรียกว่า  ซึ่งเป็นกลไกตามธรรมชาติที่ช่วยให้บรรพบุรุษของเรารอดชีวิตจากภัยอันตรายในอดีต",
+      "seed": 2052772702,
+      "filename": "calm_take_3.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/calm_take_3.wav",
+      "metrics": {
+        "dur_s": 15.78,
+        "rms": 0.1332,
+        "energy_dbfs": -17.5,
+        "f0_med_hz": 243.7,
+        "f0_p10_hz": 200.0,
+        "f0_p90_hz": 314.3,
+        "f0_spread_st": 7.83
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "calm_take_3.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/calm_take_3.wav",
+          "metrics": {
+            "dur_s": 15.78,
+            "rms": 0.1332,
+            "energy_dbfs": -17.5,
+            "f0_med_hz": 243.7,
+            "f0_p10_hz": 200.0,
+            "f0_p90_hz": 314.3,
+            "f0_spread_st": 7.83
+          }
+        }
+      ],
+      "elapsed_s": 40.21,
+      "error": null,
+      "timestamp": "2026-08-21T18:46:21.852002"
+    },
+    "happy_1": {
+      "emotion": "happy",
+      "take_idx": 1,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ สิ่งนี้ถูกเรียกว่า  ซึ่งเป็นกลไกตามธรรมชาติที่ช่วยให้บรรพบุรุษของเรารอดชีวิตจากภัยอันตรายในอดีต",
+      "seed": 1375343895,
+      "filename": "happy_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/happy_take_1.wav",
+      "metrics": {
+        "dur_s": 14.88,
+        "rms": 0.164,
+        "energy_dbfs": -15.7,
+        "f0_med_hz": 236.5,
+        "f0_p10_hz": 189.0,
+        "f0_p90_hz": 307.7,
+        "f0_spread_st": 8.44
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "happy_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/happy_take_1.wav",
+          "metrics": {
+            "dur_s": 14.88,
+            "rms": 0.164,
+            "energy_dbfs": -15.7,
+            "f0_med_hz": 236.5,
+            "f0_p10_hz": 189.0,
+            "f0_p90_hz": 307.7,
+            "f0_spread_st": 8.44
+          }
+        }
+      ],
+      "elapsed_s": 40.25,
+      "error": null,
+      "timestamp": "2026-08-21T18:47:02.105959"
+    },
+    "happy_2": {
+      "emotion": "happy",
+      "take_idx": 2,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ สิ่งนี้ถูกเรียกว่า  ซึ่งเป็นกลไกตามธรรมชาติที่ช่วยให้บรรพบุรุษของเรารอดชีวิตจากภัยอันตรายในอดีต",
+      "seed": 1272586667,
+      "filename": "happy_take_2.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/happy_take_2.wav",
+      "metrics": {
+        "dur_s": 13.94,
+        "rms": 0.1825,
+        "energy_dbfs": -14.8,
+        "f0_med_hz": 246.2,
+        "f0_p10_hz": 203.0,
+        "f0_p90_hz": 321.1,
+        "f0_spread_st": 7.94
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "happy_take_2.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/happy_take_2.wav",
+          "metrics": {
+            "dur_s": 13.94,
+            "rms": 0.1825,
+            "energy_dbfs": -14.8,
+            "f0_med_hz": 246.2,
+            "f0_p10_hz": 203.0,
+            "f0_p90_hz": 321.1,
+            "f0_spread_st": 7.94
+          }
+        }
+      ],
+      "elapsed_s": 38.48,
+      "error": null,
+      "timestamp": "2026-08-21T18:47:40.591519"
+    },
+    "happy_3": {
+      "emotion": "happy",
+      "take_idx": 3,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ สิ่งนี้ถูกเรียกว่า  ซึ่งเป็นกลไกตามธรรมชาติที่ช่วยให้บรรพบุรุษของเรารอดชีวิตจากภัยอันตรายในอดีต",
+      "seed": 2052772702,
+      "filename": "happy_take_3.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/happy_take_3.wav",
+      "metrics": {
+        "dur_s": 15.42,
+        "rms": 0.1952,
+        "energy_dbfs": -14.2,
+        "f0_med_hz": 234.1,
+        "f0_p10_hz": 191.2,
+        "f0_p90_hz": 308.7,
+        "f0_spread_st": 8.29
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "happy_take_3.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/happy_take_3.wav",
+          "metrics": {
+            "dur_s": 15.42,
+            "rms": 0.1952,
+            "energy_dbfs": -14.2,
+            "f0_med_hz": 234.1,
+            "f0_p10_hz": 191.2,
+            "f0_p90_hz": 308.7,
+            "f0_spread_st": 8.29
+          }
+        }
+      ],
+      "elapsed_s": 42.62,
+      "error": null,
+      "timestamp": "2026-08-21T18:48:23.212684"
+    },
+    "sad_1": {
+      "emotion": "sad",
+      "take_idx": 1,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ สิ่งนี้ถูกเรียกว่า  ซึ่งเป็นกลไกตามธรรมชาติที่ช่วยให้บรรพบุรุษของเรารอดชีวิตจากภัยอันตรายในอดีต",
+      "seed": 1375343895,
+      "filename": "sad_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/sad_take_1.wav",
+      "metrics": {
+        "dur_s": 15.62,
+        "rms": 0.1579,
+        "energy_dbfs": -16.0,
+        "f0_med_hz": 216.2,
+        "f0_p10_hz": 184.6,
+        "f0_p90_hz": 294.5,
+        "f0_spread_st": 8.08
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "sad_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/sad_take_1.wav",
+          "metrics": {
+            "dur_s": 15.62,
+            "rms": 0.1579,
+            "energy_dbfs": -16.0,
+            "f0_med_hz": 216.2,
+            "f0_p10_hz": 184.6,
+            "f0_p90_hz": 294.5,
+            "f0_spread_st": 8.08
+          }
+        }
+      ],
+      "elapsed_s": 40.11,
+      "error": null,
+      "timestamp": "2026-08-21T18:49:03.325701"
+    },
+    "sad_2": {
+      "emotion": "sad",
+      "take_idx": 2,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ สิ่งนี้ถูกเรียกว่า  ซึ่งเป็นกลไกตามธรรมชาติที่ช่วยให้บรรพบุรุษของเรารอดชีวิตจากภัยอันตรายในอดีต",
+      "seed": 1272586667,
+      "filename": "sad_take_2.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/sad_take_2.wav",
+      "metrics": {
+        "dur_s": 15.58,
+        "rms": 0.1687,
+        "energy_dbfs": -15.5,
+        "f0_med_hz": 243.7,
+        "f0_p10_hz": 193.5,
+        "f0_p90_hz": 315.8,
+        "f0_spread_st": 8.48
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "sad_take_2.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/sad_take_2.wav",
+          "metrics": {
+            "dur_s": 15.58,
+            "rms": 0.1687,
+            "energy_dbfs": -15.5,
+            "f0_med_hz": 243.7,
+            "f0_p10_hz": 193.5,
+            "f0_p90_hz": 315.8,
+            "f0_spread_st": 8.48
+          }
+        }
+      ],
+      "elapsed_s": 38.31,
+      "error": null,
+      "timestamp": "2026-08-21T18:49:41.638779"
+    },
+    "sad_3": {
+      "emotion": "sad",
+      "take_idx": 3,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ สิ่งนี้ถูกเรียกว่า  ซึ่งเป็นกลไกตามธรรมชาติที่ช่วยให้บรรพบุรุษของเรารอดชีวิตจากภัยอันตรายในอดีต",
+      "filename": "",
+      "audio_url": "",
+      "metrics": null,
+      "elapsed_s": 18.5,
+      "error": "[WinError 10054] An existing connection was forcibly closed by the remote host",
+      "timestamp": "2026-08-21T18:50:00.147001"
+    },
+    "angry_1": {
+      "emotion": "angry",
+      "take_idx": 1,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ สิ่งนี้ถูกเรียกว่า  ซึ่งเป็นกลไกตามธรรมชาติที่ช่วยให้บรรพบุรุษของเรารอดชีวิตจากภัยอันตรายในอดีต",
+      "filename": "",
+      "audio_url": "",
+      "metrics": null,
+      "elapsed_s": 2.07,
+      "error": "[WinError 10061] No connection could be made because the target machine actively refused it",
+      "timestamp": "2026-08-21T18:50:02.220360"
+    },
+    "angry_2": {
+      "emotion": "angry",
+      "take_idx": 2,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ สิ่งนี้ถูกเรียกว่า  ซึ่งเป็นกลไกตามธรรมชาติที่ช่วยให้บรรพบุรุษของเรารอดชีวิตจากภัยอันตรายในอดีต",
+      "filename": "",
+      "audio_url": "",
+      "metrics": null,
+      "elapsed_s": 2.06,
+      "error": "[WinError 10061] No connection could be made because the target machine actively refused it",
+      "timestamp": "2026-08-21T18:50:04.287699"
+    },
+    "angry_3": {
+      "emotion": "angry",
+      "take_idx": 3,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ สิ่งนี้ถูกเรียกว่า  ซึ่งเป็นกลไกตามธรรมชาติที่ช่วยให้บรรพบุรุษของเรารอดชีวิตจากภัยอันตรายในอดีต",
+      "seed": 2052772702,
+      "filename": "angry_take_3.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/angry_take_3.wav",
+      "metrics": {
+        "dur_s": 16.28,
+        "rms": 0.1391,
+        "energy_dbfs": -17.1,
+        "f0_med_hz": 259.5,
+        "f0_p10_hz": 209.6,
+        "f0_p90_hz": 355.6,
+        "f0_spread_st": 9.15
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "angry_take_3.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/angry_take_3.wav",
+          "metrics": {
+            "dur_s": 16.28,
+            "rms": 0.1391,
+            "energy_dbfs": -17.1,
+            "f0_med_hz": 259.5,
+            "f0_p10_hz": 209.6,
+            "f0_p90_hz": 355.6,
+            "f0_spread_st": 9.15
+          }
+        }
+      ],
+      "elapsed_s": 58.99,
+      "error": null,
+      "timestamp": "2026-08-21T18:51:03.279887"
+    },
+    "scared_1": {
+      "emotion": "scared",
+      "take_idx": 1,
+      "instruction": "(Terrified and panicked voice, gasping and shaking)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ สิ่งนี้ถูกเรียกว่า  ซึ่งเป็นกลไกตามธรรมชาติที่ช่วยให้บรรพบุรุษของเรารอดชีวิตจากภัยอันตรายในอดีต",
+      "seed": 1375343895,
+      "filename": "scared_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/scared_take_1.wav",
+      "metrics": {
+        "dur_s": 14.82,
+        "rms": 0.1762,
+        "energy_dbfs": -15.1,
+        "f0_med_hz": 265.2,
+        "f0_p10_hz": 213.3,
+        "f0_p90_hz": 340.7,
+        "f0_spread_st": 8.1
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "scared_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_184423_girlTH.angry/scared_take_1.wav",
+          "metrics": {
+            "dur_s": 14.82,
+            "rms": 0.1762,
+            "energy_dbfs": -15.1,
+            "f0_med_hz": 265.2,
+            "f0_p10_hz": 213.3,
+            "f0_p90_hz": 340.7,
+            "f0_spread_st": 8.1
+          }
+        }
+      ],
+      "elapsed_s": 37.18,
+      "error": null,
+      "timestamp": "2026-08-21T18:51:44.488928"
+    }
+  }
+}

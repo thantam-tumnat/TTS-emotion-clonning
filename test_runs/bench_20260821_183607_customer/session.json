@@ -1,0 +1,580 @@
+{
+  "session_id": "bench_20260821_183607_customer",
+  "name": "Emotion Benchmark (20260821_183607)",
+  "created_at": "2026-08-21T18:36:07.647298",
+  "speaker_id": "customer",
+  "text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+  "emotions": [
+    "neutral",
+    "happy",
+    "sad",
+    "angry",
+    "sarcastic"
+  ],
+  "repeats": 3,
+  "total_takes": 15,
+  "completed_takes": 15,
+  "params": {
+    "intensity": 3,
+    "cfg_value": 3.5,
+    "inference_timesteps": 10,
+    "lora_mode": "on"
+  },
+  "takes": {
+    "neutral_1": {
+      "emotion": "neutral",
+      "take_idx": 1,
+      "instruction": "",
+      "spoken_text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+      "filename": "neutral_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/neutral_take_1.wav",
+      "metrics": {
+        "dur_s": 3.83,
+        "rms": 0.2683,
+        "energy_dbfs": -11.4,
+        "f0_med_hz": 263.7,
+        "f0_p10_hz": 188.5,
+        "f0_p90_hz": 320.0,
+        "f0_spread_st": 9.16
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "neutral_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/neutral_take_1.wav",
+          "metrics": {
+            "dur_s": 3.83,
+            "rms": 0.2683,
+            "energy_dbfs": -11.4,
+            "f0_med_hz": 263.7,
+            "f0_p10_hz": 188.5,
+            "f0_p90_hz": 320.0,
+            "f0_spread_st": 9.16
+          }
+        }
+      ],
+      "elapsed_s": 11.78,
+      "error": null,
+      "timestamp": "2026-08-21T18:36:19.433956"
+    },
+    "neutral_2": {
+      "emotion": "neutral",
+      "take_idx": 2,
+      "instruction": "",
+      "spoken_text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+      "filename": "neutral_take_2.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/neutral_take_2.wav",
+      "metrics": {
+        "dur_s": 4.28,
+        "rms": 0.187,
+        "energy_dbfs": -14.6,
+        "f0_med_hz": 271.2,
+        "f0_p10_hz": 207.5,
+        "f0_p90_hz": 342.9,
+        "f0_spread_st": 8.69
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "neutral_take_2.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/neutral_take_2.wav",
+          "metrics": {
+            "dur_s": 4.28,
+            "rms": 0.187,
+            "energy_dbfs": -14.6,
+            "f0_med_hz": 271.2,
+            "f0_p10_hz": 207.5,
+            "f0_p90_hz": 342.9,
+            "f0_spread_st": 8.69
+          }
+        }
+      ],
+      "elapsed_s": 10.75,
+      "error": null,
+      "timestamp": "2026-08-21T18:36:30.189335"
+    },
+    "neutral_3": {
+      "emotion": "neutral",
+      "take_idx": 3,
+      "instruction": "",
+      "spoken_text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+      "filename": "neutral_take_3.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/neutral_take_3.wav",
+      "metrics": {
+        "dur_s": 3.92,
+        "rms": 0.2078,
+        "energy_dbfs": -13.6,
+        "f0_med_hz": 247.4,
+        "f0_p10_hz": 180.2,
+        "f0_p90_hz": 347.1,
+        "f0_spread_st": 11.35
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "neutral_take_3.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/neutral_take_3.wav",
+          "metrics": {
+            "dur_s": 3.92,
+            "rms": 0.2078,
+            "energy_dbfs": -13.6,
+            "f0_med_hz": 247.4,
+            "f0_p10_hz": 180.2,
+            "f0_p90_hz": 347.1,
+            "f0_spread_st": 11.35
+          }
+        }
+      ],
+      "elapsed_s": 12.78,
+      "error": null,
+      "timestamp": "2026-08-21T18:36:42.976806"
+    },
+    "happy_1": {
+      "emotion": "happy",
+      "take_idx": 1,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+      "filename": "happy_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/happy_take_1.wav",
+      "metrics": {
+        "dur_s": 4.67,
+        "rms": 0.2597,
+        "energy_dbfs": -11.7,
+        "f0_med_hz": 271.2,
+        "f0_p10_hz": 218.2,
+        "f0_p90_hz": 342.4,
+        "f0_spread_st": 7.8
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "happy_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/happy_take_1.wav",
+          "metrics": {
+            "dur_s": 4.67,
+            "rms": 0.2597,
+            "energy_dbfs": -11.7,
+            "f0_med_hz": 271.2,
+            "f0_p10_hz": 218.2,
+            "f0_p90_hz": 342.4,
+            "f0_spread_st": 7.8
+          }
+        }
+      ],
+      "elapsed_s": 11.87,
+      "error": null,
+      "timestamp": "2026-08-21T18:36:54.853760"
+    },
+    "happy_2": {
+      "emotion": "happy",
+      "take_idx": 2,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+      "filename": "happy_take_2.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/happy_take_2.wav",
+      "metrics": {
+        "dur_s": 4.38,
+        "rms": 0.2054,
+        "energy_dbfs": -13.7,
+        "f0_med_hz": 282.4,
+        "f0_p10_hz": 200.2,
+        "f0_p90_hz": 358.2,
+        "f0_spread_st": 10.07
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "happy_take_2.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/happy_take_2.wav",
+          "metrics": {
+            "dur_s": 4.38,
+            "rms": 0.2054,
+            "energy_dbfs": -13.7,
+            "f0_med_hz": 282.4,
+            "f0_p10_hz": 200.2,
+            "f0_p90_hz": 358.2,
+            "f0_spread_st": 10.07
+          }
+        }
+      ],
+      "elapsed_s": 11.93,
+      "error": null,
+      "timestamp": "2026-08-21T18:37:06.787082"
+    },
+    "happy_3": {
+      "emotion": "happy",
+      "take_idx": 3,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+      "filename": "happy_take_3.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/happy_take_3.wav",
+      "metrics": {
+        "dur_s": 4.34,
+        "rms": 0.3024,
+        "energy_dbfs": -10.4,
+        "f0_med_hz": 199.2,
+        "f0_p10_hz": 152.8,
+        "f0_p90_hz": 279.1,
+        "f0_spread_st": 10.43
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "happy_take_3.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/happy_take_3.wav",
+          "metrics": {
+            "dur_s": 4.34,
+            "rms": 0.3024,
+            "energy_dbfs": -10.4,
+            "f0_med_hz": 199.2,
+            "f0_p10_hz": 152.8,
+            "f0_p90_hz": 279.1,
+            "f0_spread_st": 10.43
+          }
+        }
+      ],
+      "elapsed_s": 11.52,
+      "error": null,
+      "timestamp": "2026-08-21T18:37:18.317515"
+    },
+    "sad_1": {
+      "emotion": "sad",
+      "take_idx": 1,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+      "filename": "sad_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/sad_take_1.wav",
+      "metrics": {
+        "dur_s": 4.75,
+        "rms": 0.2469,
+        "energy_dbfs": -12.1,
+        "f0_med_hz": 236.5,
+        "f0_p10_hz": 195.0,
+        "f0_p90_hz": 286.4,
+        "f0_spread_st": 6.66
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "sad_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/sad_take_1.wav",
+          "metrics": {
+            "dur_s": 4.75,
+            "rms": 0.2469,
+            "energy_dbfs": -12.1,
+            "f0_med_hz": 236.5,
+            "f0_p10_hz": 195.0,
+            "f0_p90_hz": 286.4,
+            "f0_spread_st": 6.66
+          }
+        }
+      ],
+      "elapsed_s": 10.9,
+      "error": null,
+      "timestamp": "2026-08-21T18:37:29.223036"
+    },
+    "sad_2": {
+      "emotion": "sad",
+      "take_idx": 2,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+      "filename": "sad_take_2.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/sad_take_2.wav",
+      "metrics": {
+        "dur_s": 5.28,
+        "rms": 0.1725,
+        "energy_dbfs": -15.3,
+        "f0_med_hz": 259.5,
+        "f0_p10_hz": 221.2,
+        "f0_p90_hz": 320.0,
+        "f0_spread_st": 6.39
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "sad_take_2.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/sad_take_2.wav",
+          "metrics": {
+            "dur_s": 5.28,
+            "rms": 0.1725,
+            "energy_dbfs": -15.3,
+            "f0_med_hz": 259.5,
+            "f0_p10_hz": 221.2,
+            "f0_p90_hz": 320.0,
+            "f0_spread_st": 6.39
+          }
+        }
+      ],
+      "elapsed_s": 12.04,
+      "error": null,
+      "timestamp": "2026-08-21T18:37:41.264566"
+    },
+    "sad_3": {
+      "emotion": "sad",
+      "take_idx": 3,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+      "filename": "sad_take_3.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/sad_take_3.wav",
+      "metrics": {
+        "dur_s": 3.83,
+        "rms": 0.3494,
+        "energy_dbfs": -9.1,
+        "f0_med_hz": 252.6,
+        "f0_p10_hz": 207.8,
+        "f0_p90_hz": 309.7,
+        "f0_spread_st": 6.91
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "sad_take_3.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/sad_take_3.wav",
+          "metrics": {
+            "dur_s": 3.83,
+            "rms": 0.3494,
+            "energy_dbfs": -9.1,
+            "f0_med_hz": 252.6,
+            "f0_p10_hz": 207.8,
+            "f0_p90_hz": 309.7,
+            "f0_spread_st": 6.91
+          }
+        }
+      ],
+      "elapsed_s": 10.41,
+      "error": null,
+      "timestamp": "2026-08-21T18:37:51.679822"
+    },
+    "angry_1": {
+      "emotion": "angry",
+      "take_idx": 1,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+      "filename": "angry_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/angry_take_1.wav",
+      "metrics": {
+        "dur_s": 3.77,
+        "rms": 0.2864,
+        "energy_dbfs": -10.9,
+        "f0_med_hz": 252.6,
+        "f0_p10_hz": 185.5,
+        "f0_p90_hz": 311.3,
+        "f0_spread_st": 8.96
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "angry_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/angry_take_1.wav",
+          "metrics": {
+            "dur_s": 3.77,
+            "rms": 0.2864,
+            "energy_dbfs": -10.9,
+            "f0_med_hz": 252.6,
+            "f0_p10_hz": 185.5,
+            "f0_p90_hz": 311.3,
+            "f0_spread_st": 8.96
+          }
+        }
+      ],
+      "elapsed_s": 10.24,
+      "error": null,
+      "timestamp": "2026-08-21T18:38:01.929831"
+    },
+    "angry_2": {
+      "emotion": "angry",
+      "take_idx": 2,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+      "filename": "angry_take_2.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/angry_take_2.wav",
+      "metrics": {
+        "dur_s": 3.83,
+        "rms": 0.2163,
+        "energy_dbfs": -13.3,
+        "f0_med_hz": 266.7,
+        "f0_p10_hz": 216.0,
+        "f0_p90_hz": 347.8,
+        "f0_spread_st": 8.25
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "angry_take_2.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/angry_take_2.wav",
+          "metrics": {
+            "dur_s": 3.83,
+            "rms": 0.2163,
+            "energy_dbfs": -13.3,
+            "f0_med_hz": 266.7,
+            "f0_p10_hz": 216.0,
+            "f0_p90_hz": 347.8,
+            "f0_spread_st": 8.25
+          }
+        }
+      ],
+      "elapsed_s": 9.26,
+      "error": null,
+      "timestamp": "2026-08-21T18:38:11.193620"
+    },
+    "angry_3": {
+      "emotion": "angry",
+      "take_idx": 3,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+      "filename": "angry_take_3.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/angry_take_3.wav",
+      "metrics": {
+        "dur_s": 3.23,
+        "rms": 0.2738,
+        "energy_dbfs": -11.3,
+        "f0_med_hz": 275.9,
+        "f0_p10_hz": 195.3,
+        "f0_p90_hz": 345.1,
+        "f0_spread_st": 9.86
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "angry_take_3.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/angry_take_3.wav",
+          "metrics": {
+            "dur_s": 3.23,
+            "rms": 0.2738,
+            "energy_dbfs": -11.3,
+            "f0_med_hz": 275.9,
+            "f0_p10_hz": 195.3,
+            "f0_p90_hz": 345.1,
+            "f0_spread_st": 9.86
+          }
+        }
+      ],
+      "elapsed_s": 7.86,
+      "error": null,
+      "timestamp": "2026-08-21T18:38:19.060964"
+    },
+    "sarcastic_1": {
+      "emotion": "sarcastic",
+      "take_idx": 1,
+      "instruction": "(Deeply sarcastic and cynical tone)",
+      "spoken_text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+      "filename": "sarcastic_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/sarcastic_take_1.wav",
+      "metrics": {
+        "dur_s": 3.77,
+        "rms": 0.1938,
+        "energy_dbfs": -14.3,
+        "f0_med_hz": 226.4,
+        "f0_p10_hz": 197.9,
+        "f0_p90_hz": 305.7,
+        "f0_spread_st": 7.53
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "sarcastic_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/sarcastic_take_1.wav",
+          "metrics": {
+            "dur_s": 3.77,
+            "rms": 0.1938,
+            "energy_dbfs": -14.3,
+            "f0_med_hz": 226.4,
+            "f0_p10_hz": 197.9,
+            "f0_p90_hz": 305.7,
+            "f0_spread_st": 7.53
+          }
+        }
+      ],
+      "elapsed_s": 10.18,
+      "error": null,
+      "timestamp": "2026-08-21T18:38:29.248702"
+    },
+    "sarcastic_2": {
+      "emotion": "sarcastic",
+      "take_idx": 2,
+      "instruction": "(Deeply sarcastic and cynical tone)",
+      "spoken_text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+      "filename": "sarcastic_take_2.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/sarcastic_take_2.wav",
+      "metrics": {
+        "dur_s": 3.94,
+        "rms": 0.1925,
+        "energy_dbfs": -14.3,
+        "f0_med_hz": 256.7,
+        "f0_p10_hz": 198.3,
+        "f0_p90_hz": 335.7,
+        "f0_spread_st": 9.11
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "sarcastic_take_2.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/sarcastic_take_2.wav",
+          "metrics": {
+            "dur_s": 3.94,
+            "rms": 0.1925,
+            "energy_dbfs": -14.3,
+            "f0_med_hz": 256.7,
+            "f0_p10_hz": 198.3,
+            "f0_p90_hz": 335.7,
+            "f0_spread_st": 9.11
+          }
+        }
+      ],
+      "elapsed_s": 10.92,
+      "error": null,
+      "timestamp": "2026-08-21T18:38:40.171551"
+    },
+    "sarcastic_3": {
+      "emotion": "sarcastic",
+      "take_idx": 3,
+      "instruction": "(Deeply sarcastic and cynical tone)",
+      "spoken_text": "ทำไมเรื่องมันต้องกลายเป็นแบบนี้ด้วย ไม่เข้าใจเลยจริงๆ",
+      "filename": "sarcastic_take_3.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/sarcastic_take_3.wav",
+      "metrics": {
+        "dur_s": 4.0,
+        "rms": 0.264,
+        "energy_dbfs": -11.6,
+        "f0_med_hz": 241.8,
+        "f0_p10_hz": 188.2,
+        "f0_p90_hz": 305.7,
+        "f0_spread_st": 8.4
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "sarcastic_take_3.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260821_183607_customer/sarcastic_take_3.wav",
+          "metrics": {
+            "dur_s": 4.0,
+            "rms": 0.264,
+            "energy_dbfs": -11.6,
+            "f0_med_hz": 241.8,
+            "f0_p10_hz": 188.2,
+            "f0_p90_hz": 305.7,
+            "f0_spread_st": 8.4
+          }
+        }
+      ],
+      "elapsed_s": 9.81,
+      "error": null,
+      "timestamp": "2026-08-21T18:38:49.990991"
+    }
+  }
+}

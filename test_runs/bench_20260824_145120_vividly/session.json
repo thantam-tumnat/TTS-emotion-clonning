@@ -1,0 +1,480 @@
+{
+  "session_id": "bench_20260824_145120_vividly",
+  "name": "Emotion Benchmark (20260824_145120)",
+  "created_at": "2026-08-24T14:51:20.770015",
+  "speaker_id": "vividly",
+  "text": "ทำไมเรื่องมันต้องจบลงแบบนี้ด้วยล่ะ... It really breaks my heart, I can't take it anymore...",
+  "emotions": [
+    "neutral",
+    "happy",
+    "sad",
+    "angry"
+  ],
+  "repeats": 3,
+  "total_takes": 12,
+  "completed_takes": 12,
+  "params": {
+    "intensity": 3,
+    "cfg_value": 3.5,
+    "inference_timesteps": 10,
+    "lora_mode": "on"
+  },
+  "takes": {
+    "neutral_1": {
+      "emotion": "neutral",
+      "take_idx": 1,
+      "instruction": "",
+      "spoken_text": "ทำไมเรื่องมันต้องจบลงแบบนี้ด้วยล่ะ... It really breaks my heart, I can't take it anymore...",
+      "filename": "neutral_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/neutral_take_1.wav",
+      "metrics": {
+        "dur_s": 5.79,
+        "rms": 0.1568,
+        "energy_dbfs": -16.1,
+        "f0_med_hz": 158.9,
+        "f0_p10_hz": 100.2,
+        "f0_p90_hz": 368.7,
+        "f0_spread_st": 22.55
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "neutral_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/neutral_take_1.wav",
+          "metrics": {
+            "dur_s": 5.79,
+            "rms": 0.1568,
+            "energy_dbfs": -16.1,
+            "f0_med_hz": 158.9,
+            "f0_p10_hz": 100.2,
+            "f0_p90_hz": 368.7,
+            "f0_spread_st": 22.55
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 15.71,
+      "error": null,
+      "timestamp": "2026-08-24T14:51:36.488405"
+    },
+    "neutral_2": {
+      "emotion": "neutral",
+      "take_idx": 2,
+      "instruction": "",
+      "spoken_text": "ทำไมเรื่องมันต้องจบลงแบบนี้ด้วยล่ะ... It really breaks my heart, I can't take it anymore...",
+      "filename": "neutral_take_2.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/neutral_take_2.wav",
+      "metrics": {
+        "dur_s": 5.43,
+        "rms": 0.1688,
+        "energy_dbfs": -15.5,
+        "f0_med_hz": 161.1,
+        "f0_p10_hz": 103.2,
+        "f0_p90_hz": 400.0,
+        "f0_spread_st": 23.45
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "neutral_take_2.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/neutral_take_2.wav",
+          "metrics": {
+            "dur_s": 5.43,
+            "rms": 0.1688,
+            "energy_dbfs": -15.5,
+            "f0_med_hz": 161.1,
+            "f0_p10_hz": 103.2,
+            "f0_p90_hz": 400.0,
+            "f0_spread_st": 23.45
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 14.03,
+      "error": null,
+      "timestamp": "2026-08-24T14:51:50.519296"
+    },
+    "neutral_3": {
+      "emotion": "neutral",
+      "take_idx": 3,
+      "instruction": "",
+      "spoken_text": "ทำไมเรื่องมันต้องจบลงแบบนี้ด้วยล่ะ... It really breaks my heart, I can't take it anymore...",
+      "filename": "neutral_take_3.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/neutral_take_3.wav",
+      "metrics": {
+        "dur_s": 5.51,
+        "rms": 0.1634,
+        "energy_dbfs": -15.7,
+        "f0_med_hz": 149.5,
+        "f0_p10_hz": 95.2,
+        "f0_p90_hz": 393.4,
+        "f0_spread_st": 24.56
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "neutral_take_3.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/neutral_take_3.wav",
+          "metrics": {
+            "dur_s": 5.51,
+            "rms": 0.1634,
+            "energy_dbfs": -15.7,
+            "f0_med_hz": 149.5,
+            "f0_p10_hz": 95.2,
+            "f0_p90_hz": 393.4,
+            "f0_spread_st": 24.56
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 14.91,
+      "error": null,
+      "timestamp": "2026-08-24T14:52:05.437006"
+    },
+    "happy_1": {
+      "emotion": "happy",
+      "take_idx": 1,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "ทำไมเรื่องมันต้องจบลงแบบนี้ด้วยล่ะ... It really breaks my heart, I can't take it anymore...",
+      "filename": "happy_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/happy_take_1.wav",
+      "metrics": {
+        "dur_s": 5.46,
+        "rms": 0.1337,
+        "energy_dbfs": -17.5,
+        "f0_med_hz": 159.5,
+        "f0_p10_hz": 99.4,
+        "f0_p90_hz": 416.3,
+        "f0_spread_st": 24.79
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "happy_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/happy_take_1.wav",
+          "metrics": {
+            "dur_s": 5.46,
+            "rms": 0.1337,
+            "energy_dbfs": -17.5,
+            "f0_med_hz": 159.5,
+            "f0_p10_hz": 99.4,
+            "f0_p90_hz": 416.3,
+            "f0_spread_st": 24.79
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 14.2,
+      "error": null,
+      "timestamp": "2026-08-24T14:52:19.638795"
+    },
+    "happy_2": {
+      "emotion": "happy",
+      "take_idx": 2,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "ทำไมเรื่องมันต้องจบลงแบบนี้ด้วยล่ะ... It really breaks my heart, I can't take it anymore...",
+      "filename": "happy_take_2.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/happy_take_2.wav",
+      "metrics": {
+        "dur_s": 4.78,
+        "rms": 0.1662,
+        "energy_dbfs": -15.6,
+        "f0_med_hz": 150.3,
+        "f0_p10_hz": 99.7,
+        "f0_p90_hz": 403.5,
+        "f0_spread_st": 24.2
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "happy_take_2.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/happy_take_2.wav",
+          "metrics": {
+            "dur_s": 4.78,
+            "rms": 0.1662,
+            "energy_dbfs": -15.6,
+            "f0_med_hz": 150.3,
+            "f0_p10_hz": 99.7,
+            "f0_p90_hz": 403.5,
+            "f0_spread_st": 24.2
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 12.41,
+      "error": null,
+      "timestamp": "2026-08-24T14:52:32.054715"
+    },
+    "happy_3": {
+      "emotion": "happy",
+      "take_idx": 3,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "ทำไมเรื่องมันต้องจบลงแบบนี้ด้วยล่ะ... It really breaks my heart, I can't take it anymore...",
+      "filename": "happy_take_3.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/happy_take_3.wav",
+      "metrics": {
+        "dur_s": 5.67,
+        "rms": 0.1642,
+        "energy_dbfs": -15.7,
+        "f0_med_hz": 167.2,
+        "f0_p10_hz": 95.1,
+        "f0_p90_hz": 428.6,
+        "f0_spread_st": 26.06
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "happy_take_3.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/happy_take_3.wav",
+          "metrics": {
+            "dur_s": 5.67,
+            "rms": 0.1642,
+            "energy_dbfs": -15.7,
+            "f0_med_hz": 167.2,
+            "f0_p10_hz": 95.1,
+            "f0_p90_hz": 428.6,
+            "f0_spread_st": 26.06
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 14.5,
+      "error": null,
+      "timestamp": "2026-08-24T14:52:46.563667"
+    },
+    "sad_1": {
+      "emotion": "sad",
+      "take_idx": 1,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "ทำไมเรื่องมันต้องจบลงแบบนี้ด้วยล่ะ... It really breaks my heart, I can't take it anymore...",
+      "filename": "sad_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/sad_take_1.wav",
+      "metrics": {
+        "dur_s": 6.26,
+        "rms": 0.146,
+        "energy_dbfs": -16.7,
+        "f0_med_hz": 157.9,
+        "f0_p10_hz": 103.1,
+        "f0_p90_hz": 363.6,
+        "f0_spread_st": 21.83
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "sad_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/sad_take_1.wav",
+          "metrics": {
+            "dur_s": 6.26,
+            "rms": 0.146,
+            "energy_dbfs": -16.7,
+            "f0_med_hz": 157.9,
+            "f0_p10_hz": 103.1,
+            "f0_p90_hz": 363.6,
+            "f0_spread_st": 21.83
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 17.07,
+      "error": null,
+      "timestamp": "2026-08-24T14:53:03.637406"
+    },
+    "sad_2": {
+      "emotion": "sad",
+      "take_idx": 2,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "ทำไมเรื่องมันต้องจบลงแบบนี้ด้วยล่ะ... It really breaks my heart, I can't take it anymore...",
+      "filename": "sad_take_2.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/sad_take_2.wav",
+      "metrics": {
+        "dur_s": 6.42,
+        "rms": 0.1159,
+        "energy_dbfs": -18.7,
+        "f0_med_hz": 150.5,
+        "f0_p10_hz": 98.9,
+        "f0_p90_hz": 359.0,
+        "f0_spread_st": 22.32
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "sad_take_2.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/sad_take_2.wav",
+          "metrics": {
+            "dur_s": 6.42,
+            "rms": 0.1159,
+            "energy_dbfs": -18.7,
+            "f0_med_hz": 150.5,
+            "f0_p10_hz": 98.9,
+            "f0_p90_hz": 359.0,
+            "f0_spread_st": 22.32
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 35.09,
+      "error": null,
+      "timestamp": "2026-08-24T14:53:38.731814"
+    },
+    "sad_3": {
+      "emotion": "sad",
+      "take_idx": 3,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "ทำไมเรื่องมันต้องจบลงแบบนี้ด้วยล่ะ... It really breaks my heart, I can't take it anymore...",
+      "filename": "sad_take_3.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/sad_take_3.wav",
+      "metrics": {
+        "dur_s": 6.42,
+        "rms": 0.1427,
+        "energy_dbfs": -16.9,
+        "f0_med_hz": 133.7,
+        "f0_p10_hz": 103.7,
+        "f0_p90_hz": 355.6,
+        "f0_spread_st": 21.34
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "sad_take_3.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/sad_take_3.wav",
+          "metrics": {
+            "dur_s": 6.42,
+            "rms": 0.1427,
+            "energy_dbfs": -16.9,
+            "f0_med_hz": 133.7,
+            "f0_p10_hz": 103.7,
+            "f0_p90_hz": 355.6,
+            "f0_spread_st": 21.34
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 33.04,
+      "error": null,
+      "timestamp": "2026-08-24T14:54:11.774992"
+    },
+    "angry_1": {
+      "emotion": "angry",
+      "take_idx": 1,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "ทำไมเรื่องมันต้องจบลงแบบนี้ด้วยล่ะ... It really breaks my heart, I can't take it anymore...",
+      "filename": "angry_take_1.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/angry_take_1.wav",
+      "metrics": {
+        "dur_s": 5.89,
+        "rms": 0.1617,
+        "energy_dbfs": -15.8,
+        "f0_med_hz": 137.5,
+        "f0_p10_hz": 99.7,
+        "f0_p90_hz": 368.1,
+        "f0_spread_st": 22.62
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "angry_take_1.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/angry_take_1.wav",
+          "metrics": {
+            "dur_s": 5.89,
+            "rms": 0.1617,
+            "energy_dbfs": -15.8,
+            "f0_med_hz": 137.5,
+            "f0_p10_hz": 99.7,
+            "f0_p90_hz": 368.1,
+            "f0_spread_st": 22.62
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 29.55,
+      "error": null,
+      "timestamp": "2026-08-24T14:54:41.330386"
+    },
+    "angry_2": {
+      "emotion": "angry",
+      "take_idx": 2,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "ทำไมเรื่องมันต้องจบลงแบบนี้ด้วยล่ะ... It really breaks my heart, I can't take it anymore...",
+      "filename": "angry_take_2.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/angry_take_2.wav",
+      "metrics": {
+        "dur_s": 6.05,
+        "rms": 0.148,
+        "energy_dbfs": -16.6,
+        "f0_med_hz": 133.1,
+        "f0_p10_hz": 97.4,
+        "f0_p90_hz": 376.5,
+        "f0_spread_st": 23.41
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "angry_take_2.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/angry_take_2.wav",
+          "metrics": {
+            "dur_s": 6.05,
+            "rms": 0.148,
+            "energy_dbfs": -16.6,
+            "f0_med_hz": 133.1,
+            "f0_p10_hz": 97.4,
+            "f0_p90_hz": 376.5,
+            "f0_spread_st": 23.41
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 28.45,
+      "error": null,
+      "timestamp": "2026-08-24T14:55:09.788753"
+    },
+    "angry_3": {
+      "emotion": "angry",
+      "take_idx": 3,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "ทำไมเรื่องมันต้องจบลงแบบนี้ด้วยล่ะ... It really breaks my heart, I can't take it anymore...",
+      "filename": "angry_take_3.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/angry_take_3.wav",
+      "metrics": {
+        "dur_s": 5.68,
+        "rms": 0.1598,
+        "energy_dbfs": -15.9,
+        "f0_med_hz": 158.9,
+        "f0_p10_hz": 99.2,
+        "f0_p90_hz": 393.4,
+        "f0_spread_st": 23.86
+      },
+      "variants": [
+        {
+          "id": "default",
+          "label": "Post-Processed",
+          "filename": "angry_take_3.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_145120_vividly/angry_take_3.wav",
+          "metrics": {
+            "dur_s": 5.68,
+            "rms": 0.1598,
+            "energy_dbfs": -15.9,
+            "f0_med_hz": 158.9,
+            "f0_p10_hz": 99.2,
+            "f0_p90_hz": 393.4,
+            "f0_spread_st": 23.86
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 28.97,
+      "error": null,
+      "timestamp": "2026-08-24T14:55:38.768709"
+    }
+  }
+}

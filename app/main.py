@@ -156,6 +156,30 @@ def benchmark_ui():
 
 
 
+@app.get("/tests", include_in_schema=False)
+def tests_ui():
+    """Checklist page: a button that runs the voice-consistency suites."""
+    page = os.path.join(static_dir, "tests.html")
+    if os.path.exists(page):
+        return FileResponse(page)
+    return {"message": "Test runner UI not found."}
+
+
+@app.get("/api/tests/suites")
+def list_test_suites():
+    from app.services import test_runner
+    return {"suites": test_runner.list_suites()}
+
+
+@app.post("/api/tests/run")
+def run_tests(suite_id: Optional[str] = None):
+    """Run one suite (?suite_id=...) or all of them, returning a checklist."""
+    from app.services import test_runner
+    if suite_id:
+        return test_runner.run_suite(suite_id)
+    return test_runner.run_all()
+
+
 @app.get("/health")
 def health_check():
     return {

@@ -388,6 +388,7 @@ document.addEventListener('DOMContentLoaded', () => {
     resultsEmptyState.classList.add('hidden');
     resultsTableWrapper.classList.remove('hidden');
     progressCard.classList.remove('hidden');
+    resetUnconditionedWarning();
 
     startTime = Date.now();
     startTimer();
@@ -689,6 +690,29 @@ document.addEventListener('DOMContentLoaded', () => {
     return list.find(v => v.id === activeVariantId) || list[0];
   }
 
+  // Session-level banner shown once when any take came back with no voice anchor.
+  // Those takes are unconditioned samples -- different people -- so a per-cell ⚠
+  // is easy to miss across a full matrix; the banner names the fix.
+  let unconditionedWarned = false;
+
+  function resetUnconditionedWarning() {
+    unconditionedWarned = false;
+    const banner = document.getElementById('voice-anchor-warning');
+    if (banner) banner.remove();
+  }
+
+  function noteUnconditionedTake() {
+    if (unconditionedWarned) return;
+    unconditionedWarned = true;
+    const banner = document.createElement('div');
+    banner.id = 'voice-anchor-warning';
+    banner.className = 'voice-anchor-warning';
+    banner.innerHTML = `⚠ <strong>เสียงบาง take ไม่ถูกล็อก (unconditioned)</strong> — take เหล่านี้เป็นเสียงคนละคนกับ take อื่น ` +
+      `เพราะไม่มีเสียงต้นแบบมายึด กรุณาเลือก Speaker Profile ให้ชัด หรือตรวจสอบ Auto-Seed voice (GPU service) ` +
+      `แล้วรันใหม่`;
+    progressCard.appendChild(banner);
+  }
+
   function renderTakeResultCell(result) {
     // Sessions and runs from before multi-level testing carry no row_key, and
     // for them the emotion is still the row.
@@ -718,14 +742,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const dur = metrics ? `${metrics.dur_s}s` : '—';
 
+    // No voice anchored this take -> it is a fresh random speaker, so it will not
+    // match the other takes. Flag it rather than leave the ear to catch it.
+    const unpinned = result.voice_anchor === 'none';
+    if (unpinned) noteUnconditionedTake();
+    const warnBadge = unpinned
+      ? `<span class="mini-voice-warn" title="เสียงไม่ถูกล็อก (unconditioned) — take นี้เป็นคนละคนกับ take อื่น กรุณาเลือก Speaker หรือแก้ Auto-Seed">⚠</span>`
+      : '';
+
     cell.innerHTML = `
-      <div class="mini-take-player" id="player-${rowKey}-${take_idx}" data-url="${audio_url}">
+      <div class="mini-take-player${unpinned ? ' is-unpinned' : ''}" id="player-${rowKey}-${take_idx}" data-url="${audio_url}">
+
         <button type="button" class="btn-mini-play" title="เล่นเสียง">
           <svg class="play-svg" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><polygon points="5 3 19 12 5 21 5 3"></polygon></svg>
           <svg class="pause-svg hidden" width="10" height="10" viewBox="0 0 24 24" fill="currentColor"><rect x="6" y="4" width="4" height="16"></rect><rect x="14" y="4" width="4" height="16"></rect></svg>
         </button>
         <div class="mini-meta">
-          <span class="mini-dur">${dur}</span>
+          <span class="mini-dur">${dur}</span>${warnBadge}
         </div>
         <a href="${audio_url}" download="${filename}" class="btn-mini-dl" title="ดาวน์โหลดไฟล์ WAV">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path><polyline points="7 10 12 15 17 10"></polyline><line x1="12" y1="15" x2="12" y2="3"></line></svg>
