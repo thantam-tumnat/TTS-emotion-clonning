@@ -23,3 +23,6 @@ go.work
 .idea/
 .vscode/
 *.swp
+
+# air hot-reload build output
+tmp/

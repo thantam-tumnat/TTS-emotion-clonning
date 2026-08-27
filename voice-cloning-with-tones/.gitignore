@@ -39,3 +39,7 @@ voice_cache/_auto_seed.pt
 
 # Takes written by tools/ab_gen.py
 takes/
+
+# Local benchmark/diagnostic outputs (large audio, not source)
+test_runs/
+scratch/

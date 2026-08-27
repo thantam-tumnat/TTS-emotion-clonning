@@ -1329,6 +1329,29 @@ textarea:focus, .custom-input:focus {
   display: none;
 }
 
+/* Voice-anchor notice: the take was rendered on the Base Voice, so the speaker
+   may wander between emotion segments. Amber, to read as a caution not an error. */
+.voice-anchor-warning {
+  background: linear-gradient(135deg, rgba(251, 191, 36, 0.12), rgba(180, 83, 9, 0.2));
+  border: 1px solid rgba(251, 191, 36, 0.45);
+  border-radius: var(--radius-md);
+  padding: 12px 16px;
+  margin-bottom: 14px;
+  font-size: 0.86rem;
+  line-height: 1.5;
+  color: #fcd34d;
+  font-family: var(--font-thai);
+  animation: fadeIn 0.3s ease;
+}
+
+.voice-anchor-warning b {
+  color: #fde68a;
+}
+
+.voice-anchor-warning.hidden {
+  display: none;
+}
+
 .error-banner-header {
   display: flex;
   justify-content: space-between;

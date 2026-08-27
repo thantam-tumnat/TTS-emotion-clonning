@@ -177,6 +177,41 @@ def test_every_chunk_of_a_job_shares_one_voice(service):
     assert pitch(chunks[0], sr) == pytest.approx(pitch(chunks[2], sr), abs=1.0)
 
 
+def test_separate_jobs_with_one_handle_are_the_same_voice(service):
+    """Each benchmark take is its own render job. A pinned handle must give the
+    same speaker across those separate jobs, or every take is a different person.
+
+    The within-a-job case is covered above; this is the between-jobs case the
+    /test matrix actually exercises -- one job per take, same handle each time.
+    """
+    handle = service.post(
+        "/v2/voices/resolve", json={"speaker_id": "alice"}
+    ).json()["voice_handle"]
+
+    pitches = []
+    for _ in range(3):  # three takes, three jobs
+        chunks, sr = unpack(render(service, chunks=["ก"], voice={"handle": handle}))
+        pitches.append(pitch(chunks[0], sr))
+
+    assert pitches[0] == pytest.approx(pitches[1], abs=1.0)
+    assert pitches[0] == pytest.approx(pitches[2], abs=1.0)
+
+
+def test_separate_unpinned_jobs_share_the_seed_voice(service):
+    """No speaker pinned (the UI's Auto-Seed default). Successive takes -- each its
+    own job -- must all land on the one shared seed voice, not a fresh speaker per
+    take, which was the ear-obvious bug."""
+    pitches = []
+    for _ in range(3):
+        chunks, sr = unpack(render(service, chunks=["ก"], voice={"seed": True}))
+        pitches.append(pitch(chunks[0], sr))
+
+    assert pitches[0] == pytest.approx(pitches[1], abs=1.0)
+    assert pitches[0] == pytest.approx(pitches[2], abs=1.0)
+    # And it is genuinely the shared seed handle, minted once.
+    assert "_auto_seed" in service.get("/v2/voices").json()["handles"]
+
+
 def test_two_speakers_are_actually_different(service):
     a, _ = unpack(render(service, voice={"speaker_id": "alice"}))
     b, _ = unpack(render(service, voice={"speaker_id": "bob"}))

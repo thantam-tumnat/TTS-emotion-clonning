@@ -127,6 +127,9 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Custom response headers are hidden from browser JS unless named here. The UI
+    # reads X-Voice-Anchor to warn when a take was not pinned to a stable voice.
+    expose_headers=["X-Voice-Anchor"],
 )
 
 # Mount static folder if exists
@@ -459,7 +462,13 @@ async def synthesize_endpoint(req: SynthesizeRequest):
         return Response(
             content=wav_bytes,
             media_type="audio/wav",
-            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+            headers={
+                "Content-Disposition": f'inline; filename="{filename}"',
+                # How the take was actually anchored: "speaker"/"reference" hold one
+                # voice; "seed"/"none" do not, so the client can warn instead of
+                # shipping a take whose speaker wanders between emotion segments.
+                "X-Voice-Anchor": siangtts_service.last_voice_anchor() or "none",
+            },
         )
     except SynthesizerUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))
@@ -532,7 +541,10 @@ async def synthesize_with_upload_endpoint(
         return Response(
             content=wav_bytes,
             media_type="audio/wav",
-            headers={"Content-Disposition": f'inline; filename="{filename}"'},
+            headers={
+                "Content-Disposition": f'inline; filename="{filename}"',
+                "X-Voice-Anchor": siangtts_service.last_voice_anchor() or "none",
+            },
         )
     except SynthesizerUnavailable as e:
         raise HTTPException(status_code=503, detail=str(e))

@@ -12,6 +12,10 @@ import (
 	"voice-cloning-queue/queue"
 )
 
+// retryDelay is how long to pause before the single retry of a dispatch that failed
+// at the transport level — long enough for a uvicorn reload to rebind the port.
+const retryDelay = 2 * time.Second
+
 // Worker continuously processes jobs from the PriorityQueue and dispatches to Python GPU Service.
 type Worker struct {
 	q            *queue.PriorityQueue
@@ -103,12 +107,15 @@ func (w *Worker) processJob(job *models.RenderJob) {
 
 	resp, err := w.client.Do(httpReq)
 	if err != nil {
-		// Fallback to /v2/jobs/render?wait=600 if direct_render is not yet mounted
-		fallbackURL := fmt.Sprintf("%s/v2/jobs/render?wait=600", w.pythonGPUURL)
-		fallbackReq, err2 := http.NewRequest("POST", fallbackURL, bytes.NewBuffer(jsonBytes))
+		// Retry the same endpoint once, to ride out a momentary blip while the GPU
+		// service is restarting. Never fall back to /v2/jobs/render: that hands the
+		// job to the Python service's *own* queue, so this gateway and that queue
+		// would both be scheduling work onto one GPU.
+		time.Sleep(retryDelay)
+		retryReq, err2 := http.NewRequest("POST", targetURL, bytes.NewBuffer(jsonBytes))
 		if err2 == nil {
-			fallbackReq.Header.Set("Content-Type", "application/json")
-			resp, err = w.client.Do(fallbackReq)
+			retryReq.Header.Set("Content-Type", "application/json")
+			resp, err = w.client.Do(retryReq)
 		}
 	}
 

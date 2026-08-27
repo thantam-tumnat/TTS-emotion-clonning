@@ -11,28 +11,31 @@ import (
 )
 
 const (
-	InteractiveBurst = 3
-	MaxHistory       = 500
+	MaxHistory = 500
 )
 
-// PriorityQueue manages multi-lane job scheduling and job persistence in memory.
+// PriorityQueue manages strict FIFO job scheduling and job persistence in memory.
+//
+// There is one GPU behind this queue, so there is one waiting line: jobs run in the
+// order they were submitted, whatever lane they declared. The lane is still recorded
+// and reported — the dashboard splits its waiting counts by lane — but it no longer
+// decides who goes first. A two-lane policy meant a `batch` job submitted seconds
+// later could take the GPU ahead of an `interactive` job already waiting, which read
+// from the dashboard as two jobs taking turns instead of one finishing first.
 type PriorityQueue struct {
-	mu          sync.RWMutex
-	cond        *sync.Cond
-	jobs        map[string]*models.RenderJob
-	interactive []*models.RenderJob
-	batch       []*models.RenderJob
-	burstCount  int
-	running     *models.RenderJob
-	closed      bool
+	mu      sync.RWMutex
+	cond    *sync.Cond
+	jobs    map[string]*models.RenderJob
+	waiting []*models.RenderJob
+	running *models.RenderJob
+	closed  bool
 }
 
 // NewPriorityQueue creates an initialized PriorityQueue.
 func NewPriorityQueue() *PriorityQueue {
 	q := &PriorityQueue{
-		jobs:        make(map[string]*models.RenderJob),
-		interactive: make([]*models.RenderJob, 0),
-		batch:       make([]*models.RenderJob, 0),
+		jobs:    make(map[string]*models.RenderJob),
+		waiting: make([]*models.RenderJob, 0),
 	}
 	q.cond = sync.NewCond(&q.mu)
 	return q
@@ -46,17 +49,13 @@ func (q *PriorityQueue) GenerateJobID() string {
 	return fmt.Sprintf("job_%s_%s", ts, hex.EncodeToString(b))
 }
 
-// Submit adds a job to the appropriate lane queue.
+// Submit appends a job to the tail of the waiting line.
 func (q *PriorityQueue) Submit(job *models.RenderJob) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	q.jobs[job.JobID] = job
-	if job.Lane == "interactive" {
-		q.interactive = append(q.interactive, job)
-	} else {
-		q.batch = append(q.batch, job)
-	}
+	q.waiting = append(q.waiting, job)
 
 	// Evict oldest finished jobs if over capacity
 	if len(q.jobs) > MaxHistory {
@@ -66,7 +65,8 @@ func (q *PriorityQueue) Submit(job *models.RenderJob) {
 	q.cond.Signal()
 }
 
-// NextJob blocks until a job is available according to the priority burst policy.
+// NextJob blocks until a job is available, then returns the one that has waited
+// longest. Strict FIFO — no lane may overtake another.
 func (q *PriorityQueue) NextJob() *models.RenderJob {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -76,22 +76,9 @@ func (q *PriorityQueue) NextJob() *models.RenderJob {
 			return nil
 		}
 
-		// Scheduling policy: interactive jobs have priority up to InteractiveBurst times
-		if len(q.interactive) > 0 && (q.burstCount < InteractiveBurst || len(q.batch) == 0) {
-			job := q.interactive[0]
-			q.interactive = q.interactive[1:]
-			q.burstCount++
-			now := float64(time.Now().UnixNano()) / 1e9
-			job.Status = models.StatusRunning
-			job.Started = &now
-			q.running = job
-			return job
-		}
-
-		if len(q.batch) > 0 {
-			job := q.batch[0]
-			q.batch = q.batch[1:]
-			q.burstCount = 0
+		if len(q.waiting) > 0 {
+			job := q.waiting[0]
+			q.waiting = q.waiting[1:]
 			now := float64(time.Now().UnixNano()) / 1e9
 			job.Status = models.StatusRunning
 			job.Started = &now
@@ -149,7 +136,7 @@ func (q *PriorityQueue) MarkFailed(jobID string, errMsg string) {
 	close(job.DoneChan)
 }
 
-// Cancel marks a queued job as cancelled and removes it from waiting lanes.
+// Cancel marks a queued job as cancelled and removes it from the waiting line.
 func (q *PriorityQueue) Cancel(jobID string) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -169,18 +156,9 @@ func (q *PriorityQueue) Cancel(jobID string) bool {
 	errStr := "cancelled by user"
 	job.Error = &errStr
 
-	// Remove from interactive queue
-	for i, j := range q.interactive {
+	for i, j := range q.waiting {
 		if j.JobID == jobID {
-			q.interactive = append(q.interactive[:i], q.interactive[i+1:]...)
-			break
-		}
-	}
-
-	// Remove from batch queue
-	for i, j := range q.batch {
-		if j.JobID == jobID {
-			q.batch = append(q.batch[:i], q.batch[i+1:]...)
+			q.waiting = append(q.waiting[:i], q.waiting[i+1:]...)
 			break
 		}
 	}
@@ -225,19 +203,15 @@ func (q *PriorityQueue) GetPositions() map[string]int {
 	defer q.mu.RUnlock()
 
 	posMap := make(map[string]int)
-	pos := 0
-	for _, j := range q.interactive {
+	for pos, j := range q.waiting {
 		posMap[j.JobID] = pos
-		pos++
-	}
-	for _, j := range q.batch {
-		posMap[j.JobID] = pos
-		pos++
 	}
 	return posMap
 }
 
-// GetStats returns summary counts of active, waiting, and completed jobs.
+// GetStats returns summary counts of active, waiting, and completed jobs. The
+// waiting figures stay split by lane so the dashboard cards keep working, but both
+// lanes are now drained from the same line.
 func (q *PriorityQueue) GetStats() (map[string]int, map[string]int, *models.RenderJob) {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
@@ -247,9 +221,13 @@ func (q *PriorityQueue) GetStats() (map[string]int, map[string]int, *models.Rend
 		counts[string(j.Status)]++
 	}
 
-	waiting := map[string]int{
-		"interactive": len(q.interactive),
-		"batch":       len(q.batch),
+	waiting := map[string]int{"interactive": 0, "batch": 0}
+	for _, j := range q.waiting {
+		if j.Lane == "interactive" {
+			waiting["interactive"]++
+		} else {
+			waiting["batch"]++
+		}
 	}
 
 	return counts, waiting, q.running
@@ -282,20 +260,12 @@ func (q *PriorityQueue) Close() {
 }
 
 func (q *PriorityQueue) calculatePosition(target *models.RenderJob) int {
-	pos := 0
-	for _, j := range q.interactive {
+	for pos, j := range q.waiting {
 		if j.JobID == target.JobID {
 			return pos
 		}
-		pos++
 	}
-	for _, j := range q.batch {
-		if j.JobID == target.JobID {
-			return pos
-		}
-		pos++
-	}
-	return pos
+	return len(q.waiting)
 }
 
 func (q *PriorityQueue) pruneOldJobs() {

@@ -42,27 +42,41 @@ func TestPriorityQueue_BasicSubmitAndNext(t *testing.T) {
 	}
 }
 
-func TestPriorityQueue_InteractivePriority(t *testing.T) {
+func TestPriorityQueue_StrictFIFO(t *testing.T) {
 	q := NewPriorityQueue()
 	defer q.Close()
 
-	// Submit 2 batch jobs
+	// A later `interactive` job must not overtake `batch` jobs already waiting:
+	// one GPU, one line, submission order decides.
 	q.Submit(models.NewRenderJob(models.RenderRequest{Chunks: []string{"b1"}, Lane: "batch"}, "batch_1"))
 	q.Submit(models.NewRenderJob(models.RenderRequest{Chunks: []string{"b2"}, Lane: "batch"}, "batch_2"))
-
-	// Submit 1 interactive job
 	q.Submit(models.NewRenderJob(models.RenderRequest{Chunks: []string{"i1"}, Lane: "interactive"}, "interactive_1"))
 
-	// First job must be interactive_1
-	j1 := q.NextJob()
-	if j1.JobID != "interactive_1" {
-		t.Errorf("expected interactive_1 first, got %s", j1.JobID)
+	for _, want := range []string{"batch_1", "batch_2", "interactive_1"} {
+		got := q.NextJob()
+		if got.JobID != want {
+			t.Fatalf("expected %s, got %s", want, got.JobID)
+		}
 	}
+}
 
-	// Second job must be batch_1
-	j2 := q.NextJob()
-	if j2.JobID != "batch_1" {
-		t.Errorf("expected batch_1 second, got %s", j2.JobID)
+func TestPriorityQueue_BatchNeverJumpsWaitingInteractive(t *testing.T) {
+	q := NewPriorityQueue()
+	defer q.Close()
+
+	// The regression: four interactive jobs queued, then one batch job. Under the
+	// old burst policy the batch job ran fourth, ahead of an interactive job that
+	// had already been waiting.
+	for _, id := range []string{"i1", "i2", "i3", "i4"} {
+		q.Submit(models.NewRenderJob(models.RenderRequest{Chunks: []string{id}, Lane: "interactive"}, id))
+	}
+	q.Submit(models.NewRenderJob(models.RenderRequest{Chunks: []string{"b1"}, Lane: "batch"}, "b1"))
+
+	for _, want := range []string{"i1", "i2", "i3", "i4", "b1"} {
+		got := q.NextJob()
+		if got.JobID != want {
+			t.Fatalf("expected %s, got %s", want, got.JobID)
+		}
 	}
 }
 

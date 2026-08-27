@@ -1,0 +1,25 @@
+# Hot-reload for the Go Queue Gateway. Run "air" instead of "go run main.go";
+# every .go save rebuilds and relaunches, so the process can never serve a
+# stale binary (the reason GET /v2/voices 405'd after it was already fixed).
+root = "."
+tmp_dir = "tmp"
+
+[build]
+  cmd = "go build -o ./tmp/main.exe ."
+  entrypoint = "./tmp/main.exe"
+  include_ext = ["go"]
+  exclude_dir = ["tmp", ".tools", ".git"]
+  # Literal string: no escape processing, so the regex backslash survives.
+  exclude_regex = ['_test\.go']
+  # Coalesce editor save-bursts into one rebuild.
+  delay = 400
+  # Keep the last good build listening on :8020 when a build breaks.
+  stop_on_error = true
+  # Let the old process release :8020 before the new one binds it.
+  kill_delay = "2s"
+
+[log]
+  time = true
+
+[misc]
+  clean_on_exit = true

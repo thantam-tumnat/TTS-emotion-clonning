@@ -605,12 +605,17 @@ document.addEventListener('DOMContentLoaded', () => {
         // The unpinned "base voice" resamples its speaker under strong emotion
         // instructions -- measured 26% median-F0 spread across one five-emotion
         // script, against 4% for a registered speaker -- so it is a bad silent
-        // default. Prefer, in order: what this dropdown already showed, what the
-        // user picked last time, then the first real speaker.
+        // default. Prefer, in order: what this dropdown already showed, a *real*
+        // speaker the user picked last time, then the first real speaker.
+        //
+        // A remembered *empty* value (the user once chose base voice) is deliberately
+        // NOT honoured as a default: it used to persist across every future session
+        // and silently ship wandering multi-emotion takes. Base voice can still be
+        // selected per session, and the pre-synth guard warns before it is used.
         const remembered = localStorage.getItem('siangtts_speaker');
         const has = (v) => v && [...speakerSelect.options].some(o => o.value === v);
         if (has(prevVal)) speakerSelect.value = prevVal;
-        else if (has(remembered) || remembered === '') speakerSelect.value = remembered;
+        else if (has(remembered)) speakerSelect.value = remembered;
         else {
           // Most entries are one-off uploads filed under a uuid; a *named* speaker
           // is one somebody deliberately registered, so it makes the sanest default.
@@ -1216,6 +1221,47 @@ document.addEventListener('DOMContentLoaded', () => {
       .trim();
   }
 
+  // How many *different* emotion tags a script carries. Two or more is when an
+  // unpinned Base Voice audibly changes speaker between segments, so it is the
+  // condition the pre-synth guard warns on. Bracket tags only -- a parenthetical
+  // is already a resolved instruction, not a user-typed tone marker.
+  function countDistinctEmotionTags(str) {
+    if (!str) return 0;
+    const tags = new Set();
+    const re = /\[\s*([A-Za-z\u0e00-\u0e7f][A-Za-z\u0e00-\u0e7f\s,.\-]*?)(?::\s*[123])?\s*\]/g;
+    let m;
+    while ((m = re.exec(str)) !== null) {
+      tags.add(m[1].trim().toLowerCase());
+    }
+    return tags.size;
+  }
+
+  // Show or hide a persistent notice on the player card telling the user the take
+  // was not pinned to a stable voice, so a wandering speaker is expected and how
+  // to fix it. Driven by the X-Voice-Anchor header the synth endpoints return.
+  function showVoiceAnchorWarning(show) {
+    let el = document.getElementById('voice-anchor-warning');
+    if (!show) {
+      if (el) el.classList.add('hidden');
+      return;
+    }
+    if (!el) {
+      el = document.createElement('div');
+      el.id = 'voice-anchor-warning';
+      el.className = 'voice-anchor-warning';
+      el.innerHTML =
+        '\u26a0\ufe0f \u0e40\u0e2a\u0e35\u0e22\u0e07\u0e19\u0e35\u0e49\u0e43\u0e0a\u0e49 <b>Base Voice</b> (\u0e44\u0e21\u0e48\u0e44\u0e14\u0e49\u0e1b\u0e31\u0e01\u0e40\u0e2a\u0e35\u0e22\u0e07\u0e42\u0e04\u0e25\u0e19) \u0e08\u0e36\u0e07\u0e2d\u0e32\u0e08\u0e1f\u0e31\u0e07\u0e40\u0e2b\u0e21\u0e37\u0e2d\u0e19\u0e04\u0e19\u0e25\u0e30\u0e04\u0e19\u0e43\u0e19\u0e41\u0e15\u0e48\u0e25\u0e30\u0e2d\u0e32\u0e23\u0e21\u0e13\u0e4c \u2014 ' +
+        '\u0e40\u0e25\u0e37\u0e2d\u0e01\u0e40\u0e2a\u0e35\u0e22\u0e07\u0e42\u0e04\u0e25\u0e19\u0e43\u0e19\u0e0a\u0e48\u0e2d\u0e07 Speaker \u0e2b\u0e23\u0e37\u0e2d\u0e2d\u0e31\u0e1b\u0e42\u0e2b\u0e25\u0e14\u0e44\u0e1f\u0e25\u0e4c\u0e2d\u0e49\u0e32\u0e07\u0e2d\u0e34\u0e07 \u0e41\u0e25\u0e49\u0e27\u0e2a\u0e31\u0e07\u0e40\u0e04\u0e23\u0e32\u0e30\u0e2b\u0e4c\u0e43\u0e2b\u0e21\u0e48\u0e40\u0e1e\u0e37\u0e48\u0e2d\u0e43\u0e2b\u0e49\u0e40\u0e2a\u0e35\u0e22\u0e07\u0e04\u0e07\u0e17\u0e35\u0e48';
+      const card = document.getElementById('audio-player-card') || (audioPlayerCard || null);
+      if (card && card.parentNode) {
+        card.parentNode.insertBefore(el, card);
+      } else {
+        document.body.appendChild(el);
+      }
+    }
+    el.classList.remove('hidden');
+  }
+
   // Synthesis Helper
   async function fetchSynthesisBlob({ text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode, autoAnnotate = true, postProcess = true, dspParams = null }) {
     if (selectedAudioFile) {
@@ -1242,7 +1288,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.detail || `Synthesis failed: ${response.status}`);
       }
-      return await response.blob();
+      return { blob: await response.blob(), anchor: response.headers.get('X-Voice-Anchor') };
     } else {
       const response = await fetch(`${API_BASE}/synthesize`, {
         method: 'POST',
@@ -1267,7 +1313,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const errData = await response.json().catch(() => ({}));
         throw new Error(errData.detail || `Synthesis failed: ${response.status}`);
       }
-      return await response.blob();
+      return { blob: await response.blob(), anchor: response.headers.get('X-Voice-Anchor') };
     }
   }
 
@@ -1296,6 +1342,22 @@ document.addEventListener('DOMContentLoaded', () => {
     const ts = getTimestamp();
     const spkPrefix = speakerId ? `${speakerId}_` : '';
 
+    // A multi-emotion script with no pinned voice is the exact recipe for "each
+    // segment sounds like a different person": with nothing anchoring the timbre,
+    // VoxCPM2 re-picks the speaker under every emotion tag. Catch it before wasting
+    // a generation and let the user pick their cloned voice instead.
+    if (!speakerId && !selectedAudioFile && countDistinctEmotionTags(text) >= 2) {
+      const proceed = confirm(
+        'คุณยังไม่ได้เลือกเสียงโคลน (Reference/Speaker) แต่ข้อความมีหลายอารมณ์\n\n' +
+        'ถ้าไม่เลือกเสียง ระบบจะใช้ Base Voice ซึ่ง "เสียงจะแกว่งจนฟังเหมือนคนละคน" ในแต่ละอารมณ์\n\n' +
+        'กด OK เพื่อสังเคราะห์ต่อด้วย Base Voice หรือ Cancel เพื่อกลับไปเลือกเสียงโคลนก่อน'
+      );
+      if (!proceed) {
+        if (speakerSelect) speakerSelect.focus();
+        return;
+      }
+    }
+
     const modeLabels = {
       lora_on: 'Thai LoRA (ON)',
       lora_off: 'LoRA OFF (Base)',
@@ -1314,31 +1376,41 @@ document.addEventListener('DOMContentLoaded', () => {
 
       // Execute synthesis for all selected modes concurrently
       const tasks = selectedModes.map(async (mode) => {
-        let blob;
+        let res;
         if (mode === 'lora_on') {
-          blob = await fetchSynthesisBlob({
+          res = await fetchSynthesisBlob({
             text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'on', autoAnnotate: true, postProcess: dspOn, dspParams
           });
         } else if (mode === 'lora_off') {
-          blob = await fetchSynthesisBlob({
+          res = await fetchSynthesisBlob({
             text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'off', autoAnnotate: true, postProcess: dspOn, dspParams
           });
         } else if (mode === 'no_emotion') {
           const plainText = stripEmotionTags(text) || text;
-          blob = await fetchSynthesisBlob({
+          res = await fetchSynthesisBlob({
             text: plainText, speakerId, guidance: null, engine, model, cfgValue, timesteps, loraMode: 'on', autoAnnotate: false, postProcess: dspOn, dspParams
           });
         } else if (mode === 'raw_tts') {
           // The raw variant is the A/B reference and always bypasses the module,
           // whatever the toggle says.
-          blob = await fetchSynthesisBlob({
+          res = await fetchSynthesisBlob({
             text, speakerId, guidance, engine, model, cfgValue, timesteps, loraMode: 'on', autoAnnotate: true, postProcess: false
           });
         }
-        return { mode, blob };
+        return { mode, blob: res && res.blob, anchor: res && res.anchor };
       });
 
       const results = await Promise.all(tasks);
+
+      // The take is only pinned to a stable voice when the anchor is "speaker" or
+      // "reference". "seed"/"none" means VoxCPM2 chose the speaker itself, and it
+      // re-chooses under each emotion tag -- which is what makes a multi-emotion
+      // script come back sounding like several different people. Say so plainly.
+      // Warn whenever the take was not pinned -- including the case where a voice
+      // was selected but did not resolve on the GPU service, which is exactly when
+      // the user needs to know their clone was silently dropped.
+      const wandered = results.some(r => r.anchor === 'seed' || r.anchor === 'none');
+      showVoiceAnchorWarning(wandered);
 
       // Hide all player boxes initially
       if (playerBoxLoraOn) playerBoxLoraOn.classList.add('hidden');
