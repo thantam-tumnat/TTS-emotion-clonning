@@ -67,8 +67,8 @@ func (w *Worker) run() {
 }
 
 func (w *Worker) processJob(job *models.RenderJob) {
-	fmt.Printf("[worker] >>> Executing Job: %s (lane=%s, client=%s, chunks=%d)\n",
-		job.JobID, job.Lane, job.Client, len(job.Chunks))
+	fmt.Printf("[worker] >>> Executing Job: %s (lane=%s, client=%s, chunks=%d, raw_prompt=%q)\n",
+		job.JobID, job.Lane, job.Client, len(job.Chunks), job.RawPrompt)
 
 	for i, chunk := range job.Chunks {
 		fmt.Printf("   [chunk %d/%d]: %s\n", i+1, len(job.Chunks), chunk)
@@ -79,6 +79,7 @@ func (w *Worker) processJob(job *models.RenderJob) {
 	// Prepare payload for Python GPU service
 	reqBody := map[string]interface{}{
 		"job_id":     job.JobID,
+		"raw_prompt": job.RawPrompt,
 		"chunks":     job.Chunks,
 		"cfg_value":  job.CFGValue,
 		"timesteps":  job.Timesteps,

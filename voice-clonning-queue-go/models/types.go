@@ -21,6 +21,8 @@ type OutputSpec struct {
 // RenderRequest is the incoming payload for /v2/jobs/render.
 type RenderRequest struct {
 	JobID      *string     `json:"job_id,omitempty"`
+	RawPrompt  string      `json:"raw_prompt,omitempty"`
+	Prompt     string      `json:"prompt,omitempty"`
 	Chunks     []string    `json:"chunks"`
 	Voice      *VoiceSpec  `json:"voice,omitempty"`
 	CFGValue   float64     `json:"cfg_value"`
@@ -45,6 +47,7 @@ const (
 // RenderJob represents an active or completed job in the queue.
 type RenderJob struct {
 	JobID       string                 `json:"job_id"`
+	RawPrompt   string                 `json:"raw_prompt,omitempty"`
 	Chunks      []string               `json:"chunks"`
 	Voice       *VoiceSpec             `json:"voice,omitempty"`
 	CFGValue    float64                `json:"cfg_value"`
@@ -89,8 +92,14 @@ func NewRenderJob(req RenderRequest, jobID string) *RenderJob {
 	output := req.Output
 	output.Mode = outMode
 
+	rawPrompt := req.RawPrompt
+	if rawPrompt == "" {
+		rawPrompt = req.Prompt
+	}
+
 	return &RenderJob{
 		JobID:       jobID,
+		RawPrompt:   rawPrompt,
 		Chunks:      req.Chunks,
 		Voice:       req.Voice,
 		CFGValue:    cfg,
@@ -134,6 +143,7 @@ func (j *RenderJob) AsDict(position *int) map[string]interface{} {
 
 	res := map[string]interface{}{
 		"job_id":       j.JobID,
+		"raw_prompt":   j.RawPrompt,
 		"status":       j.Status,
 		"chunks":       j.Chunks,
 		"chunks_done":  j.ChunksDone,

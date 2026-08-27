@@ -590,6 +590,7 @@ class VoxCPMVCService:
         cfg_value: float = 2.5,
         inference_timesteps: int = 10,
         lora_mode: Optional[str] = "on",
+        raw_prompt: Optional[str] = None,
         pre_vc_out: Optional[List[Tuple[Any, int]]] = None,
         debug_out: Optional[List[dict]] = None,
     ) -> Tuple[List[Any], int]:
@@ -642,7 +643,7 @@ class VoxCPMVCService:
             # it to the same shape so the rest of this method does not care which
             # engine it got.
             def batch(pieces, *, prompt_cache=None, cfg_value=2.5,
-                      inference_timesteps=10, lora_mode="on"):
+                      inference_timesteps=10, lora_mode="on", raw_prompt=None):
                 rate = int(getattr(synth, "sample_rate", 48000) or 48000)
                 return [
                     synth.synth(
@@ -651,6 +652,7 @@ class VoxCPMVCService:
                         cfg_value=cfg_value,
                         inference_timesteps=inference_timesteps,
                         lora_mode=lora_mode,
+                        raw_prompt=raw_prompt,
                     )
                     for piece in pieces
                 ], rate
@@ -694,6 +696,7 @@ class VoxCPMVCService:
                     cfg_value=cfg_value,
                     inference_timesteps=inference_timesteps,
                     lora_mode=lora_mode,
+                    raw_prompt=raw_prompt or (" ".join(texts) if texts else None),
                 )
                 if len(audios) != len(indices):
                     raise RuntimeError(
@@ -797,6 +800,7 @@ class VoxCPMVCService:
         post_process: bool = True,
         post_process_params: Optional[dict] = None,
         lora_mode: Optional[str] = "on",
+        raw_prompt: Optional[str] = None,
         pre_vc_out: Optional[List[Tuple[Any, int]]] = None,
         debug_out: Optional[List[dict]] = None,
     ) -> bytes:
@@ -817,6 +821,7 @@ class VoxCPMVCService:
             cfg_value=cfg_value,
             inference_timesteps=inference_timesteps,
             lora_mode=lora_mode,
+            raw_prompt=raw_prompt,
             pre_vc_out=pre_vc_out,
             debug_out=debug_out,
         )
@@ -833,7 +838,8 @@ class VoxCPMVCService:
         return buf.getvalue()
 
     def synthesize(self, text: str, **kwargs: Any) -> bytes:
-        return self.synthesize_many([text], **kwargs)
+        raw = kwargs.pop("raw_prompt", text)
+        return self.synthesize_many([text], raw_prompt=raw, **kwargs)
 
     def synthesize_variants(
         self,
@@ -850,6 +856,7 @@ class VoxCPMVCService:
         cfg_value: float = 2.5,
         inference_timesteps: int = 10,
         lora_mode: Optional[str] = "on",
+        raw_prompt: Optional[str] = None,
         pre_vc_sink: Optional[dict] = None,
         debug_sink: Optional[dict] = None,
     ) -> Tuple[List[dict], int, List[Optional[str]]]:
@@ -890,6 +897,7 @@ class VoxCPMVCService:
             cfg_value=cfg_value,
             inference_timesteps=inference_timesteps,
             lora_mode=lora_mode,
+            raw_prompt=raw_prompt,
             pre_vc_out=pre_vc_chunks,
             debug_out=debug_chunks,
         )
@@ -987,6 +995,7 @@ class VoxCPMVCService:
         cfg_value: float,
         inference_timesteps: int,
         lora_mode: Optional[str],
+        raw_prompt: Optional[str] = None,
     ) -> Tuple[Any, int]:
         """One VoxCPM2 continuation-mode generation for a single piece of text.
 
@@ -1005,6 +1014,7 @@ class VoxCPMVCService:
                 cfg_value=cfg_value,
                 inference_timesteps=inference_timesteps,
                 lora_mode=lora_mode,
+                raw_prompt=raw_prompt or body,
             )
             paced = self._match_to_donor_pace(
                 self._depeak(audio), rate, body, donor_set, emotion
@@ -1017,6 +1027,7 @@ class VoxCPMVCService:
             cfg_value=cfg_value,
             inference_timesteps=inference_timesteps,
             lora_mode=lora_mode,
+            raw_prompt=raw_prompt or body,
         )
         if not audios:
             raise RuntimeError("engine returned no audio")
@@ -1167,6 +1178,7 @@ class VoxCPMVCService:
             audio, gen_rate = self._generate_one(
                 synth, donor_set, emotion, body,
                 cfg_value=cfg_value, inference_timesteps=inference_timesteps, lora_mode="on",
+                raw_prompt=gen_text_raw,
             )
             sf.write(str(stage_a), np.asarray(audio, dtype="float32"), gen_rate,
                      format="WAV", subtype="PCM_16")

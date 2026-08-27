@@ -122,3 +122,25 @@ func TestPriorityQueue_WaitTimeout(t *testing.T) {
 		t.Errorf("expected completed job, got %v", finished)
 	}
 }
+
+func TestPriorityQueue_RawPrompt(t *testing.T) {
+	q := NewPriorityQueue()
+	defer q.Close()
+
+	raw := "(tone: sad) สวัสดีครับวันนี้เหนื่อยจัง (tone: happy) แต่พรุ่งนี้จะได้พักแล้ว!"
+	req := models.RenderRequest{
+		RawPrompt: raw,
+		Chunks:    []string{"สวัสดีครับวันนี้เหนื่อยจัง", "แต่พรุ่งนี้จะได้พักแล้ว!"},
+		Lane:      "interactive",
+		Client:    "voxcpm-vc",
+	}
+	job := models.NewRenderJob(req, "job_raw_1")
+	if job.RawPrompt != raw {
+		t.Errorf("expected raw_prompt %q, got %q", raw, job.RawPrompt)
+	}
+
+	dict := job.AsDict(nil)
+	if dict["raw_prompt"] != raw {
+		t.Errorf("expected as_dict raw_prompt %q, got %v", raw, dict["raw_prompt"])
+	}
+}

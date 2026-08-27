@@ -58,7 +58,7 @@ const dashboardHTML = `<!doctype html>
       font-family: 'Plus Jakarta Sans', 'Noto Sans Thai', system-ui, sans-serif;
       padding: 28px;
       min-height: 100vh;
-      padding-bottom: 90px; /* space for sticky player */
+      padding-bottom: 90px;
     }
     .header {
       display: flex;
@@ -155,13 +155,15 @@ const dashboardHTML = `<!doctype html>
       margin-bottom: 24px;
       display: flex;
       justify-content: space-between;
-      align-items: center;
+      align-items: flex-start;
       box-shadow: 0 4px 20px rgba(6, 182, 212, 0.1);
+      gap: 16px;
     }
     .running-info {
       display: flex;
-      align-items: center;
+      align-items: flex-start;
       gap: 14px;
+      flex: 1;
     }
     .pulse-ring {
       position: relative;
@@ -172,6 +174,7 @@ const dashboardHTML = `<!doctype html>
       box-shadow: 0 0 10px var(--accent-cyan);
       animation: pulse 1.8s infinite;
       flex-shrink: 0;
+      margin-top: 5px;
     }
     @keyframes pulse {
       0% { transform: scale(0.95); box-shadow: 0 0 0 0 rgba(6, 182, 212, 0.7); }
@@ -182,6 +185,7 @@ const dashboardHTML = `<!doctype html>
       display: flex;
       align-items: center;
       gap: 12px;
+      flex-shrink: 0;
     }
 
     /* Table */
@@ -189,7 +193,7 @@ const dashboardHTML = `<!doctype html>
       background: var(--bg-card);
       border: 1px solid var(--border-subtle);
       border-radius: 12px;
-      overflow: hidden;
+      overflow-x: auto;
     }
     .table-header {
       padding: 16px 20px;
@@ -209,7 +213,7 @@ const dashboardHTML = `<!doctype html>
       text-align: left;
     }
     th, td {
-      padding: 12px 16px;
+      padding: 12px 14px;
       border-bottom: 1px solid var(--border-subtle);
       font-size: 13px;
       vertical-align: middle;
@@ -221,9 +225,88 @@ const dashboardHTML = `<!doctype html>
       font-size: 11px;
       text-transform: uppercase;
       letter-spacing: 0.05em;
+      white-space: nowrap;
     }
     tr:hover { background: var(--bg-card-hover); }
     .mono { font-family: 'JetBrains Mono', monospace; font-size: 12px; }
+
+    /* Prompt column styling */
+    .prompt-cell {
+      max-width: 460px;
+      min-width: 250px;
+      line-height: 1.5;
+      font-size: 12.5px;
+      color: #f1f5f9;
+      word-break: break-word;
+    }
+    .raw-prompt-container {
+      background: rgba(168, 85, 247, 0.09);
+      border: 1px solid rgba(168, 85, 247, 0.3);
+      border-radius: 7px;
+      padding: 7px 10px;
+      margin-bottom: 6px;
+      font-size: 12.5px;
+      line-height: 1.5;
+      color: #f3e8ff;
+      word-break: break-word;
+    }
+    .raw-prompt-title {
+      display: flex;
+      align-items: center;
+      gap: 6px;
+      margin-bottom: 4px;
+    }
+    .badge-raw-prompt {
+      display: inline-block;
+      background: linear-gradient(135deg, rgba(168, 85, 247, 0.35), rgba(139, 92, 246, 0.25));
+      color: #e9d5ff;
+      border: 1px solid rgba(168, 85, 247, 0.5);
+      border-radius: 4px;
+      padding: 1px 6px;
+      font-size: 10px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+    .chunks-subgroup {
+      border-top: 1px dashed rgba(255, 255, 255, 0.1);
+      padding-top: 5px;
+      margin-top: 5px;
+    }
+    .badge-chunk-header {
+      font-size: 10px;
+      color: var(--text-dim);
+      font-weight: 600;
+      text-transform: uppercase;
+      margin-bottom: 3px;
+    }
+    .chunk-pill {
+      display: inline-block;
+      background: rgba(6, 182, 212, 0.14);
+      color: var(--accent-cyan);
+      border: 1px solid rgba(6, 182, 212, 0.3);
+      border-radius: 4px;
+      padding: 1px 5px;
+      font-size: 10.5px;
+      font-family: 'JetBrains Mono', monospace;
+      font-weight: 700;
+      margin-right: 4px;
+      vertical-align: baseline;
+      flex-shrink: 0;
+    }
+    .chunk-line {
+      margin-bottom: 5px;
+      display: flex;
+      align-items: baseline;
+      gap: 2px;
+    }
+    .chunk-line:last-child {
+      margin-bottom: 0;
+    }
+    .chunk-text {
+      flex: 1;
+    }
 
     /* Badges */
     .pill {
@@ -233,6 +316,7 @@ const dashboardHTML = `<!doctype html>
       font-size: 11px;
       font-weight: 600;
       font-family: 'JetBrains Mono', monospace;
+      white-space: nowrap;
     }
     .pill-queued { background: rgba(245, 158, 11, 0.15); color: #fbbf24; border: 1px solid rgba(245, 158, 11, 0.3); }
     .pill-running { background: rgba(6, 182, 212, 0.15); color: #38bdf8; border: 1px solid rgba(6, 182, 212, 0.3); }
@@ -245,6 +329,7 @@ const dashboardHTML = `<!doctype html>
       font-weight: 600;
       padding: 2px 6px;
       border-radius: 4px;
+      white-space: nowrap;
     }
     .lane-interactive { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
     .lane-batch { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
@@ -254,6 +339,7 @@ const dashboardHTML = `<!doctype html>
       display: flex;
       align-items: center;
       gap: 6px;
+      white-space: nowrap;
     }
     .btn {
       padding: 4px 10px;
@@ -324,7 +410,7 @@ const dashboardHTML = `<!doctype html>
       border: 1px solid var(--border-subtle);
       border-radius: 14px;
       width: 100%;
-      max-width: 680px;
+      max-width: 720px;
       max-height: 88vh;
       overflow-y: auto;
       box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
@@ -407,7 +493,7 @@ const dashboardHTML = `<!doctype html>
       padding: 10px 14px;
       margin-bottom: 8px;
       font-size: 13px;
-      line-height: 1.5;
+      line-height: 1.6;
       color: #e2e8f0;
     }
     .chunk-idx {
@@ -521,9 +607,9 @@ const dashboardHTML = `<!doctype html>
   <div class="running-banner" id="running-container" style="display: none;">
     <div class="running-info">
       <div class="pulse-ring"></div>
-      <div>
+      <div style="flex:1;">
         <div style="font-weight: 700; font-size: 14px;" id="running-job-id">job_...</div>
-        <div style="font-size: 12px; color: var(--text-muted);" id="running-details">Processing chunks on PyTorch CUDA...</div>
+        <div style="font-size: 12px; color: var(--text-muted); margin-top: 4px;" id="running-details">Processing chunks on PyTorch CUDA...</div>
       </div>
     </div>
     <div class="running-actions">
@@ -546,7 +632,7 @@ const dashboardHTML = `<!doctype html>
           <th>Job ID</th>
           <th>Lane</th>
           <th>Client</th>
-          <th>Chunks</th>
+          <th>Raw Prompt & Chunks</th>
           <th>Waited</th>
           <th>Ran Time</th>
           <th>Created</th>
@@ -597,6 +683,16 @@ const dashboardHTML = `<!doctype html>
     var currentRunningJob = null;
     var activeAudioJobId = null;
 
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
+    }
+
     async function updateDashboard() {
       try {
         const res = await fetch('/v2/jobs');
@@ -620,8 +716,21 @@ const dashboardHTML = `<!doctype html>
         if (data.running) {
           runBanner.style.display = 'flex';
           document.getElementById('running-job-id').innerText = data.running.job_id;
-          const chunksTxt = data.running.chunks && data.running.chunks[0] ? data.running.chunks[0].substring(0, 60) + '...' : '';
-          document.getElementById('running-details').innerText = 'Lane: ' + data.running.lane + ' | ' + chunksTxt;
+          
+          var runningRawHtml = '';
+          if (data.running.raw_prompt && data.running.raw_prompt.trim().length > 0) {
+            runningRawHtml = '<div class="raw-prompt-container" style="margin-bottom:6px;">' +
+              '<div class="raw-prompt-title"><span class="badge-raw-prompt">RAW PROMPT</span></div>' +
+              '<div style="font-weight:500;">' + escapeHtml(data.running.raw_prompt) + '</div>' +
+            '</div>';
+          }
+          var runningChunksHtml = '';
+          if (data.running.chunks && data.running.chunks.length > 0) {
+            for (var rc = 0; rc < data.running.chunks.length; rc++) {
+              runningChunksHtml += '<div class="chunk-line"><span class="chunk-pill">[' + (rc+1) + '/' + data.running.chunks.length + ']</span> <span class="chunk-text">' + escapeHtml(data.running.chunks[rc]) + '</span></div>';
+            }
+          }
+          document.getElementById('running-details').innerHTML = '<div style="margin-bottom:6px; font-weight:600; color:var(--text-muted);">Lane: ' + data.running.lane + ' | Client: ' + (data.running.client || 'tone-studio') + ' (' + (data.running.chunks ? data.running.chunks.length : 0) + ' chunks)</div>' + runningRawHtml + runningChunksHtml;
           document.getElementById('running-time').innerText = (data.running.ran_s ? data.running.ran_s.toFixed(1) : '0.0') + 's';
         } else {
           runBanner.style.display = 'none';
@@ -640,8 +749,36 @@ const dashboardHTML = `<!doctype html>
             var waited = (j.waited_s !== undefined && j.waited_s !== null) ? j.waited_s.toFixed(2) + 's' : '-';
             var ran = (j.ran_s !== undefined && j.ran_s !== null) ? j.ran_s.toFixed(2) + 's' : '-';
             var created = new Date(j.created * 1000).toLocaleTimeString();
-            var totalChunks = j.total_chunks || (j.chunks ? j.chunks.length : 1);
             var clientName = j.client || '-';
+
+            // Build Prompt text column (Raw Prompt + Chunks)
+            var promptHtml = '<span style="color:var(--text-dim);">-</span>';
+            var hasRaw = (j.raw_prompt && j.raw_prompt.trim().length > 0);
+            var hasChunks = (j.chunks && j.chunks.length > 0);
+
+            if (hasRaw || hasChunks) {
+              promptHtml = '<div class="prompt-cell">';
+              if (hasRaw) {
+                promptHtml += '<div class="raw-prompt-container">' +
+                  '<div class="raw-prompt-title">' +
+                    '<span class="badge-raw-prompt">RAW PROMPT</span>' +
+                  '</div>' +
+                  '<div style="font-weight:500;">' + escapeHtml(j.raw_prompt) + '</div>' +
+                '</div>';
+              }
+              if (hasChunks) {
+                var chunkClass = hasRaw ? 'chunks-subgroup' : '';
+                promptHtml += '<div class="' + chunkClass + '">';
+                if (hasRaw && (j.chunks.length > 1 || j.chunks[0] !== j.raw_prompt)) {
+                  promptHtml += '<div class="badge-chunk-header">Processed Chunks (' + j.chunks.length + '):</div>';
+                }
+                for (var c = 0; c < j.chunks.length; c++) {
+                  promptHtml += '<div class="chunk-line"><span class="chunk-pill">[' + (c+1) + '/' + j.chunks.length + ']</span> <span class="chunk-text">' + escapeHtml(j.chunks[c]) + '</span></div>';
+                }
+                promptHtml += '</div>';
+              }
+              promptHtml += '</div>';
+            }
 
             // Build Actions
             var actionBtns = '';
@@ -667,10 +804,10 @@ const dashboardHTML = `<!doctype html>
               '<td class="mono"><strong>' + j.job_id + '</strong></td>' +
               '<td><span class="lane-tag ' + laneClass + '">' + j.lane + '</span></td>' +
               '<td>' + clientName + '</td>' +
-              '<td>' + totalChunks + '</td>' +
+              '<td>' + promptHtml + '</td>' +
               '<td class="mono">' + waited + '</td>' +
               '<td class="mono">' + ran + '</td>' +
-              '<td style="color: var(--text-dim);">' + created + '</td>' +
+              '<td style="color: var(--text-dim); white-space: nowrap;">' + created + '</td>' +
               '<td><div class="btn-group">' + actionBtns + '</div></td>' +
               '</tr>';
           }
@@ -844,12 +981,23 @@ const dashboardHTML = `<!doctype html>
           '</div>';
       }
 
+      // Raw User Prompt Section
+      if (job.raw_prompt && job.raw_prompt.trim().length > 0) {
+        html += '<div>' +
+          '<div class="section-label" style="color:var(--accent-purple);">📝 Raw User Prompt (:8013 / Studio)</div>' +
+          '<div class="raw-prompt-container" style="padding:12px 16px; font-size:13.5px; border-radius:8px;">' +
+          '<div class="raw-prompt-title" style="margin-bottom:6px;"><span class="badge-raw-prompt">RAW PROMPT INPUT</span></div>' +
+          '<div style="white-space:pre-wrap; line-height:1.6;">' + escapeHtml(job.raw_prompt) + '</div>' +
+          '</div>' +
+          '</div>';
+      }
+
       // Text Chunks
       if (job.chunks && job.chunks.length > 0) {
         html += '<div>' +
-          '<div class="section-label">💬 Text Chunks (' + job.chunks.length + ')</div>';
+          '<div class="section-label">💬 Processed Text Chunks (' + job.chunks.length + ')</div>';
         for (var c = 0; c < job.chunks.length; c++) {
-          html += '<div class="chunk-box"><span class="chunk-idx">[' + (c+1) + '/' + job.chunks.length + ']</span> ' + job.chunks[c] + '</div>';
+          html += '<div class="chunk-box"><span class="chunk-idx">[' + (c+1) + '/' + job.chunks.length + ']</span> ' + escapeHtml(job.chunks[c]) + '</div>';
         }
         html += '</div>';
       }

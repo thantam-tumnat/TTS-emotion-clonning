@@ -197,3 +197,11 @@ def test_style_instruction_is_left_alone(wired):
     tagged = "(Sad and melancholic voice, slight sighs)วันนี้เหนื่อยจัง"
     synth.render_batch([tagged])
     assert log[-1]["json"]["chunks"][0].startswith("(Sad and melancholic voice, slight sighs)")
+
+
+def test_raw_prompt_and_client_travel_with_request(wired):
+    synth, log, answers = wired
+    answers.append(("/v2/jobs/render", FakeResponse(200, content=npz_bytes([np.zeros(4)]))))
+    synth.render_batch(["ข้อความ"], raw_prompt="(tone: happy) ข้อความ", client="voxcpm-vc")
+    assert log[-1]["json"]["raw_prompt"] == "(tone: happy) ข้อความ"
+    assert log[-1]["json"]["client"] == "voxcpm-vc"

@@ -267,6 +267,8 @@ class QueueSynthesizer:
         inference_timesteps: int = 10,
         lora_mode: Optional[str] = "on",
         lane: str = "interactive",
+        raw_prompt: Optional[str] = None,
+        client: Optional[str] = None,
     ) -> Tuple[List[Any], int]:
         """Generate every chunk in one job against one voice.
 
@@ -289,6 +291,7 @@ class QueueSynthesizer:
             print(f"[ToneStudio -> GPU]     [{idx+1}/{len(prepared_chunks)}] {c!r}", file=sys.stderr)
 
         payload = {
+            "raw_prompt": raw_prompt or (" ".join(prepared_chunks) if prepared_chunks else ""),
             "chunks": prepared_chunks,
             "voice": self._voice_spec(prompt_cache, speaker_id, ref_audio),
             "cfg_value": cfg_value,
@@ -296,7 +299,7 @@ class QueueSynthesizer:
             "lora": self._lora_spec(lora_mode),
             "output": {"mode": "npz"},
             "lane": lane,
-            "client": "tone-studio",
+            "client": client or "voxcpm-vc",
         }
 
         with self._client() as c:
@@ -328,6 +331,8 @@ class QueueSynthesizer:
         inference_timesteps: int = 10,
         speaker_id: Optional[str] = None,
         lora_mode: Optional[str] = "on",
+        raw_prompt: Optional[str] = None,
+        client: Optional[str] = None,
         **kwargs: Any,
     ):
         chunks, _ = self.render_batch(
@@ -338,6 +343,8 @@ class QueueSynthesizer:
             cfg_value=cfg_value,
             inference_timesteps=inference_timesteps,
             lora_mode=lora_mode,
+            raw_prompt=raw_prompt or text,
+            client=client,
         )
         return chunks[0]
 

@@ -196,6 +196,7 @@ async def _run_job(job: Job) -> None:
             breaks=job.breaks,
             donor_set=job.donor_set,
             gender=job.gender,
+            raw_prompt=job.prompt,
             debug_out=debug,
         )
         # Keep the pinned/random pick; if none was resolvable up front, record what

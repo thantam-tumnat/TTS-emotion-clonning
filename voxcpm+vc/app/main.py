@@ -506,6 +506,7 @@ async def synthesize_endpoint(req: SynthesizeRequest):
                 if req.post_process_params else None
             ),
             lora_mode=lora_mode,
+            raw_prompt=req.text,
             debug_out=debug,
         )
         return Response(
@@ -602,6 +603,7 @@ async def synthesize_with_upload_endpoint(
             post_process=post_process,
             post_process_params=dsp_params,
             lora_mode=active_lora_mode,
+            raw_prompt=clean_text,
         )
         return Response(
             content=wav_bytes,
@@ -671,6 +673,7 @@ async def synthesize_ab_endpoint(req: ABSynthesizeRequest):
             cfg_value=req.cfg_value,
             inference_timesteps=req.inference_timesteps,
             lora_mode=req.lora_mode or "on",
+            raw_prompt=req.text,
         )
     except ValueError as e:
         raise HTTPException(status_code=422, detail=str(e))
