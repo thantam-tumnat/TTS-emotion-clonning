@@ -873,7 +873,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const f0List = result.f0_variants || [];
     const f0Diag = result.f0_diag;
     const f0Row = f0List.length ? `
-      <div class="f0-compare-row" title="เจน VoxCPM2 ครั้งเดียว แปลง SeedVC 3 แบบ${f0Diag ? ` · shift B = ${f0Diag.b_semi_tone_shift} st (target ${f0Diag.target_med_hz}Hz / donor-neutral ${f0Diag.donor_neutral_med_hz}Hz)` : ''}">
+      <div class="f0-compare-row" title="เจน VoxCPM2 ครั้งเดียว แปลง SeedVC 3 แบบ${f0Diag ? ` · shift B = ${f0Diag.b_semi_tone_shift} st (anchor register p20: target ${f0Diag.target_reg_hz}Hz / donor-neutral ${f0Diag.donor_neutral_reg_hz}Hz${f0Diag.b_shift_clamp_st != null && Math.abs(f0Diag.b_semi_tone_shift) >= f0Diag.b_shift_clamp_st ? `, ชน clamp ±${f0Diag.b_shift_clamp_st}` : ''})` : ''}">
         <span class="f0-compare-label">🎚️ เทียบ F0:</span>
         ${f0List.map(v => {
           const st = (v.metrics && v.metrics.f0_med_hz != null) ? `${v.metrics.f0_med_hz}Hz` : '';

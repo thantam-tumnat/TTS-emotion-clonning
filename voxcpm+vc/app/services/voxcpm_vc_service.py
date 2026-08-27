@@ -867,14 +867,25 @@ class VoxCPMVCService:
             raise RuntimeError("engine returned no audio")
         return self._depeak(audios[0]), int(rate)
 
-    @staticmethod
-    def _median_f0(wav_path: Path) -> Optional[float]:
-        """Median voiced F0 (Hz) of a clip via autocorrelation, transcript-free.
+    # B mode's shift may move F0 by at most this many semitones. A full octave
+    # (the old +/-12) is almost never a natural register move and, with SeedVC's
+    # formants held at the target, reads as chipmunk/metallic -- so B is clamped
+    # tighter than baseline would ever need.
+    F0_SHIFT_CLAMP_ST = 6
 
-        Used to anchor the F0-compare "B" mode: the constant semitone shift that moves
-        the donor's *neutral* register onto the target speaker's register is derived
-        from these two medians, so emotion offsets ride on top unchanged. Returns None
-        when nothing voiced is measurable.
+    # The register anchor is a LOW percentile of voiced F0, not the median. A clip the
+    # user handed as the target may itself be expressive (an excited or shouted line),
+    # which inflates its median and makes B over-shift. The p20 tracks the speaker's
+    # baseline register instead of their peaks, so an expressive target no longer
+    # drags the whole emotion up.
+    F0_REGISTER_PERCENTILE = 20
+
+    @staticmethod
+    def _voiced_f0_candidates(wav_path: Path) -> Optional["Any"]:
+        """Per-frame voiced F0 estimates (Hz) via autocorrelation, transcript-free.
+
+        Returns a numpy array of the voiced frames' F0, or None when nothing voiced is
+        measurable. Median and register anchors both derive from this one pass.
         """
         import numpy as np
         import soundfile as sf
@@ -909,9 +920,33 @@ class VoxCPMVCService:
                     cands.append(float(sr / peak))
             if len(cands) < 3:
                 return None
-            return float(np.median(cands))
+            return np.asarray(cands, dtype="float64")
         except Exception:
             return None
+
+    @classmethod
+    def _median_f0(cls, wav_path: Path) -> Optional[float]:
+        """Median voiced F0 (Hz). Kept for diagnostics/reporting."""
+        import numpy as np
+
+        cands = cls._voiced_f0_candidates(wav_path)
+        if cands is None:
+            return None
+        return float(np.median(cands))
+
+    @classmethod
+    def _register_f0(cls, wav_path: Path) -> Optional[float]:
+        """The speaker's baseline register: a low percentile of voiced F0.
+
+        This is what B anchors on, so an expressive target/donor clip (peaks high in
+        pitch) does not inflate the constant shift the way the median would.
+        """
+        import numpy as np
+
+        cands = cls._voiced_f0_candidates(wav_path)
+        if cands is None:
+            return None
+        return float(np.percentile(cands, cls.F0_REGISTER_PERCENTILE))
 
     def render_trace(
         self,
@@ -1053,18 +1088,27 @@ class VoxCPMVCService:
 
         # B's constant shift: move the donor's NEUTRAL register onto the target's.
         # Using neutral (not this emotion) as the anchor keeps the emotion's own pitch
-        # offset intact after the shift.
+        # offset intact after the shift. The anchor is each clip's *register* (a low
+        # percentile), not its median, so an expressive target/donor does not inflate
+        # the shift; and the result is clamped tight so B can never push F0 a full
+        # octave up into chipmunk territory.
         semi_shift_b = 0
-        target_med = self._median_f0(Path(target_wav))
-        donor_neutral_med = None
+        target_reg = self._register_f0(Path(target_wav))
+        donor_neutral_reg = None
+        neutral_wav = None
         try:
             neutral_wav, _ = self.donor_clip(chosen_set, "neutral")
-            donor_neutral_med = self._median_f0(neutral_wav)
+            donor_neutral_reg = self._register_f0(neutral_wav)
         except Exception:
-            donor_neutral_med = None
-        if target_med and donor_neutral_med and donor_neutral_med > 0:
-            semi_shift_b = int(round(12.0 * math.log2(target_med / donor_neutral_med)))
-            semi_shift_b = max(-12, min(12, semi_shift_b))
+            donor_neutral_reg = None
+        if target_reg and donor_neutral_reg and donor_neutral_reg > 0:
+            raw_shift = 12.0 * math.log2(target_reg / donor_neutral_reg)
+            clamp = self.F0_SHIFT_CLAMP_ST
+            semi_shift_b = int(round(max(-clamp, min(clamp, raw_shift))))
+
+        # Medians are kept for the diagnostics line only (register drives the shift).
+        target_med = self._median_f0(Path(target_wav))
+        donor_neutral_med = self._median_f0(neutral_wav) if neutral_wav is not None else None
 
         scratch = Path("scratch/voxcpm_vc")
         scratch.mkdir(parents=True, exist_ok=True)
@@ -1120,6 +1164,11 @@ class VoxCPMVCService:
                 "donor": f"{chosen_set}/{emotion}_1.wav",
                 "target_med_hz": round(target_med, 1) if target_med else None,
                 "donor_neutral_med_hz": round(donor_neutral_med, 1) if donor_neutral_med else None,
+                # What B actually anchored on (register = p20), plus the clamp, so a
+                # shift that hit the clamp is visible rather than looking arbitrary.
+                "target_reg_hz": round(target_reg, 1) if target_reg else None,
+                "donor_neutral_reg_hz": round(donor_neutral_reg, 1) if donor_neutral_reg else None,
+                "b_shift_clamp_st": self.F0_SHIFT_CLAMP_ST,
                 "b_semi_tone_shift": semi_shift_b,
             },
         }

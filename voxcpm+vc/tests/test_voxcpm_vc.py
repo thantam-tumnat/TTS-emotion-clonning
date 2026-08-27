@@ -316,3 +316,59 @@ def test_run_take_pins_the_requested_donor_and_returns_pre_vc(engine, tmp_path, 
     # F0-compare trio present (baseline / A / B).
     assert {m["id"] for m in body["f0_variants"]} == {"baseline", "A", "B"}
     assert client.get(body["pre_vc_url"]).status_code == 200
+
+
+# --------------------------------------------------------------------------- #
+# F0-compare "B" register anchor (robust to expressive clips) + shift clamp
+# --------------------------------------------------------------------------- #
+
+def _tone_clip(tmp_path, name, segments):
+    """Write a WAV made of (freq_hz, seconds) sine segments; returns its path."""
+    import numpy as np
+    import soundfile as sf
+
+    sr = 16000
+    parts = []
+    for hz, secs in segments:
+        t = np.arange(int(sr * secs)) / sr
+        parts.append(0.3 * np.sin(2 * np.pi * hz * t).astype("float32"))
+    path = tmp_path / name
+    sf.write(str(path), np.concatenate(parts), sr)
+    return path
+
+
+def test_register_anchor_ignores_expressive_peaks(tmp_path):
+    """p20 tracks the baseline register; the median rides up with expressive pitch.
+
+    An expressive clip spends most of its time elevated (here 300 Hz) with only a
+    short baseline (150 Hz). The median lands high, which would over-shift B; the p20
+    register stays near the 150 Hz floor, which is what B should anchor on.
+    """
+    clip = _tone_clip(tmp_path, "expressive.wav", [(150, 0.5), (300, 1.3)])
+    reg = vc.voxcpm_vc_service._register_f0(clip)
+    med = vc.voxcpm_vc_service._median_f0(clip)
+    assert reg is not None and med is not None
+    assert reg < med - 30                   # median dragged up by the elevated majority
+    assert abs(reg - 150) < 35              # register stays on the 150 Hz floor
+
+
+def test_b_shift_is_clamped(monkeypatch, engine, tmp_path):
+    """A huge target/donor register gap can never shift B more than the clamp."""
+    def fake_reg(path):
+        # Donor-neutral very low, target very high -> raw shift ~ +36 st.
+        return 100.0 if "neutral" in str(path).lower() else 800.0
+    monkeypatch.setattr(vc.VoxCPMVCService, "_register_f0", staticmethod(fake_reg))
+
+    cmp = vc.voxcpm_vc_service.render_f0_compare(
+        "ทดสอบเสียงโกรธ",
+        emotion="angry",
+        ref_audio_bytes=_target_clip(tmp_path).read_bytes(),
+        ref_filename="target.wav",
+        gender="female",
+    )
+    diag = cmp["diag"]
+    clamp = vc.voxcpm_vc_service.F0_SHIFT_CLAMP_ST
+    assert diag["b_shift_clamp_st"] == clamp
+    assert diag["b_semi_tone_shift"] == clamp          # +36 clamped down to +clamp
+    b = next(m for m in cmp["modes"] if m["id"] == "B")
+    assert b["semi_tone_shift"] == clamp
