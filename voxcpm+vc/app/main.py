@@ -54,6 +54,7 @@ from app.services.pronunciation import (
     save_dictionary,
 )
 from app.services.benchmark_service import benchmark_service
+from app import webhook as webhook_module
 
 
 
@@ -118,7 +119,13 @@ async def lifespan(app: FastAPI):
         print(f"[Startup] synthesizer: {status['mode']} {status.get('remote_url') or ''}".rstrip())
     except Exception as e:
         print(f"[Startup] Warning: synthesizer unavailable: {e}")
-    yield
+    # Start the n8n LiveAI webhook queue (POST /webhook/live-ai-create-new). It runs
+    # in this same process/port and drains jobs through the emotion pipeline above.
+    await webhook_module.start_worker()
+    try:
+        yield
+    finally:
+        await webhook_module.stop_worker()
 
 
 app = FastAPI(
@@ -143,6 +150,10 @@ app.add_middleware(
     # reads X-Voice-Anchor to warn when a take was not pinned to a stable voice.
     expose_headers=["X-Voice-Anchor"],
 )
+
+# n8n LiveAI webhook (async queue, callback+upload) — mounted under /webhook/* on
+# this same port. See app/webhook.py.
+app.include_router(webhook_module.router)
 
 # Mount static folder if exists
 static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")

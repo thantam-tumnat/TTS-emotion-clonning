@@ -49,6 +49,30 @@ class Settings(BaseSettings):
     service_port: int = 8013
 
     # ------------------------------------------------------------------ #
+    # n8n LiveAI webhook — same async contract as the :8010 service, but hosted
+    # in this process so a script posted from n8n is synthesized through this
+    # studio's emotion pipeline (donor -> VoxCPM2 -> SeedVC) instead of the plain
+    # LoRA path. Endpoints live under /webhook/* on this same port (8013).
+    #
+    # The upload + callback settings share the :8010 env var names on purpose, so
+    # one .env line points both services at the same delivery endpoint.
+    # ------------------------------------------------------------------ #
+    siangtts_upload_url: str = "https://looklike.ai/api/v1/live-gpt/upload"
+    siangtts_upload_token: str = ""
+    siangtts_default_callback: str = (
+        "https://test.looklike.ai/api/v1/live-gpt/n8n/audio-callback"
+    )
+    # Job scratch dir (finished takes are uploaded, then deleted unless keep is on).
+    webhook_work_dir: str = "webhook_work"
+    webhook_keep_work: bool = False
+    # Finished jobs kept in memory for /webhook/jobs. Bounds a long-lived process.
+    webhook_max_history: int = 500
+    # Target voice (SeedVC) when a request names none. Empty -> the shared auto
+    # seed voice, matching an unpinned /synthesize call.
+    webhook_default_voice: str = ""
+    http_timeout: float = 120.0
+
+    # ------------------------------------------------------------------ #
     # Donor -> VoxCPM2 -> SeedVC pipeline
     #
     # Emotion no longer comes from a style parenthetical the model reads. It comes
@@ -94,6 +118,19 @@ class Settings(BaseSettings):
     # so a loud emotion clips on the way into SeedVC. Scale anything above this
     # ceiling down to it first. 0 disables.
     voxcpm_peak: float = float(os.getenv("VOXCPM_PEAK", "0.95"))
+
+    # VoxCPM2 continuation mode clones the donor's timbre/prosody but NOT its speaking
+    # rate: it renders new text at its own, more neutral pace, so an emotional donor
+    # (a slow, drawn-out sad clip especially) comes back faster than the recording it
+    # was cloned from. SeedVC is length-preserving and cannot fix it downstream. When
+    # this is on, each generated piece is WSOLA-stretched (pitch untouched) to the
+    # donor clip's own measured pace -- seconds of voiced audio per spoken character --
+    # before it enters SeedVC, so the take carries the donor's timing, not the model's.
+    voxcpm_vc_match_donor_pace: bool = os.getenv("VOXCPM_VC_MATCH_DONOR_PACE", "1") not in ("0", "false", "False", "")
+    # Clamp on that stretch, as a fraction. 0.35 lets a piece run from 0.65x to 1.35x
+    # of its rendered length; wider risks WSOLA artefacts and a robotic drag, tighter
+    # leaves a fast sad read still faster than the donor.
+    voxcpm_vc_max_pace_stretch: float = float(os.getenv("VOXCPM_VC_MAX_PACE_STRETCH", "0.35"))
 
     # SiangTTS / VoxCPM2 Voice Cloning
     siangtts_base_model: str = "openbmb/VoxCPM2"

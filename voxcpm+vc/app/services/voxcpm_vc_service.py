@@ -111,6 +111,9 @@ class VoxCPMVCService:
         # difference between one upload and one per chunk.
         self._donor_handles: Dict[Tuple[str, str], str] = {}
         self._manifest: Optional[dict] = None
+        # (set_id, emotion) -> the donor clip's own pace, seconds of voiced audio per
+        # spoken character. Measured once per clip; it is a property of the recording.
+        self._donor_pace: Dict[Tuple[str, str], Optional[float]] = {}
 
     # ------------------------------------------------------------------ #
     # Donor sets
@@ -450,6 +453,88 @@ class VoxCPMVCService:
         return arr
 
     # ------------------------------------------------------------------ #
+    # Donor-pace matching
+    #
+    # Continuation mode reproduces the donor's timbre and colour but renders new
+    # text at VoxCPM2's own, more neutral speaking rate -- so an emotional donor
+    # (a slow sad clip especially) comes back faster than the recording it cloned.
+    # SeedVC is length-preserving, so the only place to fix the pace is here, on the
+    # VoxCPM2 output before conversion. We stretch each piece (pitch untouched) to the
+    # donor clip's measured pace: seconds of *voiced* audio per spoken character, so
+    # pieces of different length stay comparable and leading/trailing padding does not
+    # count. Micro-rhythm (where the pauses fall) is content-specific and not cloned;
+    # this matches the overall rate, which is what "faster than the donor" is about.
+    # ------------------------------------------------------------------ #
+
+    @staticmethod
+    def _speech_pace(audio: Any, sr: int, char_len: int) -> Optional[float]:
+        """Seconds of voiced audio per character, or None if unmeasurable."""
+        import numpy as np
+
+        from app.services.audio_post import trim_silence
+
+        if not char_len or sr <= 0:
+            return None
+        arr = np.asarray(audio, dtype="float32")
+        if arr.size == 0:
+            return None
+        voiced = trim_silence(arr, sr)
+        secs = float(voiced.size) / sr
+        if secs <= 0:
+            return None
+        return secs / char_len
+
+    def _donor_pace_for(self, donor_set: str, emotion: str) -> Optional[float]:
+        """The donor clip's own pace (sec/char), measured once and cached."""
+        import soundfile as sf
+
+        key = (donor_set, emotion)
+        if key in self._donor_pace:
+            return self._donor_pace[key]
+
+        pace: Optional[float] = None
+        try:
+            wav, transcript = self.donor_clip(donor_set, emotion)
+            y, sr = sf.read(str(wav), dtype="float32")
+            if getattr(y, "ndim", 1) > 1:
+                y = y.mean(axis=1)
+            pace = self._speech_pace(y, int(sr), spoken_len(transcript))
+        except Exception:
+            pace = None
+        self._donor_pace[key] = pace
+        return pace
+
+    def _match_to_donor_pace(
+        self, audio: Any, gen_rate: int, body: str, donor_set: str, emotion: str
+    ) -> Any:
+        """Stretch one generated piece to the donor clip's pace (pitch untouched).
+
+        A no-op when matching is disabled, the pace of either side cannot be measured,
+        or the correction is negligible. The stretch is clamped so a big text/clip
+        length mismatch cannot drag a piece into WSOLA artefacts.
+        """
+        import numpy as np
+
+        from app.services.audio_post import time_stretch
+
+        if not settings.voxcpm_vc_match_donor_pace:
+            return audio
+
+        char_len = spoken_len(body)
+        gen_pace = self._speech_pace(audio, gen_rate, char_len)
+        donor_pace = self._donor_pace_for(donor_set, emotion)
+        if not gen_pace or not donor_pace or gen_pace <= 0:
+            return audio
+
+        ratio = donor_pace / gen_pace
+        clamp = float(settings.voxcpm_vc_max_pace_stretch or 0)
+        if clamp > 0:
+            ratio = float(np.clip(ratio, 1.0 - clamp, 1.0 + clamp))
+        if abs(ratio - 1.0) < 0.01:
+            return audio
+        return time_stretch(np.asarray(audio, dtype="float32"), gen_rate, ratio)
+
+    # ------------------------------------------------------------------ #
     # Generation
     # ------------------------------------------------------------------ #
 
@@ -573,7 +658,10 @@ class VoxCPMVCService:
                         f"({emotion})"
                     )
                 for slot, audio in zip(indices, audios):
-                    generated[slot] = self._depeak(audio)
+                    paced = self._match_to_donor_pace(
+                        self._depeak(audio), gen_rate, planned[slot][1], chosen_set, emotion
+                    )
+                    generated[slot] = paced
 
                 if debug_out is not None:
                     debug_out.append({
@@ -631,6 +719,25 @@ class VoxCPMVCService:
                 except Exception:
                     pass
 
+    def _post_params_for_assembly(self, params: Optional[dict]) -> Optional[dict]:
+        """Post-process params with the generic rate pass turned off when we already
+        paced each chunk to its donor.
+
+        ``_match_rate`` re-times chunks toward the coarse ``TONE_DURATION_RATIO`` table
+        (sad = 1.035x), anchored on the take's neutral chunks. Left on, a mixed take
+        would speed the donor-paced sad chunks *back up* toward that generic ratio,
+        partially undoing the donor match. A single-tone take is unaffected either way
+        (its rate pass self-cancels), but turning it off keeps mixed takes honest. A
+        caller that set ``match_rate`` explicitly wins.
+        """
+        if not settings.voxcpm_vc_match_donor_pace:
+            return params
+        if params and "match_rate" in params:
+            return params
+        out = dict(params or {})
+        out["match_rate"] = False
+        return out
+
     def synthesize_many(
         self,
         texts: Sequence[str],
@@ -673,7 +780,8 @@ class VoxCPMVCService:
 
         if post_process:
             audio = assemble(rendered, sample_rate,
-                             config=PostProcessConfig.from_dict(post_process_params))
+                             config=PostProcessConfig.from_dict(
+                                 self._post_params_for_assembly(post_process_params)))
         else:
             audio = butt_join(rendered, sample_rate)
 
@@ -767,7 +875,8 @@ class VoxCPMVCService:
         takes: List[dict] = []
         for spec in variants:
             if spec.get("post_process", True):
-                config = PostProcessConfig.from_dict(spec.get("params"))
+                config = PostProcessConfig.from_dict(
+                    self._post_params_for_assembly(spec.get("params")))
                 audio, spans = assemble_with_spans(rendered, sample_rate, config=config)
             else:
                 audio, spans = butt_join_with_spans(rendered, sample_rate)
@@ -854,7 +963,10 @@ class VoxCPMVCService:
                 inference_timesteps=inference_timesteps,
                 lora_mode=lora_mode,
             )
-            return self._depeak(audio), rate
+            paced = self._match_to_donor_pace(
+                self._depeak(audio), rate, body, donor_set, emotion
+            )
+            return paced, rate
 
         audios, rate = batch(
             [body],
@@ -865,7 +977,10 @@ class VoxCPMVCService:
         )
         if not audios:
             raise RuntimeError("engine returned no audio")
-        return self._depeak(audios[0]), int(rate)
+        paced = self._match_to_donor_pace(
+            self._depeak(audios[0]), int(rate), body, donor_set, emotion
+        )
+        return paced, int(rate)
 
     # B mode's shift may move F0 by at most this many semitones. A full octave
     # (the old +/-12) is almost never a natural register move and, with SeedVC's
