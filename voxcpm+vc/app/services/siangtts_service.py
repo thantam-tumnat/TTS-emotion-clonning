@@ -46,6 +46,12 @@ def spoken_len(text: str) -> int:
 # one prompt cache is what holds the timbre steady.
 DEFAULT_MAX_CHUNK_CHARS = 140
 
+# Below this many spoken characters a piece is too small to stand as its own
+# generation: VoxCPM2 tends to render such a stub clipped, and spends a whole
+# autoregressive pass on a word or two. Balancing avoids most stubs; a residual
+# one is folded back into its neighbour (see _merge_stub_pieces).
+MIN_CHUNK_CHARS = 24
+
 
 class ChunkPiece(NamedTuple):
     """One synthesizable piece of a chunk that was too long to voice in one pass."""
@@ -64,7 +70,10 @@ def _atoms(text: str, level: int) -> Optional[List[str]]:
     if level == 0:
         parts = re.split(r"(?<=\n)", text)
     elif level == 1:
-        parts = re.split(r"(?<=[.!?…])\s*", text)
+        # Zero-width: split right after the mark and leave the following space on
+        # the next atom, so two sentences packed into one piece keep the space
+        # between them instead of gluing into "...ครับ.ประโยค...".
+        parts = re.split(r"(?<=[.!?…])", text)
     elif level == 2:
         parts = re.split(r"(?<= )", text)
     elif level == 3:
@@ -82,9 +91,17 @@ def _atoms(text: str, level: int) -> Optional[List[str]]:
 
 
 def _split_body(body: str, limit: int, level: int = 0) -> List[str]:
-    """Greedily pack ``body`` into runs of at most ``limit`` spoken characters."""
-    if len(body.strip()) <= limit:
-        return [body] if body.strip() else []
+    """Pack ``body`` into runs of at most ``limit`` spoken characters.
+
+    The pieces aim for an even share of the text rather than each being filled to
+    the brim: a body just over the budget comes back as two similar halves, not one
+    full piece and a clipped few-character tail. VoxCPM2 voices such a stub badly --
+    it can come back clipped -- and burns a whole autoregressive pass on a word or
+    two. Balancing keeps every piece under the budget while never leaving that stub.
+    """
+    stripped = body.strip()
+    if len(stripped) <= limit:
+        return [body] if stripped else []
 
     atoms = _atoms(body, level)
     if atoms is None:
@@ -93,10 +110,14 @@ def _split_body(body: str, limit: int, level: int = 0) -> List[str]:
         # No seam left anywhere: cut on the character budget.
         return [body[i:i + limit] for i in range(0, len(body), limit)]
 
+    # Fewest pieces that each fit the budget, then an even target across them.
+    n = max(1, math.ceil(len(stripped) / limit))
+    target = math.ceil(len(stripped) / n)
+
     packed: List[str] = []
     cur = ""
     for atom in atoms:
-        if cur and len((cur + atom).strip()) > limit:
+        if cur and len((cur + atom).strip()) > target:
             packed.append(cur)
             cur = atom
         else:
@@ -108,6 +129,26 @@ def _split_body(body: str, limit: int, level: int = 0) -> List[str]:
     if any(len(p.strip()) > limit for p in packed):
         return [q for p in packed for q in _split_body(p, limit, level + 1)]
     return [p for p in packed if p.strip()]
+
+
+def _merge_stub_pieces(pieces: List[str], limit: int) -> List[str]:
+    """Fold a piece too short to voice on its own into the piece before it.
+
+    Balancing keeps pieces well under ``limit``, so absorbing a stray tail of a word
+    or two still clears the budget -- and it spares VoxCPM2 a whole pass on a
+    fragment it renders clipped. A line break is never crossed: that seam earns a
+    paragraph pause (see split_for_synthesis), and merging over it would lose the gap.
+    """
+    out: List[str] = []
+    for piece in pieces:
+        if (out
+                and len(piece.strip()) < MIN_CHUNK_CHARS
+                and not out[-1].endswith("\n")
+                and len((out[-1] + piece).strip()) <= limit):
+            out[-1] += piece
+        else:
+            out.append(piece)
+    return out
 
 
 def split_for_synthesis(text: str, limit: Optional[int] = None) -> List[ChunkPiece]:
@@ -125,7 +166,7 @@ def split_for_synthesis(text: str, limit: Optional[int] = None) -> List[ChunkPie
     if not body:
         return []
 
-    pieces = _split_body(body, max(1, limit))
+    pieces = _merge_stub_pieces(_split_body(body, max(1, limit)), max(1, limit))
     out: List[ChunkPiece] = []
     for i, piece in enumerate(pieces):
         clean = piece.strip()
