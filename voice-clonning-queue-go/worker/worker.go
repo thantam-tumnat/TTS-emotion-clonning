@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"time"
 
+	"voice-cloning-queue/audio"
 	"voice-cloning-queue/models"
 	"voice-cloning-queue/queue"
 )
@@ -152,6 +153,7 @@ func (w *Worker) processJob(job *models.RenderJob) {
 
 	var result map[string]interface{}
 	var payload []byte
+	var audioWAV []byte
 
 	if contentType == "application/octet-stream" {
 		payload = bodyBytes
@@ -159,6 +161,10 @@ func (w *Worker) processJob(job *models.RenderJob) {
 			"mode":        "npz",
 			"sample_rate": resp.Header.Get("X-Sample-Rate"),
 			"chunks":      resp.Header.Get("X-Chunks"),
+		}
+		// Convert NPZ to standard playable WAV
+		if wavBytes, err := audio.NPZToWAV(bodyBytes); err == nil {
+			audioWAV = wavBytes
 		}
 	} else {
 		// JSON response
@@ -170,9 +176,17 @@ func (w *Worker) processJob(job *models.RenderJob) {
 		if innerRes, ok := result["result"].(map[string]interface{}); ok {
 			result = innerRes
 		}
+		// If mode is files, read the WAV file into audioWAV
+		if files, ok := result["files"].([]interface{}); ok && len(files) > 0 {
+			if firstFile, ok := files[0].(string); ok && firstFile != "" {
+				if wavBytes, err := audio.ReadWAVFile(firstFile); err == nil {
+					audioWAV = wavBytes
+				}
+			}
+		}
 	}
 
 	elapsed := time.Since(start).Seconds()
 	fmt.Printf("[worker] <<< Job Completed: %s (took %.2fs)\n", job.JobID, elapsed)
-	w.q.MarkCompleted(job.JobID, result, payload)
+	w.q.MarkCompleted(job.JobID, result, payload, audioWAV)
 }

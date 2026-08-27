@@ -68,6 +68,7 @@ func main() {
 	app.Get("/v2/jobs", jobsH.List)
 	app.Get("/v2/jobs/:job_id", jobsH.GetJob)
 	app.Get("/v2/jobs/:job_id/result", jobsH.GetResult)
+	app.Get("/v2/jobs/:job_id/audio", jobsH.GetAudio)
 	app.Delete("/v2/jobs/:job_id", jobsH.Cancel)
 
 	// 6. Voice, Speaker & Health Routes (Proxied to Python GPU :8021)

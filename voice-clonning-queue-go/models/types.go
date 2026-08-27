@@ -58,6 +58,7 @@ type RenderJob struct {
 	Error       *string                `json:"error,omitempty"`
 	Result      map[string]interface{} `json:"result,omitempty"`
 	Payload     []byte                 `json:"-"`
+	AudioWAV    []byte                 `json:"-"`
 	ChunksDone  int                    `json:"chunks_done"`
 	TotalChunks int                    `json:"total_chunks"`
 	Created     float64                `json:"created"`
@@ -124,12 +125,24 @@ func (j *RenderJob) AsDict(position *int) map[string]interface{} {
 		ran = &r
 	}
 
+	hasAudio := len(j.AudioWAV) > 0
+	if !hasAudio && j.Result != nil {
+		if files, ok := j.Result["files"].([]interface{}); ok && len(files) > 0 {
+			hasAudio = true
+		}
+	}
+
 	res := map[string]interface{}{
 		"job_id":       j.JobID,
 		"status":       j.Status,
 		"chunks":       j.Chunks,
 		"chunks_done":  j.ChunksDone,
 		"total_chunks": j.TotalChunks,
+		"voice":        j.Voice,
+		"cfg_value":    j.CFGValue,
+		"timesteps":    j.Timesteps,
+		"lora":         j.LoRA,
+		"output":       j.Output,
 		"lane":         j.Lane,
 		"client":       j.Client,
 		"created":      j.Created,
@@ -137,6 +150,7 @@ func (j *RenderJob) AsDict(position *int) map[string]interface{} {
 		"finished":     j.Finished,
 		"waited_s":     waited,
 		"ran_s":        ran,
+		"has_audio":    hasAudio,
 	}
 
 	if j.Status == StatusQueued && position != nil {

@@ -34,7 +34,7 @@ func TestPriorityQueue_BasicSubmitAndNext(t *testing.T) {
 		t.Errorf("expected status running, got %s", next.Status)
 	}
 
-	q.MarkCompleted("job_1", map[string]interface{}{"status": "ok"}, nil)
+	q.MarkCompleted("job_1", map[string]interface{}{"status": "ok"}, nil, nil)
 
 	retrieved, _ = q.GetJob("job_1")
 	if retrieved.Status != models.StatusCompleted {
@@ -114,7 +114,7 @@ func TestPriorityQueue_WaitTimeout(t *testing.T) {
 	// Mark completed
 	go func() {
 		time.Sleep(20 * time.Millisecond)
-		q.MarkCompleted("job_wait", map[string]interface{}{"status": "ok"}, nil)
+		q.MarkCompleted("job_wait", map[string]interface{}{"status": "ok"}, nil, nil)
 	}()
 
 	finished = q.Wait("job_wait", 100*time.Millisecond)

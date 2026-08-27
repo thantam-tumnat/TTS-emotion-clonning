@@ -91,7 +91,7 @@ func (q *PriorityQueue) NextJob() *models.RenderJob {
 }
 
 // MarkCompleted updates a job state upon successful synthesis.
-func (q *PriorityQueue) MarkCompleted(jobID string, result map[string]interface{}, payload []byte) {
+func (q *PriorityQueue) MarkCompleted(jobID string, result map[string]interface{}, payload []byte, audioWAV []byte) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
@@ -100,11 +100,20 @@ func (q *PriorityQueue) MarkCompleted(jobID string, result map[string]interface{
 		return
 	}
 
+	// If job was cancelled while executing, preserve cancelled status
+	if job.Status == models.StatusCancelled {
+		if q.running != nil && q.running.JobID == jobID {
+			q.running = nil
+		}
+		return
+	}
+
 	now := float64(time.Now().UnixNano()) / 1e9
 	job.Status = models.StatusCompleted
 	job.Finished = &now
 	job.Result = result
 	job.Payload = payload
+	job.AudioWAV = audioWAV
 	job.ChunksDone = job.TotalChunks
 
 	if q.running != nil && q.running.JobID == jobID {
@@ -124,6 +133,13 @@ func (q *PriorityQueue) MarkFailed(jobID string, errMsg string) {
 		return
 	}
 
+	if job.Status == models.StatusCancelled {
+		if q.running != nil && q.running.JobID == jobID {
+			q.running = nil
+		}
+		return
+	}
+
 	now := float64(time.Now().UnixNano()) / 1e9
 	job.Status = models.StatusFailed
 	job.Finished = &now
@@ -136,7 +152,7 @@ func (q *PriorityQueue) MarkFailed(jobID string, errMsg string) {
 	close(job.DoneChan)
 }
 
-// Cancel marks a queued job as cancelled and removes it from the waiting line.
+// Cancel marks a queued or running job as cancelled and removes it from the waiting line.
 func (q *PriorityQueue) Cancel(jobID string) bool {
 	q.mu.Lock()
 	defer q.mu.Unlock()
@@ -146,7 +162,7 @@ func (q *PriorityQueue) Cancel(jobID string) bool {
 		return false
 	}
 
-	if job.Status != models.StatusQueued {
+	if job.Status != models.StatusQueued && job.Status != models.StatusRunning {
 		return false
 	}
 
@@ -155,6 +171,10 @@ func (q *PriorityQueue) Cancel(jobID string) bool {
 	job.Finished = &now
 	errStr := "cancelled by user"
 	job.Error = &errStr
+
+	if q.running != nil && q.running.JobID == jobID {
+		q.running = nil
+	}
 
 	for i, j := range q.waiting {
 		if j.JobID == jobID {

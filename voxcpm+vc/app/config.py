@@ -114,6 +114,18 @@ class Settings(BaseSettings):
     # Keeps the emotional contour but re-centres it in the target's own register,
     # so a female target does not end up speaking in a male donor's range.
     seedvc_auto_f0_adjust: bool = True
+    # Which of the test page's F0-compare treatments the shipped take uses (the
+    # baseline / A / B buttons on /static/test.html), so a mode judged best by ear
+    # there can be turned on for real synthesis without touching code:
+    #   baseline -> auto_f0_adjust re-centres every emotion's pitch to the target
+    #               (flat register, the donor's pitch-emotion is largely lost)
+    #   A        -> keep VoxCPM2's absolute pitch (emotion survives) but in the
+    #               donor's register, not the target's
+    #   B        -> keep the pitch contour, shifted by a constant so the donor's
+    #               NEUTRAL register lands on the target's -> emotion AND register
+    # Only "B" needs the extra per-take shift computed in voxcpm_vc_service; the
+    # other two are pure SeedVC auto_f0_adjust flips. See render_chunks / render_f0_compare.
+    seedvc_f0_mode: str = "baseline"
     # Too few steps smear consonants into slurred articulation; 35 is the measured
     # floor for clean Thai plosives at a modest speed cost.
     seedvc_diffusion_steps: int = int(os.getenv("SEEDVC_DIFFUSION_STEPS", "35"))

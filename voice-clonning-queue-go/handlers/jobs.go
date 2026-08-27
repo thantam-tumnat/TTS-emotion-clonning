@@ -198,3 +198,36 @@ func (h *JobsHandler) Cancel(c *fiber.Ctx) error {
 		"status":    job.Status,
 	})
 }
+
+// GetAudio handles GET /v2/jobs/:job_id/audio and streams standard WAV audio.
+func (h *JobsHandler) GetAudio(c *fiber.Ctx) error {
+	jobID := c.Params("job_id")
+	job, _ := h.q.GetJob(jobID)
+	if job == nil {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "unknown job"})
+	}
+
+	if job.Status != models.StatusCompleted {
+		return c.Status(fiber.StatusConflict).JSON(fiber.Map{
+			"error":  fmt.Sprintf("job is %s", job.Status),
+			"status": job.Status,
+		})
+	}
+
+	if len(job.AudioWAV) > 0 {
+		c.Set("Content-Type", "audio/wav")
+		c.Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s.wav\"", job.JobID))
+		c.Set("X-Job-Id", job.JobID)
+		return c.Send(job.AudioWAV)
+	}
+
+	if job.Result != nil {
+		if files, ok := job.Result["files"].([]interface{}); ok && len(files) > 0 {
+			if firstFile, ok := files[0].(string); ok && firstFile != "" {
+				return c.SendFile(firstFile)
+			}
+		}
+	}
+
+	return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "audio not available for this job"})
+}

@@ -433,6 +433,44 @@ class VoxCPMVCService:
             raise VoxCPMVCUnavailable(f"SeedVC convert failed ({res.status_code}): {detail}")
         return output
 
+    def _b_shift_to_target(self, chosen_set: str, target_wav: Path) -> int:
+        """Semitone shift that moves the donor's NEUTRAL register onto the target's,
+        so a converted take keeps the emotion's own pitch offset but sits in the
+        target's register -- the F0-compare "B" treatment, computed for a real take.
+
+        Anchors on each clip's *register* (a low percentile of voiced F0), not its
+        median, so an expressive target/donor does not inflate the shift; clamped to
+        F0_SHIFT_CLAMP_ST so it can never push a full octave. Returns 0 when either
+        register cannot be measured (the take then behaves like mode A)."""
+        target_reg = self._register_f0(Path(target_wav))
+        donor_neutral_reg = None
+        try:
+            neutral_wav, _ = self.donor_clip(chosen_set, "neutral")
+            donor_neutral_reg = self._register_f0(neutral_wav)
+        except Exception:                                                # noqa: BLE001
+            donor_neutral_reg = None
+        if target_reg and donor_neutral_reg and donor_neutral_reg > 0:
+            raw_shift = 12.0 * math.log2(target_reg / donor_neutral_reg)
+            clamp = self.F0_SHIFT_CLAMP_ST
+            return int(round(max(-clamp, min(clamp, raw_shift))))
+        return 0
+
+    def _f0_convert_kwargs(self, chosen_set: str, target_wav: Path) -> Dict[str, Any]:
+        """SeedVC F0 handling for a real take, selected by settings.seedvc_f0_mode.
+
+        Returns kwargs for ``_convert``. ``baseline`` returns nothing so ``_convert``
+        keeps the server defaults; ``A``/``B`` turn auto-F0 off, and ``B`` adds the
+        register-matching shift. Computed once per take (constant across its chunks)."""
+        mode = (settings.seedvc_f0_mode or "baseline").strip().lower()
+        if mode == "a":
+            return {"auto_f0_adjust": False}
+        if mode == "b":
+            return {
+                "auto_f0_adjust": False,
+                "semi_tone_shift": self._b_shift_to_target(chosen_set, target_wav),
+            }
+        return {}
+
     @staticmethod
     def _depeak(audio: Any) -> Any:
         """Pull an over-unity waveform back under the ceiling.
@@ -592,6 +630,11 @@ class VoxCPMVCService:
             speaker_id, ref_audio_bytes, ref_filename
         )
 
+        # SeedVC F0 treatment for the whole take (baseline / A / B), chosen in .env.
+        # Constant across chunks -- the shift depends only on this donor + target -- so
+        # compute it once here rather than per chunk in the convert loop below.
+        f0_kw = self._f0_convert_kwargs(chosen_set, Path(target_wav))
+
         synth = self._synth()
         batch = getattr(synth, "render_batch", None)
         if batch is None:
@@ -690,7 +733,7 @@ class VoxCPMVCService:
                     pre_vc_out.append((np.asarray(audio, dtype="float32"), gen_rate))
 
                 try:
-                    self._convert(src_path, target_wav, out_path)
+                    self._convert(src_path, target_wav, out_path, **f0_kw)
                     converted, sr = sf.read(str(out_path), dtype="float32")
                 finally:
                     src_path.unlink(missing_ok=True)
