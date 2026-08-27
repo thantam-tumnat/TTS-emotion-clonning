@@ -1,0 +1,111 @@
+<!doctype html>
+<html lang="th">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Voice Consistency — Test Checklist</title>
+  <style>
+    :root {
+      --bg: #0f1115; --card: #171a21; --line: #262b36; --text: #e6e9ef;
+      --muted: #98a2b3; --pass: #22c55e; --fail: #ef4444; --skip: #f59e0b;
+      --accent: #6366f1; --accent-2: #4f46e5;
+    }
+    @media (prefers-color-scheme: light) {
+      :root {
+        --bg: #f6f7f9; --card: #ffffff; --line: #e5e7eb; --text: #111827;
+        --muted: #6b7280; --pass: #16a34a; --fail: #dc2626; --skip: #d97706;
+      }
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; background: var(--bg); color: var(--text);
+      font-family: "Segoe UI", system-ui, -apple-system, "Noto Sans Thai", sans-serif;
+      line-height: 1.5;
+    }
+    .wrap { max-width: 860px; margin: 0 auto; padding: 28px 18px 80px; }
+    header h1 { margin: 0 0 4px; font-size: 1.4rem; }
+    header p { margin: 0 0 20px; color: var(--muted); font-size: 0.9rem; }
+    .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-bottom: 18px; }
+    button {
+      font: inherit; cursor: pointer; border: 1px solid var(--line);
+      background: var(--card); color: var(--text); padding: 9px 16px;
+      border-radius: 9px; transition: filter .15s, opacity .15s;
+    }
+    button:hover { filter: brightness(1.08); }
+    button:disabled { opacity: .55; cursor: default; }
+    .btn-run { background: var(--accent); border-color: var(--accent-2); color: #fff; font-weight: 600; }
+    .summary {
+      margin-left: auto; font-size: 0.85rem; color: var(--muted);
+      display: flex; gap: 14px; align-items: center;
+    }
+    .summary .pass { color: var(--pass); font-weight: 600; }
+    .summary .fail { color: var(--fail); font-weight: 600; }
+    .suite {
+      background: var(--card); border: 1px solid var(--line); border-radius: 12px;
+      margin-bottom: 14px; overflow: hidden;
+    }
+    .suite-head {
+      display: flex; align-items: center; gap: 12px; padding: 14px 16px;
+      border-bottom: 1px solid var(--line); flex-wrap: wrap;
+    }
+    .suite-status { font-size: 1.15rem; width: 22px; text-align: center; }
+    .suite-title { font-weight: 600; }
+    .suite-desc { color: var(--muted); font-size: 0.8rem; width: 100%; margin-top: 2px; }
+    .badge {
+      margin-left: auto; font-size: 0.78rem; color: var(--muted);
+      display: flex; gap: 10px; align-items: center;
+    }
+    .badge .p { color: var(--pass); } .badge .f { color: var(--fail); } .badge .s { color: var(--skip); }
+    .btn-suite { padding: 5px 11px; font-size: 0.8rem; border-radius: 7px; }
+    ul.tests { list-style: none; margin: 0; padding: 0; }
+    li.test {
+      display: flex; align-items: flex-start; gap: 10px; padding: 9px 16px;
+      border-top: 1px solid var(--line); font-size: 0.88rem;
+    }
+    li.test:first-child { border-top: none; }
+    .t-icon { width: 18px; text-align: center; flex-shrink: 0; }
+    .t-icon.passed { color: var(--pass); } .t-icon.failed, .t-icon.error { color: var(--fail); }
+    .t-icon.skipped { color: var(--skip); }
+    .t-name { flex: 1; word-break: break-word; font-family: ui-monospace, "Cascadia Code", monospace; font-size: 0.82rem; }
+    .t-time { color: var(--muted); font-size: 0.75rem; flex-shrink: 0; }
+    .t-msg {
+      margin: 6px 16px 4px 44px; padding: 10px 12px; background: rgba(239,68,68,.08);
+      border: 1px solid var(--fail); border-radius: 8px; white-space: pre-wrap;
+      font-family: ui-monospace, monospace; font-size: 0.76rem; color: var(--text);
+      display: none;
+    }
+    li.test.failed { cursor: pointer; }
+    .run-error {
+      margin: 10px 16px 14px; padding: 10px 12px; border: 1px solid var(--fail);
+      border-radius: 8px; background: rgba(239,68,68,.08); font-size: 0.8rem;
+      white-space: pre-wrap; font-family: ui-monospace, monospace;
+    }
+    .spinner {
+      width: 14px; height: 14px; border: 2px solid var(--line);
+      border-top-color: var(--accent); border-radius: 50%;
+      display: inline-block; animation: spin .7s linear infinite; vertical-align: -2px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+    .empty { color: var(--muted); padding: 40px 0; text-align: center; }
+  </style>
+</head>
+<body>
+  <div class="wrap">
+    <header>
+      <h1>✅ Voice Consistency — Test Checklist</h1>
+      <p>กดปุ่มเพื่อรัน pytest จริง แล้วดูผลเป็นรายการ ✓ / ✗ — ตรวจว่าแต่ละ take ยังใช้เสียงคนเดิม</p>
+    </header>
+
+    <div class="toolbar">
+      <button class="btn-run" id="run-all">▶ รันทั้งหมด (Run All)</button>
+      <div class="summary" id="summary"></div>
+    </div>
+
+    <div id="results">
+      <div class="empty" id="empty">ยังไม่ได้รัน — กด “รันทั้งหมด” เพื่อเริ่ม</div>
+    </div>
+  </div>
+
+  <script src="/static/tests.js"></script>
+</body>
+</html>

@@ -1,0 +1,626 @@
+{
+  "session_id": "bench_20260824_131220_determination",
+  "name": "Emotion Benchmark (20260824_131220)",
+  "created_at": "2026-08-24T13:12:20.926957",
+  "speaker_id": "determination",
+  "text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ \nAlice is an ordinary girl, until the day she meets a talking rabbit and enters a Wonderland of adventure...",
+  "emotions": [
+    "neutral",
+    "sad",
+    "angry"
+  ],
+  "repeats": 3,
+  "total_takes": 9,
+  "completed_takes": 9,
+  "params": {
+    "intensity": 3,
+    "cfg_value": 2.5,
+    "inference_timesteps": 10,
+    "lora_mode": "on"
+  },
+  "takes": {
+    "neutral_1": {
+      "emotion": "neutral",
+      "take_idx": 1,
+      "instruction": "",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ \nAlice is an ordinary girl, until the day she meets a talking rabbit and enters a Wonderland of adventure...",
+      "filename": "neutral_take_1__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/neutral_take_1__emotion_on.wav",
+      "metrics": {
+        "dur_s": 15.94,
+        "rms": 0.185,
+        "energy_dbfs": -14.7,
+        "f0_med_hz": 178.4,
+        "f0_p10_hz": 122.0,
+        "f0_p90_hz": 246.2,
+        "f0_spread_st": 12.15
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "neutral_take_1__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/neutral_take_1__emotion_on.wav",
+          "metrics": {
+            "dur_s": 15.94,
+            "rms": 0.185,
+            "energy_dbfs": -14.7,
+            "f0_med_hz": 178.4,
+            "f0_p10_hz": 122.0,
+            "f0_p90_hz": 246.2,
+            "f0_spread_st": 12.15
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "neutral_take_1__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/neutral_take_1__cleanup.wav",
+          "metrics": {
+            "dur_s": 16.51,
+            "rms": 0.1853,
+            "energy_dbfs": -14.6,
+            "f0_med_hz": 176.5,
+            "f0_p10_hz": 121.2,
+            "f0_p90_hz": 243.8,
+            "f0_spread_st": 12.11
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "neutral_take_1__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/neutral_take_1__raw.wav",
+          "metrics": {
+            "dur_s": 15.74,
+            "rms": 0.1898,
+            "energy_dbfs": -14.4,
+            "f0_med_hz": 176.5,
+            "f0_p10_hz": 121.1,
+            "f0_p90_hz": 244.9,
+            "f0_spread_st": 12.19
+          }
+        }
+      ],
+      "elapsed_s": 40.58,
+      "error": null,
+      "timestamp": "2026-08-24T13:13:01.513680"
+    },
+    "neutral_2": {
+      "emotion": "neutral",
+      "take_idx": 2,
+      "instruction": "",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ \nAlice is an ordinary girl, until the day she meets a talking rabbit and enters a Wonderland of adventure...",
+      "filename": "neutral_take_2__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/neutral_take_2__emotion_on.wav",
+      "metrics": {
+        "dur_s": 14.82,
+        "rms": 0.1833,
+        "energy_dbfs": -14.7,
+        "f0_med_hz": 167.2,
+        "f0_p10_hz": 122.8,
+        "f0_p90_hz": 238.8,
+        "f0_spread_st": 11.52
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "neutral_take_2__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/neutral_take_2__emotion_on.wav",
+          "metrics": {
+            "dur_s": 14.82,
+            "rms": 0.1833,
+            "energy_dbfs": -14.7,
+            "f0_med_hz": 167.2,
+            "f0_p10_hz": 122.8,
+            "f0_p90_hz": 238.8,
+            "f0_spread_st": 11.52
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "neutral_take_2__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/neutral_take_2__cleanup.wav",
+          "metrics": {
+            "dur_s": 15.26,
+            "rms": 0.1835,
+            "energy_dbfs": -14.7,
+            "f0_med_hz": 166.7,
+            "f0_p10_hz": 123.0,
+            "f0_p90_hz": 238.8,
+            "f0_spread_st": 11.49
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "neutral_take_2__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/neutral_take_2__raw.wav",
+          "metrics": {
+            "dur_s": 14.3,
+            "rms": 0.1895,
+            "energy_dbfs": -14.4,
+            "f0_med_hz": 166.7,
+            "f0_p10_hz": 123.4,
+            "f0_p90_hz": 238.8,
+            "f0_spread_st": 11.43
+          }
+        }
+      ],
+      "elapsed_s": 34.22,
+      "error": null,
+      "timestamp": "2026-08-24T13:13:35.739909"
+    },
+    "neutral_3": {
+      "emotion": "neutral",
+      "take_idx": 3,
+      "instruction": "",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ \nAlice is an ordinary girl, until the day she meets a talking rabbit and enters a Wonderland of adventure...",
+      "filename": "neutral_take_3__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/neutral_take_3__emotion_on.wav",
+      "metrics": {
+        "dur_s": 16.42,
+        "rms": 0.184,
+        "energy_dbfs": -14.7,
+        "f0_med_hz": 171.4,
+        "f0_p10_hz": 117.0,
+        "f0_p90_hz": 230.3,
+        "f0_spread_st": 11.73
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "neutral_take_3__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/neutral_take_3__emotion_on.wav",
+          "metrics": {
+            "dur_s": 16.42,
+            "rms": 0.184,
+            "energy_dbfs": -14.7,
+            "f0_med_hz": 171.4,
+            "f0_p10_hz": 117.0,
+            "f0_p90_hz": 230.3,
+            "f0_spread_st": 11.73
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "neutral_take_3__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/neutral_take_3__cleanup.wav",
+          "metrics": {
+            "dur_s": 17.03,
+            "rms": 0.1827,
+            "energy_dbfs": -14.8,
+            "f0_med_hz": 170.8,
+            "f0_p10_hz": 117.9,
+            "f0_p90_hz": 229.7,
+            "f0_spread_st": 11.54
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "neutral_take_3__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/neutral_take_3__raw.wav",
+          "metrics": {
+            "dur_s": 16.22,
+            "rms": 0.1872,
+            "energy_dbfs": -14.6,
+            "f0_med_hz": 170.8,
+            "f0_p10_hz": 118.7,
+            "f0_p90_hz": 229.7,
+            "f0_spread_st": 11.43
+          }
+        }
+      ],
+      "elapsed_s": 38.43,
+      "error": null,
+      "timestamp": "2026-08-24T13:14:14.180884"
+    },
+    "sad_1": {
+      "emotion": "sad",
+      "take_idx": 1,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ \nAlice is an ordinary girl, until the day she meets a talking rabbit and enters a Wonderland of adventure...",
+      "filename": "sad_take_1__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/sad_take_1__emotion_on.wav",
+      "metrics": {
+        "dur_s": 15.22,
+        "rms": 0.1573,
+        "energy_dbfs": -16.1,
+        "f0_med_hz": 159.5,
+        "f0_p10_hz": 120.0,
+        "f0_p90_hz": 237.6,
+        "f0_spread_st": 11.82
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "sad_take_1__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/sad_take_1__emotion_on.wav",
+          "metrics": {
+            "dur_s": 15.22,
+            "rms": 0.1573,
+            "energy_dbfs": -16.1,
+            "f0_med_hz": 159.5,
+            "f0_p10_hz": 120.0,
+            "f0_p90_hz": 237.6,
+            "f0_spread_st": 11.82
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "sad_take_1__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/sad_take_1__cleanup.wav",
+          "metrics": {
+            "dur_s": 15.55,
+            "rms": 0.1931,
+            "energy_dbfs": -14.3,
+            "f0_med_hz": 159.5,
+            "f0_p10_hz": 120.0,
+            "f0_p90_hz": 240.0,
+            "f0_spread_st": 12.0
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "sad_take_1__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/sad_take_1__raw.wav",
+          "metrics": {
+            "dur_s": 14.78,
+            "rms": 0.198,
+            "energy_dbfs": -14.1,
+            "f0_med_hz": 160.0,
+            "f0_p10_hz": 120.0,
+            "f0_p90_hz": 241.2,
+            "f0_spread_st": 12.09
+          }
+        }
+      ],
+      "elapsed_s": 34.74,
+      "error": null,
+      "timestamp": "2026-08-24T13:14:48.927560"
+    },
+    "sad_2": {
+      "emotion": "sad",
+      "take_idx": 2,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ \nAlice is an ordinary girl, until the day she meets a talking rabbit and enters a Wonderland of adventure...",
+      "filename": "sad_take_2__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/sad_take_2__emotion_on.wav",
+      "metrics": {
+        "dur_s": 16.44,
+        "rms": 0.1426,
+        "energy_dbfs": -16.9,
+        "f0_med_hz": 155.8,
+        "f0_p10_hz": 115.1,
+        "f0_p90_hz": 212.2,
+        "f0_spread_st": 10.59
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "sad_take_2__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/sad_take_2__emotion_on.wav",
+          "metrics": {
+            "dur_s": 16.44,
+            "rms": 0.1426,
+            "energy_dbfs": -16.9,
+            "f0_med_hz": 155.8,
+            "f0_p10_hz": 115.1,
+            "f0_p90_hz": 212.2,
+            "f0_spread_st": 10.59
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "sad_take_2__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/sad_take_2__cleanup.wav",
+          "metrics": {
+            "dur_s": 17.01,
+            "rms": 0.1924,
+            "energy_dbfs": -14.3,
+            "f0_med_hz": 157.4,
+            "f0_p10_hz": 115.4,
+            "f0_p90_hz": 209.6,
+            "f0_spread_st": 10.33
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "sad_take_2__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/sad_take_2__raw.wav",
+          "metrics": {
+            "dur_s": 16.7,
+            "rms": 0.1997,
+            "energy_dbfs": -14.0,
+            "f0_med_hz": 157.4,
+            "f0_p10_hz": 115.1,
+            "f0_p90_hz": 209.8,
+            "f0_spread_st": 10.39
+          }
+        }
+      ],
+      "elapsed_s": 39.11,
+      "error": null,
+      "timestamp": "2026-08-24T13:15:28.047262"
+    },
+    "sad_3": {
+      "emotion": "sad",
+      "take_idx": 3,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ \nAlice is an ordinary girl, until the day she meets a talking rabbit and enters a Wonderland of adventure...",
+      "filename": "sad_take_3__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/sad_take_3__emotion_on.wav",
+      "metrics": {
+        "dur_s": 16.74,
+        "rms": 0.1382,
+        "energy_dbfs": -17.2,
+        "f0_med_hz": 167.2,
+        "f0_p10_hz": 104.7,
+        "f0_p90_hz": 255.3,
+        "f0_spread_st": 15.43
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "sad_take_3__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/sad_take_3__emotion_on.wav",
+          "metrics": {
+            "dur_s": 16.74,
+            "rms": 0.1382,
+            "energy_dbfs": -17.2,
+            "f0_med_hz": 167.2,
+            "f0_p10_hz": 104.7,
+            "f0_p90_hz": 255.3,
+            "f0_spread_st": 15.43
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "sad_take_3__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/sad_take_3__cleanup.wav",
+          "metrics": {
+            "dur_s": 16.84,
+            "rms": 0.1904,
+            "energy_dbfs": -14.4,
+            "f0_med_hz": 170.5,
+            "f0_p10_hz": 107.6,
+            "f0_p90_hz": 256.7,
+            "f0_spread_st": 15.05
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "sad_take_3__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/sad_take_3__raw.wav",
+          "metrics": {
+            "dur_s": 16.06,
+            "rms": 0.195,
+            "energy_dbfs": -14.2,
+            "f0_med_hz": 171.4,
+            "f0_p10_hz": 107.9,
+            "f0_p90_hz": 257.0,
+            "f0_spread_st": 15.03
+          }
+        }
+      ],
+      "elapsed_s": 38.45,
+      "error": null,
+      "timestamp": "2026-08-24T13:16:06.501929"
+    },
+    "angry_1": {
+      "emotion": "angry",
+      "take_idx": 1,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ \nAlice is an ordinary girl, until the day she meets a talking rabbit and enters a Wonderland of adventure...",
+      "filename": "angry_take_1__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/angry_take_1__emotion_on.wav",
+      "metrics": {
+        "dur_s": 14.28,
+        "rms": 0.19,
+        "energy_dbfs": -14.4,
+        "f0_med_hz": 160.0,
+        "f0_p10_hz": 108.8,
+        "f0_p90_hz": 240.0,
+        "f0_spread_st": 13.69
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "angry_take_1__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/angry_take_1__emotion_on.wav",
+          "metrics": {
+            "dur_s": 14.28,
+            "rms": 0.19,
+            "energy_dbfs": -14.4,
+            "f0_med_hz": 160.0,
+            "f0_p10_hz": 108.8,
+            "f0_p90_hz": 240.0,
+            "f0_spread_st": 13.69
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "angry_take_1__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/angry_take_1__cleanup.wav",
+          "metrics": {
+            "dur_s": 14.64,
+            "rms": 0.1652,
+            "energy_dbfs": -15.6,
+            "f0_med_hz": 151.9,
+            "f0_p10_hz": 108.0,
+            "f0_p90_hz": 234.1,
+            "f0_spread_st": 13.39
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "angry_take_1__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/angry_take_1__raw.wav",
+          "metrics": {
+            "dur_s": 13.98,
+            "rms": 0.1735,
+            "energy_dbfs": -15.2,
+            "f0_med_hz": 152.4,
+            "f0_p10_hz": 107.8,
+            "f0_p90_hz": 235.3,
+            "f0_spread_st": 13.51
+          }
+        }
+      ],
+      "elapsed_s": 34.74,
+      "error": null,
+      "timestamp": "2026-08-24T13:16:41.252204"
+    },
+    "angry_2": {
+      "emotion": "angry",
+      "take_idx": 2,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ \nAlice is an ordinary girl, until the day she meets a talking rabbit and enters a Wonderland of adventure...",
+      "filename": "angry_take_2__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/angry_take_2__emotion_on.wav",
+      "metrics": {
+        "dur_s": 15.76,
+        "rms": 0.1491,
+        "energy_dbfs": -16.5,
+        "f0_med_hz": 179.8,
+        "f0_p10_hz": 118.0,
+        "f0_p90_hz": 242.4,
+        "f0_spread_st": 12.47
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "angry_take_2__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/angry_take_2__emotion_on.wav",
+          "metrics": {
+            "dur_s": 15.76,
+            "rms": 0.1491,
+            "energy_dbfs": -16.5,
+            "f0_med_hz": 179.8,
+            "f0_p10_hz": 118.0,
+            "f0_p90_hz": 242.4,
+            "f0_spread_st": 12.47
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "angry_take_2__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/angry_take_2__cleanup.wav",
+          "metrics": {
+            "dur_s": 16.37,
+            "rms": 0.1571,
+            "energy_dbfs": -16.1,
+            "f0_med_hz": 177.8,
+            "f0_p10_hz": 120.0,
+            "f0_p90_hz": 241.2,
+            "f0_spread_st": 12.09
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "angry_take_2__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/angry_take_2__raw.wav",
+          "metrics": {
+            "dur_s": 15.9,
+            "rms": 0.167,
+            "energy_dbfs": -15.5,
+            "f0_med_hz": 177.4,
+            "f0_p10_hz": 120.0,
+            "f0_p90_hz": 240.4,
+            "f0_spread_st": 12.03
+          }
+        }
+      ],
+      "elapsed_s": 41.8,
+      "error": null,
+      "timestamp": "2026-08-24T13:17:23.055117"
+    },
+    "angry_3": {
+      "emotion": "angry",
+      "take_idx": 3,
+      "instruction": "(Furious and yelling tone, very loud and harsh)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ \nAlice is an ordinary girl, until the day she meets a talking rabbit and enters a Wonderland of adventure...",
+      "filename": "angry_take_3__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/angry_take_3__emotion_on.wav",
+      "metrics": {
+        "dur_s": 15.32,
+        "rms": 0.1985,
+        "energy_dbfs": -14.0,
+        "f0_med_hz": 168.4,
+        "f0_p10_hz": 114.0,
+        "f0_p90_hz": 241.2,
+        "f0_spread_st": 12.97
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "angry_take_3__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/angry_take_3__emotion_on.wav",
+          "metrics": {
+            "dur_s": 15.32,
+            "rms": 0.1985,
+            "energy_dbfs": -14.0,
+            "f0_med_hz": 168.4,
+            "f0_p10_hz": 114.0,
+            "f0_p90_hz": 241.2,
+            "f0_spread_st": 12.97
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "angry_take_3__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/angry_take_3__cleanup.wav",
+          "metrics": {
+            "dur_s": 15.78,
+            "rms": 0.18,
+            "energy_dbfs": -14.9,
+            "f0_med_hz": 166.1,
+            "f0_p10_hz": 112.7,
+            "f0_p90_hz": 241.2,
+            "f0_spread_st": 13.18
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "angry_take_3__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_131220_determination/angry_take_3__raw.wav",
+          "metrics": {
+            "dur_s": 15.9,
+            "rms": 0.1793,
+            "energy_dbfs": -14.9,
+            "f0_med_hz": 166.1,
+            "f0_p10_hz": 111.6,
+            "f0_p90_hz": 241.2,
+            "f0_spread_st": 13.34
+          }
+        }
+      ],
+      "elapsed_s": 41.46,
+      "error": null,
+      "timestamp": "2026-08-24T13:18:04.521127"
+    }
+  }
+}

@@ -1,0 +1,29 @@
+{
+  "takes": {
+    "excited_2": {
+      "emotion": "excited",
+      "take_idx": 2,
+      "instruction": "(Excited and energetic tone)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ",
+      "filename": "",
+      "audio_url": "",
+      "metrics": null,
+      "elapsed_s": 2.08,
+      "error": "[WinError 10061] No connection could be made because the target machine actively refused it",
+      "timestamp": "2026-08-21T19:03:08.537516"
+    },
+    "excited_3": {
+      "emotion": "excited",
+      "take_idx": 3,
+      "instruction": "(Excited and energetic tone)",
+      "spoken_text": "คุณเคยสงสัยไหมครับว่า ทำไมสมองของมนุษย์เราถึงจดจำเรื่องราวที่เจ็บปวดได้ยาวนานกว่าเรื่องที่มีความสุข  ในเชิงจิตวิทยาวิวัฒนาการ",
+      "filename": "",
+      "audio_url": "",
+      "metrics": null,
+      "elapsed_s": 2.07,
+      "error": "[WinError 10061] No connection could be made because the target machine actively refused it",
+      "timestamp": "2026-08-21T19:03:10.613219"
+    }
+  },
+  "completed_takes": 0
+}

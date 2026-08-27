@@ -1,0 +1,363 @@
+{
+  "session_id": "bench_20260824_135905_customer",
+  "name": "Emotion Benchmark (20260824_135905)",
+  "created_at": "2026-08-24T13:59:05.891318",
+  "speaker_id": "customer",
+  "text": "โอ้โห! ไม่อยากจะเชื่อเลยว่าเราชนะที่หนึ่ง! This is the best day ever, I'm so thrilled!",
+  "emotions": [
+    "happy",
+    "sad",
+    "angry"
+  ],
+  "repeats": 3,
+  "total_takes": 9,
+  "completed_takes": 5,
+  "params": {
+    "intensity": 3,
+    "cfg_value": 3.5,
+    "inference_timesteps": 10,
+    "lora_mode": "on"
+  },
+  "takes": {
+    "happy_1": {
+      "emotion": "happy",
+      "take_idx": 1,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "โอ้โห! ไม่อยากจะเชื่อเลยว่าเราชนะที่หนึ่ง! This is the best day ever, I'm so thrilled!",
+      "filename": "happy_take_1__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/happy_take_1__emotion_on.wav",
+      "metrics": {
+        "dur_s": 4.82,
+        "rms": 0.2521,
+        "energy_dbfs": -12.0,
+        "f0_med_hz": 241.2,
+        "f0_p10_hz": 188.8,
+        "f0_p90_hz": 310.9,
+        "f0_spread_st": 8.63
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "happy_take_1__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/happy_take_1__emotion_on.wav",
+          "metrics": {
+            "dur_s": 4.82,
+            "rms": 0.2521,
+            "energy_dbfs": -12.0,
+            "f0_med_hz": 241.2,
+            "f0_p10_hz": 188.8,
+            "f0_p90_hz": 310.9,
+            "f0_spread_st": 8.63
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "happy_take_1__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/happy_take_1__cleanup.wav",
+          "metrics": {
+            "dur_s": 4.82,
+            "rms": 0.2556,
+            "energy_dbfs": -11.8,
+            "f0_med_hz": 241.2,
+            "f0_p10_hz": 188.8,
+            "f0_p90_hz": 310.9,
+            "f0_spread_st": 8.63
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "happy_take_1__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/happy_take_1__raw.wav",
+          "metrics": {
+            "dur_s": 5.28,
+            "rms": 0.2551,
+            "energy_dbfs": -11.9,
+            "f0_med_hz": 241.2,
+            "f0_p10_hz": 186.8,
+            "f0_p90_hz": 310.5,
+            "f0_spread_st": 8.8
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 37.6,
+      "error": null,
+      "timestamp": "2026-08-24T13:59:43.493970"
+    },
+    "happy_2": {
+      "emotion": "happy",
+      "take_idx": 2,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "โอ้โห! ไม่อยากจะเชื่อเลยว่าเราชนะที่หนึ่ง! This is the best day ever, I'm so thrilled!",
+      "filename": "happy_take_2__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/happy_take_2__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.34,
+        "rms": 0.2956,
+        "energy_dbfs": -10.6,
+        "f0_med_hz": 240.0,
+        "f0_p10_hz": 175.8,
+        "f0_p90_hz": 341.9,
+        "f0_spread_st": 11.51
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "happy_take_2__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/happy_take_2__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.34,
+            "rms": 0.2956,
+            "energy_dbfs": -10.6,
+            "f0_med_hz": 240.0,
+            "f0_p10_hz": 175.8,
+            "f0_p90_hz": 341.9,
+            "f0_spread_st": 11.51
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "happy_take_2__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/happy_take_2__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.34,
+            "rms": 0.2984,
+            "energy_dbfs": -10.5,
+            "f0_med_hz": 240.0,
+            "f0_p10_hz": 175.8,
+            "f0_p90_hz": 341.9,
+            "f0_spread_st": 11.51
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "happy_take_2__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/happy_take_2__raw.wav",
+          "metrics": {
+            "dur_s": 5.92,
+            "rms": 0.2976,
+            "energy_dbfs": -10.5,
+            "f0_med_hz": 240.0,
+            "f0_p10_hz": 175.8,
+            "f0_p90_hz": 335.7,
+            "f0_spread_st": 11.2
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 45.82,
+      "error": null,
+      "timestamp": "2026-08-24T14:00:29.323298"
+    },
+    "happy_3": {
+      "emotion": "happy",
+      "take_idx": 3,
+      "instruction": "(Extremely joyful and laughing voice)",
+      "spoken_text": "โอ้โห! ไม่อยากจะเชื่อเลยว่าเราชนะที่หนึ่ง! This is the best day ever, I'm so thrilled!",
+      "filename": "happy_take_3__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/happy_take_3__emotion_on.wav",
+      "metrics": {
+        "dur_s": 7.12,
+        "rms": 0.1937,
+        "energy_dbfs": -14.3,
+        "f0_med_hz": 256.7,
+        "f0_p10_hz": 199.3,
+        "f0_p90_hz": 315.8,
+        "f0_spread_st": 7.96
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "happy_take_3__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/happy_take_3__emotion_on.wav",
+          "metrics": {
+            "dur_s": 7.12,
+            "rms": 0.1937,
+            "energy_dbfs": -14.3,
+            "f0_med_hz": 256.7,
+            "f0_p10_hz": 199.3,
+            "f0_p90_hz": 315.8,
+            "f0_spread_st": 7.96
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "happy_take_3__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/happy_take_3__cleanup.wav",
+          "metrics": {
+            "dur_s": 7.12,
+            "rms": 0.1996,
+            "energy_dbfs": -14.0,
+            "f0_med_hz": 256.7,
+            "f0_p10_hz": 199.3,
+            "f0_p90_hz": 315.8,
+            "f0_spread_st": 7.96
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "happy_take_3__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/happy_take_3__raw.wav",
+          "metrics": {
+            "dur_s": 8.32,
+            "rms": 0.1897,
+            "energy_dbfs": -14.4,
+            "f0_med_hz": 256.7,
+            "f0_p10_hz": 198.3,
+            "f0_p90_hz": 316.0,
+            "f0_spread_st": 8.06
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 53.97,
+      "error": null,
+      "timestamp": "2026-08-24T14:01:23.294683"
+    },
+    "sad_1": {
+      "emotion": "sad",
+      "take_idx": 1,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "โอ้โห! ไม่อยากจะเชื่อเลยว่าเราชนะที่หนึ่ง! This is the best day ever, I'm so thrilled!",
+      "filename": "sad_take_1__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/sad_take_1__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.21,
+        "rms": 0.1439,
+        "energy_dbfs": -16.8,
+        "f0_med_hz": 246.2,
+        "f0_p10_hz": 197.5,
+        "f0_p90_hz": 315.8,
+        "f0_spread_st": 8.12
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "sad_take_1__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/sad_take_1__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.21,
+            "rms": 0.1439,
+            "energy_dbfs": -16.8,
+            "f0_med_hz": 246.2,
+            "f0_p10_hz": 197.5,
+            "f0_p90_hz": 315.8,
+            "f0_spread_st": 8.12
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "sad_take_1__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/sad_take_1__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.21,
+            "rms": 0.1741,
+            "energy_dbfs": -15.2,
+            "f0_med_hz": 246.2,
+            "f0_p10_hz": 197.5,
+            "f0_p90_hz": 315.8,
+            "f0_spread_st": 8.12
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "sad_take_1__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/sad_take_1__raw.wav",
+          "metrics": {
+            "dur_s": 6.24,
+            "rms": 0.1656,
+            "energy_dbfs": -15.6,
+            "f0_med_hz": 246.2,
+            "f0_p10_hz": 197.5,
+            "f0_p90_hz": 316.6,
+            "f0_spread_st": 8.17
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 68.17,
+      "error": null,
+      "timestamp": "2026-08-24T14:02:31.469672"
+    },
+    "sad_2": {
+      "emotion": "sad",
+      "take_idx": 2,
+      "instruction": "(Deeply sorrowful and crying voice, trembling)",
+      "spoken_text": "โอ้โห! ไม่อยากจะเชื่อเลยว่าเราชนะที่หนึ่ง! This is the best day ever, I'm so thrilled!",
+      "filename": "sad_take_2__emotion_on.wav",
+      "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/sad_take_2__emotion_on.wav",
+      "metrics": {
+        "dur_s": 5.92,
+        "rms": 0.2312,
+        "energy_dbfs": -12.7,
+        "f0_med_hz": 219.2,
+        "f0_p10_hz": 170.9,
+        "f0_p90_hz": 283.0,
+        "f0_spread_st": 8.73
+      },
+      "variants": [
+        {
+          "id": "emotion_on",
+          "label": "🎚️ เปิดชั้นอารมณ์",
+          "filename": "sad_take_2__emotion_on.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/sad_take_2__emotion_on.wav",
+          "metrics": {
+            "dur_s": 5.92,
+            "rms": 0.2312,
+            "energy_dbfs": -12.7,
+            "f0_med_hz": 219.2,
+            "f0_p10_hz": 170.9,
+            "f0_p90_hz": 283.0,
+            "f0_spread_st": 8.73
+          }
+        },
+        {
+          "id": "cleanup",
+          "label": "🚫 ปิดชั้นอารมณ์",
+          "filename": "sad_take_2__cleanup.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/sad_take_2__cleanup.wav",
+          "metrics": {
+            "dur_s": 5.92,
+            "rms": 0.2777,
+            "energy_dbfs": -11.1,
+            "f0_med_hz": 219.2,
+            "f0_p10_hz": 170.9,
+            "f0_p90_hz": 283.0,
+            "f0_spread_st": 8.73
+          }
+        },
+        {
+          "id": "raw",
+          "label": "🎵 ปิด DSP ทั้งหมด",
+          "filename": "sad_take_2__raw.wav",
+          "audio_url": "/api/benchmark/audio/bench_20260824_135905_customer/sad_take_2__raw.wav",
+          "metrics": {
+            "dur_s": 6.4,
+            "rms": 0.2798,
+            "energy_dbfs": -11.1,
+            "f0_med_hz": 219.7,
+            "f0_p10_hz": 171.1,
+            "f0_p90_hz": 284.0,
+            "f0_spread_st": 8.78
+          }
+        }
+      ],
+      "voice_anchor": "speaker",
+      "elapsed_s": 63.46,
+      "error": null,
+      "timestamp": "2026-08-24T14:03:34.938530"
+    }
+  }
+}
