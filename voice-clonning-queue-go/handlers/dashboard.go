@@ -239,6 +239,28 @@ const dashboardHTML = `<!doctype html>
     }
     .lane-interactive { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
     .lane-batch { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+
+    /* Action buttons */
+    .btn-cancel {
+      background: rgba(239, 68, 68, 0.15);
+      color: #f87171;
+      border: 1px solid rgba(239, 68, 68, 0.35);
+      padding: 3px 8px;
+      border-radius: 6px;
+      font-size: 11px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: all 0.15s ease;
+      font-family: 'Plus Jakarta Sans', 'Noto Sans Thai', system-ui, sans-serif;
+    }
+    .btn-cancel:hover {
+      background: rgba(239, 68, 68, 0.35);
+      border-color: #ef4444;
+      color: #ffffff;
+    }
+    .btn-cancel:active {
+      transform: scale(0.96);
+    }
   </style>
 </head>
 <body>
@@ -309,11 +331,12 @@ const dashboardHTML = `<!doctype html>
           <th>Waited</th>
           <th>Ran Time</th>
           <th>Created</th>
+          <th>Action</th>
         </tr>
       </thead>
       <tbody id="jobs-tbody">
         <tr>
-          <td colspan="8" style="text-align: center; color: var(--text-dim); padding: 24px;">No jobs in queue history yet.</td>
+          <td colspan="9" style="text-align: center; color: var(--text-dim); padding: 24px;">No jobs in queue history yet.</td>
         </tr>
       </tbody>
     </table>
@@ -350,7 +373,7 @@ const dashboardHTML = `<!doctype html>
         // Update Table
         var tbody = document.getElementById('jobs-tbody');
         if (!data.jobs || data.jobs.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="8" style="text-align:center; color: var(--text-dim); padding: 24px;">No jobs in queue history yet.</td></tr>';
+          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color: var(--text-dim); padding: 24px;">No jobs in queue history yet.</td></tr>';
         } else {
           var rowsHtml = '';
           for (var i = 0; i < data.jobs.length; i++) {
@@ -362,6 +385,10 @@ const dashboardHTML = `<!doctype html>
             var created = new Date(j.created * 1000).toLocaleTimeString();
             var totalChunks = j.total_chunks || (j.chunks ? j.chunks.length : 1);
             var clientName = j.client || '-';
+            var actionHtml = '-';
+            if (j.status === 'queued') {
+              actionHtml = '<button class="btn-cancel" onclick="cancelJob(\'' + j.job_id + '\')">✕ Cancel</button>';
+            }
 
             rowsHtml += '<tr>' +
               '<td><span class="pill ' + statusClass + '">' + j.status + '</span></td>' +
@@ -372,6 +399,7 @@ const dashboardHTML = `<!doctype html>
               '<td class="mono">' + waited + '</td>' +
               '<td class="mono">' + ran + '</td>' +
               '<td style="color: var(--text-dim);">' + created + '</td>' +
+              '<td>' + actionHtml + '</td>' +
               '</tr>';
           }
           tbody.innerHTML = rowsHtml;
@@ -380,6 +408,24 @@ const dashboardHTML = `<!doctype html>
         document.getElementById('last-sync').innerText = 'Live Auto-Sync: ' + new Date().toLocaleTimeString();
       } catch (err) {
         console.error('Failed to sync queue dashboard:', err);
+      }
+    }
+
+    async function cancelJob(jobId) {
+      if (!confirm('ยืนยันยกเลิก Task: ' + jobId + ' ?')) return;
+      try {
+        const res = await fetch('/v2/jobs/' + encodeURIComponent(jobId), {
+          method: 'DELETE'
+        });
+        const data = await res.json();
+        if (res.ok && data.cancelled) {
+          updateDashboard();
+        } else {
+          alert(data.error || 'ไม่สามารถยกเลิก Task ได้ (อาจกำลังทำงานหรือเสร็จไปแล้ว)');
+        }
+      } catch (err) {
+        console.error('Failed to cancel job:', err);
+        alert('เกิดข้อผิดพลาดในการเชื่อมต่อ');
       }
     }
 
