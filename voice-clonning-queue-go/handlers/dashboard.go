@@ -695,7 +695,7 @@ const dashboardHTML = `<!doctype html>
 
     async function updateDashboard() {
       try {
-        const res = await fetch('/v2/jobs');
+        const res = await fetch('/v2/jobs?hide_internal=1');
         if (!res.ok) return;
         const data = await res.json();
 

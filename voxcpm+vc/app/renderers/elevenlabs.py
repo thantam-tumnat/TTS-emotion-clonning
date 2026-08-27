@@ -14,6 +14,7 @@ ELEVENLABS_TAG_MAP = {
     Tone.SARCASTIC: "sarcastic",
     Tone.SCARED: "scared",
     Tone.TIRED: "tired",
+    Tone.FRUSTRATED: "frustrated",
 }
 
 

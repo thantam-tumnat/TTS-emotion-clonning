@@ -65,6 +65,84 @@ func (q *PriorityQueue) Submit(job *models.RenderJob) {
 	q.cond.Signal()
 }
 
+// SubmitExternal registers a visibility-only job that the GPU worker never runs. It
+// lands in the jobs map (so the dashboard lists it) but not in the waiting line, and
+// the worker is not signalled — the owner drives its status through UpdateJob instead.
+func (q *PriorityQueue) SubmitExternal(job *models.RenderJob) {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	job.External = true
+	if job.Status == "" {
+		job.Status = models.StatusQueued
+	}
+	q.jobs[job.JobID] = job
+
+	if len(q.jobs) > MaxHistory {
+		q.pruneOldJobs()
+	}
+}
+
+// UpdateJob applies an external status/progress update (PATCH). It is the only way an
+// External job advances: queued -> running stamps Started, and any terminal status
+// stamps Finished and releases anyone waiting on DoneChan. Returns false for an
+// unknown job.
+func (q *PriorityQueue) UpdateJob(jobID string, upd models.JobUpdate) bool {
+	q.mu.Lock()
+	defer q.mu.Unlock()
+
+	job, exists := q.jobs[jobID]
+	if !exists {
+		return false
+	}
+
+	now := float64(time.Now().UnixNano()) / 1e9
+
+	if upd.Chunks != nil {
+		job.Chunks = *upd.Chunks
+		job.TotalChunks = len(*upd.Chunks)
+	}
+	if upd.TotalChunks != nil {
+		job.TotalChunks = *upd.TotalChunks
+	}
+	if upd.ChunksDone != nil {
+		job.ChunksDone = *upd.ChunksDone
+	}
+	if upd.Result != nil {
+		job.Result = *upd.Result
+	}
+	if upd.Error != nil {
+		job.Error = upd.Error
+	}
+
+	if upd.Status != nil {
+		st := models.JobStatus(*upd.Status)
+		switch st {
+		case models.StatusRunning:
+			if job.Started == nil {
+				job.Started = &now
+			}
+			job.Status = st
+		case models.StatusCompleted, models.StatusFailed, models.StatusCancelled:
+			job.Status = st
+			job.Finished = &now
+			if st == models.StatusCompleted {
+				job.ChunksDone = job.TotalChunks
+			}
+			// Release waiters exactly once, even on a repeated terminal PATCH.
+			select {
+			case <-job.DoneChan:
+			default:
+				close(job.DoneChan)
+			}
+		default:
+			job.Status = st
+		}
+	}
+
+	return true
+}
+
 // NextJob blocks until a job is available, then returns the one that has waited
 // longest. Strict FIFO — no lane may overtake another.
 func (q *PriorityQueue) NextJob() *models.RenderJob {
@@ -197,7 +275,8 @@ func (q *PriorityQueue) GetJob(jobID string) (*models.RenderJob, *int) {
 		return nil, nil
 	}
 
-	if job.Status != models.StatusQueued {
+	// External jobs are not in the GPU waiting line, so a queue position is meaningless.
+	if job.Status != models.StatusQueued || job.External {
 		return job, nil
 	}
 

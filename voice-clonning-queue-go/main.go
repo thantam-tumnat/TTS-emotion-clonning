@@ -65,10 +65,12 @@ func main() {
 
 	// 5. Job Queue Routes (Handled natively by Go)
 	app.Post("/v2/jobs/render", jobsH.Render)
+	app.Post("/v2/jobs/external", jobsH.SubmitExternal)
 	app.Get("/v2/jobs", jobsH.List)
 	app.Get("/v2/jobs/:job_id", jobsH.GetJob)
 	app.Get("/v2/jobs/:job_id/result", jobsH.GetResult)
 	app.Get("/v2/jobs/:job_id/audio", jobsH.GetAudio)
+	app.Patch("/v2/jobs/:job_id", jobsH.UpdateJob)
 	app.Delete("/v2/jobs/:job_id", jobsH.Cancel)
 
 	// 6. Voice, Speaker & Health Routes (Proxied to Python GPU :8021)

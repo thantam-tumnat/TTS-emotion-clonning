@@ -14,6 +14,14 @@ class Tone(str, Enum):
     SARCASTIC = "sarcastic"
     SCARED = "scared"
     TIRED = "tired"
+    # A recorded donor emotion in its own right (every donor set has a frustrated
+    # clip), so it earns a first-class tone -- unlike the other angry-adjacent styles
+    # it must not fold into ANGRY, or a hand-written [frustrated] tag would clone the
+    # shouting donor instead of the tense one. The LLM tool schema (app/prompts.py)
+    # deliberately keeps its own 10-value list and does NOT list this one: auto-annotate
+    # still reaches the frustrated donor through nervous/scared/sarcastic (EMOTION_MAP),
+    # so this member exists for the hand-tag path.
+    FRUSTRATED = "frustrated"
 
 
 class Segment(BaseModel):

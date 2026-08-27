@@ -20,7 +20,13 @@ INVISIBLE_CHARS = [
     "\ufeff",  # ZERO WIDTH NO-BREAK SPACE / BOM
 ]
 INVISIBLE_PATTERN = re.compile("|".join(re.escape(c) for c in INVISIBLE_CHARS))
-MULTI_SPACE_PATTERN = re.compile(r"[ \t\u00a0\u3000]+")
+# Any run of horizontal *or* vertical whitespace collapses to a single space. The
+# vertical part (newlines, CR, form/vertical feed) matters: by the time this runs the
+# text has already been split into pieces and each line break's pause was captured as a
+# paragraph seam, so a newline still sitting inside a piece is stray formatting. Left in,
+# it reaches VoxCPM2 mid-utterance and the continuation-mode engine drops everything
+# after it -- the whole tail of a multi-line chunk goes unspoken.
+MULTI_SPACE_PATTERN = re.compile(r"[ \t\r\n\f\v\u00a0\u3000]+")
 REPEATED_CHARS_PATTERN = re.compile(r"([^\u0e30-\u0e4e\s])\1{2,}")
 
 
@@ -29,7 +35,7 @@ def normalize_thai_text(text: str) -> str:
     Encoding-only Thai text hygiene:
     - Unicode NFC normalization
     - Stripping zero-width, BOM, bidi, and invisible control codes
-    - Normalizing whitespace & collapsing spaces
+    - Normalizing whitespace & collapsing spaces (newlines included -> single space)
     - Collapsing 3+ repeated characters to 2
     - PyThaiNLP vowel/tone-mark order hygiene
     """

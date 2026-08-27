@@ -336,6 +336,17 @@ VOXCPM_INSTRUCTION_MAP = {
         2: "(Angry, firm and aggressive tone)",
         3: "(Furious and yelling tone, very loud and harsh)",
     },
+    # Frustrated is tense and clipped, not aggressive -- the exasperated register, a
+    # step short of shouting. Wording follows the established short-descriptive style
+    # but has NOT been through tools/instruction_leak_audit.py; audit before trusting
+    # it in the direct-emotion path. (In the donor/VC pipeline the parenthetical is
+    # stripped and the frustrated clip carries the emotion, so this only feeds the
+    # sibling studio and /speak preview.)
+    Tone.FRUSTRATED: {
+        1: "(Mildly frustrated voice, slightly tense)",
+        2: "(Frustrated and exasperated voice, tense and clipped)",
+        3: "(Deeply frustrated and exasperated voice, strained and sharp)",
+    },
     Tone.EXCITED: {
         1: "(Eager voice)",
         2: "(Excited and energetic tone)",
@@ -400,8 +411,16 @@ STYLE_VOCABULARY = {
     "normal": (None, Tone.NEUTRAL), "plain": (None, Tone.NEUTRAL),
     "flat": (None, Tone.NEUTRAL),
 
+    # -- frustrated: its own donor clip, so it must not fold into ANGRY ----
+    # These land on the frustrated donor (via Tone.FRUSTRATED -> EMOTION_MAP). "annoyed"
+    # and Thai "หงุดหงิด" moved here from ANGRY: they mean irritation/exasperation, which
+    # the tense frustrated clip carries far better than the shouting angry one.
+    "frustrated": ("(Frustrated and exasperated voice, tense and clipped)", Tone.FRUSTRATED),
+    "exasperated": ("(Exasperated and fed-up voice, sharp and strained)", Tone.FRUSTRATED),
+    "fed up": ("(Fed-up and frustrated voice, tense)", Tone.FRUSTRATED),
+
     # -- distinct styles with their own direction --------------------------
-    "annoyed": ("(Annoyed and irritated voice, clipped delivery)", Tone.ANGRY),
+    "annoyed": ("(Annoyed and irritated voice, clipped delivery)", Tone.FRUSTRATED),
     "appalled": ("(Appalled and shocked voice, sharp disbelief)", Tone.ANGRY),
     "disappointed": ("(Disappointed voice, quiet and let down)", Tone.SAD),
     "crying": ("(Crying voice, broken and tearful, trembling)", Tone.SAD),
@@ -435,7 +454,11 @@ STYLE_VOCABULARY = {
     "ปกติ": (None, Tone.NEUTRAL), "เป็นกลาง": (None, Tone.NEUTRAL),
     "เศร้า": (None, Tone.SAD), "เสียใจ": (None, Tone.SAD), "หม่นหมอง": (None, Tone.SAD),
     "ดีใจ": (None, Tone.HAPPY), "ร่าเริง": (None, Tone.HAPPY), "มีความสุข": (None, Tone.HAPPY), "สดใส": (None, Tone.HAPPY),
-    "โกรธ": (None, Tone.ANGRY), "โมโห": (None, Tone.ANGRY), "ไม่พอใจ": (None, Tone.ANGRY), "หงุดหงิด": ("(Annoyed and irritated voice, clipped delivery)", Tone.ANGRY),
+    "โกรธ": (None, Tone.ANGRY), "โมโห": (None, Tone.ANGRY), "ไม่พอใจ": (None, Tone.ANGRY),
+    "หงุดหงิด": ("(Frustrated and exasperated voice, tense and clipped)", Tone.FRUSTRATED),
+    "คับข้องใจ": ("(Frustrated and exasperated voice, tense and clipped)", Tone.FRUSTRATED),
+    "อึดอัด": ("(Frustrated and constrained voice, tense)", Tone.FRUSTRATED),
+    "รำคาญ": ("(Annoyed and irritated voice, clipped delivery)", Tone.FRUSTRATED),
     "ตื่นเต้น": (None, Tone.EXCITED), "กระตือรือร้น": (None, Tone.EXCITED),
     "สงบ": (None, Tone.CALM), "ผ่อนคลาย": (None, Tone.CALM), "นุ่มนวล": (None, Tone.CALM), "อ่อนโยน": (None, Tone.CALM),
     "ประหม่า": (None, Tone.NERVOUS), "กังวล": (None, Tone.NERVOUS), "ลังเล": (None, Tone.NERVOUS), "ระแวง": (None, Tone.NERVOUS),

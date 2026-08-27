@@ -591,12 +591,16 @@ class VoxCPMVCService:
         inference_timesteps: int = 10,
         lora_mode: Optional[str] = "on",
         raw_prompt: Optional[str] = None,
+        client: Optional[str] = None,
         pre_vc_out: Optional[List[Tuple[Any, int]]] = None,
         debug_out: Optional[List[dict]] = None,
     ) -> Tuple[List[Any], int]:
         """Generate every chunk and convert it to the target voice.
 
-        Returns assembler-ready ``Chunk``s at SeedVC's rate.
+        Returns assembler-ready ``Chunk``s at SeedVC's rate. ``client`` labels the
+        generation jobs on the queue gateway; callers that already show their own row
+        on the dashboard (the webhook meta job) pass a ``*-internal`` name so the raw
+        per-emotion jobs are collapsed out of the admin view.
         """
         import numpy as np
         import soundfile as sf
@@ -643,7 +647,8 @@ class VoxCPMVCService:
             # it to the same shape so the rest of this method does not care which
             # engine it got.
             def batch(pieces, *, prompt_cache=None, cfg_value=2.5,
-                      inference_timesteps=10, lora_mode="on", raw_prompt=None):
+                      inference_timesteps=10, lora_mode="on", raw_prompt=None,
+                      client=None):
                 rate = int(getattr(synth, "sample_rate", 48000) or 48000)
                 return [
                     synth.synth(
@@ -697,6 +702,7 @@ class VoxCPMVCService:
                     inference_timesteps=inference_timesteps,
                     lora_mode=lora_mode,
                     raw_prompt=raw_prompt or (" ".join(texts) if texts else None),
+                    client=client,
                 )
                 if len(audios) != len(indices):
                     raise RuntimeError(
@@ -801,6 +807,7 @@ class VoxCPMVCService:
         post_process_params: Optional[dict] = None,
         lora_mode: Optional[str] = "on",
         raw_prompt: Optional[str] = None,
+        client: Optional[str] = None,
         pre_vc_out: Optional[List[Tuple[Any, int]]] = None,
         debug_out: Optional[List[dict]] = None,
     ) -> bytes:
@@ -822,6 +829,7 @@ class VoxCPMVCService:
             inference_timesteps=inference_timesteps,
             lora_mode=lora_mode,
             raw_prompt=raw_prompt,
+            client=client,
             pre_vc_out=pre_vc_out,
             debug_out=debug_out,
         )

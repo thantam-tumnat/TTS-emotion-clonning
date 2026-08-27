@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"sort"
 	"strconv"
+	"strings"
 	"time"
 
 	"github.com/gofiber/fiber/v2"
@@ -11,6 +12,13 @@ import (
 	"voice-cloning-queue/models"
 	"voice-cloning-queue/queue"
 )
+
+// isInternal reports whether a job is an implementation-detail render job that the
+// admin dashboard hides (e.g. the per-emotion generations behind a :8013 meta job).
+// The convention is a client name ending in "-internal".
+func isInternal(j *models.RenderJob) bool {
+	return strings.HasSuffix(j.Client, "-internal")
+}
 
 // JobsHandler handles all /v2/jobs routes.
 type JobsHandler struct {
@@ -92,10 +100,36 @@ func (h *JobsHandler) List(c *fiber.Ctx) error {
 	if limit <= 0 {
 		limit = 100
 	}
+	// hide_internal collapses the view to one row per upstream request: the meta jobs
+	// stay, the per-emotion render jobs behind them drop out. Counts and the running
+	// banner are recomputed to match, so the numbers agree with the rows shown.
+	hideInternal := c.Query("hide_internal", "") != ""
 
 	allJobs := h.q.ListJobs()
 	counts, waiting, running := h.q.GetStats()
 	positions := h.q.GetPositions()
+
+	if hideInternal {
+		counts = map[string]int{}
+		waiting = map[string]int{"interactive": 0, "batch": 0}
+		running = nil
+		for _, j := range allJobs {
+			if isInternal(j) {
+				continue
+			}
+			counts[string(j.Status)]++
+			if j.Status == models.StatusQueued {
+				if j.Lane == "interactive" {
+					waiting["interactive"]++
+				} else {
+					waiting["batch"]++
+				}
+			}
+			if j.Status == models.StatusRunning && running == nil {
+				running = j
+			}
+		}
+	}
 
 	// Sort by created desc
 	sort.Slice(allJobs, func(i, j int) bool {
@@ -104,6 +138,9 @@ func (h *JobsHandler) List(c *fiber.Ctx) error {
 
 	filtered := make([]*models.RenderJob, 0)
 	for _, j := range allJobs {
+		if hideInternal && isInternal(j) {
+			continue
+		}
 		if statusFilter == "" || string(j.Status) == statusFilter {
 			filtered = append(filtered, j)
 		}
@@ -127,13 +164,61 @@ func (h *JobsHandler) List(c *fiber.Ctx) error {
 		runningDict = running.AsDict(nil)
 	}
 
+	total := len(allJobs)
+	if hideInternal {
+		total = 0
+		for _, j := range allJobs {
+			if !isInternal(j) {
+				total++
+			}
+		}
+	}
+
 	return c.JSON(fiber.Map{
 		"counts":  counts,
 		"running": runningDict,
 		"waiting": waiting,
-		"total":   len(allJobs),
+		"total":   total,
 		"jobs":    jobDicts,
 	})
+}
+
+// SubmitExternal handles POST /v2/jobs/external — it registers a visibility-only meta
+// job that the GPU worker never runs, so an upstream pipeline (the :8013 studio) can
+// show its whole backlog here and drive each row's status with PATCH as it works.
+func (h *JobsHandler) SubmitExternal(c *fiber.Ctx) error {
+	var req models.RenderRequest
+	if err := c.BodyParser(&req); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": fmt.Sprintf("invalid JSON payload: %v", err)})
+	}
+
+	jobID := h.q.GenerateJobID()
+	if req.JobID != nil && *req.JobID != "" {
+		jobID = *req.JobID
+	}
+
+	job := models.NewRenderJob(req, jobID)
+	h.q.SubmitExternal(job)
+
+	return c.Status(fiber.StatusAccepted).JSON(job.AsDict(nil))
+}
+
+// UpdateJob handles PATCH /v2/jobs/:job_id — an external status/progress update from
+// the job's owner (see SubmitExternal). Every field is optional.
+func (h *JobsHandler) UpdateJob(c *fiber.Ctx) error {
+	jobID := c.Params("job_id")
+
+	var upd models.JobUpdate
+	if err := c.BodyParser(&upd); err != nil {
+		return c.Status(fiber.StatusBadRequest).JSON(fiber.Map{"error": fmt.Sprintf("invalid JSON payload: %v", err)})
+	}
+
+	if !h.q.UpdateJob(jobID, upd) {
+		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "unknown job"})
+	}
+
+	job, pos := h.q.GetJob(jobID)
+	return c.JSON(job.AsDict(pos))
 }
 
 // GetJob handles GET /v2/jobs/:job_id.

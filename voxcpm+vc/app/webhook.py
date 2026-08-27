@@ -53,6 +53,48 @@ router = APIRouter()
 
 WORK_ROOT = Path(settings.webhook_work_dir)
 
+# The Go queue gateway (:8020). Every accepted webhook request is mirrored there as a
+# visibility-only "meta" job the instant it arrives, so the admin dashboard shows the
+# whole backlog rather than only the one job this studio happens to be working. The
+# real per-emotion generations still flow through the same gateway, tagged with the
+# *-internal client below so the dashboard collapses them behind their meta row.
+QUEUE_BASE_URL = settings.voxcpm_service_url.rstrip("/")
+META_LANE = "batch"
+META_CLIENT = "voxcpm-vc"
+INTERNAL_CLIENT = "voxcpm-vc-internal"
+
+
+async def _meta_register(job: "Job") -> None:
+    """Register this request's row on the queue gateway at accept time.
+
+    Best-effort: a gateway that is down or slow must never block accepting the job or
+    running the pipeline — the dashboard is a view, not the source of truth.
+    """
+    payload = {
+        "job_id": job.queue_id,
+        "raw_prompt": job.prompt,
+        "lane": META_LANE,
+        "client": META_CLIENT,
+    }
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            resp = await client.post(f"{QUEUE_BASE_URL}/v2/jobs/external", json=payload)
+        job.meta_registered = resp.status_code < 400
+    except Exception as exc:                                          # noqa: BLE001
+        print(f"[{job.queue_id}] meta register failed (dashboard only): {exc}")
+
+
+async def _meta_patch(job: "Job", **fields: object) -> None:
+    """Advance this request's dashboard row (status/chunks/result). No-op when the row
+    was never registered; best-effort so a dashboard hiccup can't fail synthesis."""
+    if not job.meta_registered:
+        return
+    try:
+        async with httpx.AsyncClient(timeout=5.0) as client:
+            await client.patch(f"{QUEUE_BASE_URL}/v2/jobs/{job.queue_id}", json=fields)
+    except Exception as exc:                                          # noqa: BLE001
+        print(f"[{job.queue_id}] meta patch failed (dashboard only): {exc}")
+
 
 # ---------------------------------------------------------------------------
 # Request / job model  (same wire shape the :8010 webhook receives from n8n)
@@ -99,6 +141,9 @@ class Job:
     created: float = field(default_factory=time.time)
     started: Optional[float] = None
     finished: Optional[float] = None
+    # True once this job's visibility-only row is registered on the queue gateway, so
+    # progress PATCHes know there is something to update (see _meta_register).
+    meta_registered: bool = False
 
     def as_dict(self, position: Optional[int] = None) -> dict:
         now = time.time()
@@ -171,6 +216,7 @@ async def _run_job(job: Job) -> None:
     job.status = "running"
     job.started = time.time()
     _state["running"] = job.job_id
+    await _meta_patch(job, status="running")
 
     try:
         work.mkdir(parents=True, exist_ok=True)
@@ -185,6 +231,9 @@ async def _run_job(job: Job) -> None:
         if not any(p.strip() for p in job.parts):
             raise RuntimeError("prompt is empty after normalize")
 
+        # Publish the planned chunks onto the dashboard row now that they exist.
+        await _meta_patch(job, chunks=list(job.parts), total_chunks=len(job.parts))
+
         # Generation is blocking (HTTP to the GPU service + SeedVC), so keep it off
         # the event loop or the accept endpoint stalls behind it.
         debug: List[dict] = []
@@ -197,6 +246,7 @@ async def _run_job(job: Job) -> None:
             donor_set=job.donor_set,
             gender=job.gender,
             raw_prompt=job.prompt,
+            client=INTERNAL_CLIENT,
             debug_out=debug,
         )
         # Keep the pinned/random pick; if none was resolvable up front, record what
@@ -210,6 +260,10 @@ async def _run_job(job: Job) -> None:
 
         job.file_url = await _upload(out)
         job.status = "completed"
+        # Mark the dashboard row done only now — after generate + SeedVC + assemble +
+        # upload — so "completed" there means the whole take is delivered, not just that
+        # the GPU generation finished.
+        await _meta_patch(job, status="completed", result={"file_url": job.file_url})
         await _post_callback(job.callback_url, job, error=None)
         print(f"[{job.queue_id}] done -> {job.file_url}")
 
@@ -217,6 +271,7 @@ async def _run_job(job: Job) -> None:
         job.status = "failed"
         job.error = str(exc)
         traceback.print_exc()
+        await _meta_patch(job, status="failed", error=job.error)
         try:
             await _post_callback(job.callback_url, job, error=job.error)
         except Exception as cb_exc:                                  # noqa: BLE001
@@ -382,6 +437,9 @@ async def _accept(body: WebhookBody) -> JSONResponse:
                 del jobs[jid]
 
     await _state["queue"].put(job)
+    # Mirror the request onto the queue dashboard immediately, so the admin sees the
+    # full backlog now rather than only when this studio's serial worker reaches it.
+    await _meta_register(job)
     print(f"[{queue_id}] queued — voice={job.voice_id or 'auto'}, donor={donor_set or 'auto'}")
     return JSONResponse({"status": "success", "job_id": job.job_id})
 

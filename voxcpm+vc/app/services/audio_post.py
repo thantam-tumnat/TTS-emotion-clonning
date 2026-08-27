@@ -35,6 +35,7 @@ TONE_ENERGY_DB = {
     "excited": 2.5,
     "nervous": -0.5,
     "sarcastic": -0.5,
+    "frustrated": 1.5,   # placed by family: tense, louder than neutral, below angry
 }
 
 # Duration relative to a neutral read of the same text. Same provenance.
@@ -50,6 +51,7 @@ TONE_DURATION_RATIO = {
     "excited": 0.90,
     "nervous": 1.00,
     "sarcastic": 1.05,
+    "frustrated": 0.97,  # placed by family: clipped, a touch quicker than neutral
 }
 
 # The reference's four takes sit 0.95-1.44 s apart, but they are four independent

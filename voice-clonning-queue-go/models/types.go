@@ -68,6 +68,21 @@ type RenderJob struct {
 	Started     *float64               `json:"started,omitempty"`
 	Finished    *float64               `json:"finished,omitempty"`
 	DoneChan    chan struct{}          `json:"-"`
+	// External marks a visibility-only job the GPU worker never runs. A caller (the
+	// :8013 studio) owns its whole lifecycle and drives status via PATCH, so it shows
+	// up on the dashboard as one row per upstream request without competing for the GPU.
+	External bool `json:"external,omitempty"`
+}
+
+// JobUpdate is the PATCH body for /v2/jobs/:job_id — every field optional, so a caller
+// can advance status, publish the planned chunks, or attach a result independently.
+type JobUpdate struct {
+	Status      *string                 `json:"status,omitempty"`
+	ChunksDone  *int                    `json:"chunks_done,omitempty"`
+	TotalChunks *int                    `json:"total_chunks,omitempty"`
+	Chunks      *[]string               `json:"chunks,omitempty"`
+	Error       *string                 `json:"error,omitempty"`
+	Result      *map[string]interface{} `json:"result,omitempty"`
 }
 
 // NewRenderJob creates an initialized RenderJob.
@@ -161,6 +176,7 @@ func (j *RenderJob) AsDict(position *int) map[string]interface{} {
 		"waited_s":     waited,
 		"ran_s":        ran,
 		"has_audio":    hasAudio,
+		"external":     j.External,
 	}
 
 	if j.Status == StatusQueued && position != nil {

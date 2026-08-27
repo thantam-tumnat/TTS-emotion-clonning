@@ -13,6 +13,7 @@ GEMINI_TONE_DESCRIPTIONS = {
     Tone.SARCASTIC: "ประชด แดกดัน",
     Tone.SCARED: "หวาดกลัว ตื่นตระหนก",
     Tone.TIRED: "เหนื่อยล้า อ่อนเพลีย",
+    Tone.FRUSTRATED: "หงุดหงิด คับข้องใจ อึดอัด",
 }
 
 INTENSITY_MODIFIERS_THAI = {

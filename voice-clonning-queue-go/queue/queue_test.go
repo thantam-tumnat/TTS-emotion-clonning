@@ -144,3 +144,72 @@ func TestPriorityQueue_RawPrompt(t *testing.T) {
 		t.Errorf("expected as_dict raw_prompt %q, got %v", raw, dict["raw_prompt"])
 	}
 }
+
+func TestPriorityQueue_ExternalJobLifecycle(t *testing.T) {
+	q := NewPriorityQueue()
+	defer q.Close()
+
+	req := models.RenderRequest{
+		JobID:     strPtr("meta_1"),
+		RawPrompt: "สวัสดีครับ",
+		Lane:      "batch",
+		Client:    "voxcpm-vc",
+	}
+	job := models.NewRenderJob(req, "meta_1")
+	q.SubmitExternal(job)
+
+	// Visible in the map, but NOT in the GPU waiting line: NextJob must not see it.
+	retrieved, pos := q.GetJob("meta_1")
+	if retrieved == nil {
+		t.Fatalf("expected meta_1 to exist")
+	}
+	if !retrieved.External {
+		t.Errorf("expected External=true")
+	}
+	if pos != nil {
+		t.Errorf("external job should have no queue position, got %d", *pos)
+	}
+	if len(q.waiting) != 0 {
+		t.Fatalf("external job must not enter the waiting line, got %d waiting", len(q.waiting))
+	}
+
+	// PATCH: publish chunks, then advance running -> completed.
+	chunks := []string{"สวัสดี", "ครับ"}
+	if !q.UpdateJob("meta_1", models.JobUpdate{Chunks: &chunks}) {
+		t.Fatalf("UpdateJob(chunks) returned false")
+	}
+	retrieved, _ = q.GetJob("meta_1")
+	if retrieved.TotalChunks != 2 {
+		t.Errorf("expected TotalChunks 2, got %d", retrieved.TotalChunks)
+	}
+
+	running := "running"
+	q.UpdateJob("meta_1", models.JobUpdate{Status: &running})
+	retrieved, _ = q.GetJob("meta_1")
+	if retrieved.Status != models.StatusRunning || retrieved.Started == nil {
+		t.Errorf("expected running with Started stamped, got %s started=%v", retrieved.Status, retrieved.Started)
+	}
+
+	completed := "completed"
+	result := map[string]interface{}{"file_url": "https://x/y.wav"}
+	q.UpdateJob("meta_1", models.JobUpdate{Status: &completed, Result: &result})
+	retrieved, _ = q.GetJob("meta_1")
+	if retrieved.Status != models.StatusCompleted || retrieved.Finished == nil {
+		t.Errorf("expected completed with Finished stamped")
+	}
+	if retrieved.ChunksDone != retrieved.TotalChunks {
+		t.Errorf("expected ChunksDone == TotalChunks on completion")
+	}
+	if retrieved.Result["file_url"] != "https://x/y.wav" {
+		t.Errorf("expected file_url in result, got %v", retrieved.Result["file_url"])
+	}
+
+	// DoneChan must be closed exactly once — a repeated terminal PATCH must not panic.
+	q.UpdateJob("meta_1", models.JobUpdate{Status: &completed})
+
+	if q.UpdateJob("nope", models.JobUpdate{Status: &running}) {
+		t.Errorf("UpdateJob on unknown id should return false")
+	}
+}
+
+func strPtr(s string) *string { return &s }
