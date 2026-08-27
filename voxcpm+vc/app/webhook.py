@@ -27,6 +27,7 @@ order — the same shape as :8010, which also gives callers backpressure for fre
 from __future__ import annotations
 
 import asyncio
+import random
 import time
 import traceback
 import uuid
@@ -69,6 +70,12 @@ class WebhookBody(BaseModel):
     audio_speed: float = 1.0
     country_code: str = "th"
     callback_url: str = ""
+    # Extensions beyond the :8010 body (both optional, so the original n8n payload
+    # still validates). `sex` picks which donor gender clones the emotion; `donor_set`
+    # pins one specific actor. Omit donor_set and a random set of the chosen sex is
+    # used per job, so takes vary instead of always cloning the same actor.
+    sex: str = ""
+    donor_set: str = ""
 
 
 @dataclass
@@ -84,7 +91,8 @@ class Job:
     status: str = "queued"              # queued | running | completed | failed
     error: Optional[str] = None
     file_url: Optional[str] = None
-    donor_set: Optional[str] = None
+    donor_set: Optional[str] = None     # the actor whose emotion is cloned
+    gender: Optional[str] = None        # sex used to pick/validate the donor
     created: float = field(default_factory=time.time)
     started: Optional[float] = None
     finished: Optional[float] = None
@@ -106,6 +114,7 @@ class Job:
             "chunks_total": len(self.parts),
             "tones": self.tones,
             "donor_set": self.donor_set,
+            "sex": self.gender,
             "position": position,
             "created": time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(self.created)),
             "created_ts": self.created,
@@ -172,9 +181,13 @@ async def _run_job(job: Job) -> None:
             speaker_id=(job.voice_id or None),
             tones=job.tones,
             breaks=job.breaks,
+            donor_set=job.donor_set,
+            gender=job.gender,
             debug_out=debug,
         )
-        job.donor_set = debug[0]["donor_set"] if debug else None
+        # Keep the pinned/random pick; if none was resolvable up front, record what
+        # the synth actually fell back to.
+        job.donor_set = job.donor_set or (debug[0]["donor_set"] if debug else None)
 
         out = work / f"{job.queue_id}.wav"
         out.write_bytes(wav_bytes)
@@ -257,6 +270,29 @@ def _cleanup(work_dir: Path) -> None:
 # importing app.main, which would be a circular import)
 # ---------------------------------------------------------------------------
 
+def _pick_donor_set(sex: str, donor_set: str):
+    """Choose the donor whose emotion is cloned, returning (donor_set, gender).
+
+    An explicit ``donor_set`` is pinned as-is (the synth validates it). Otherwise a
+    random complete set of the requested sex is drawn, so successive jobs vary the
+    actor instead of always cloning the top-ranked one. ``sex`` defaults to the
+    configured gender when blank. When no set matches, donor_set comes back None and
+    the gender is handed on so the synth can resolve or raise a clear error.
+    """
+    ds = donor_set.strip()
+    if ds:
+        return ds, None
+    g = (sex or settings.default_gender or "female").strip().lower()
+    want = "male" if g.startswith("m") else "female"
+    sets = voxcpm_vc_service.list_donor_sets()
+    pool = [s["id"] for s in sets if s.get("gender") == want and s.get("complete")]
+    if not pool:
+        pool = [s["id"] for s in sets if s.get("gender") == want]
+    if pool:
+        return random.choice(pool), want
+    return None, want
+
+
 def _plan_chunks(text: str):
     """Split into per-emotion chunks. Hand-written style tags win; otherwise the
     text is auto-annotated so each chunk carries the tone that selects its donor."""
@@ -298,6 +334,10 @@ async def _accept(body: WebhookBody) -> JSONResponse:
             status_code=400,
         )
 
+    # Pick the donor now (not in the worker) so the choice is fixed when the job is
+    # queued and visible on the dashboard, and a random pick is stable across retries.
+    donor_set, gender = await asyncio.to_thread(_pick_donor_set, body.sex, body.donor_set)
+
     job = Job(
         job_id=body.job_id or queue_id,
         queue_id=queue_id,
@@ -307,6 +347,8 @@ async def _accept(body: WebhookBody) -> JSONResponse:
         tones=tones,
         breaks=breaks,
         prompt=body.prompt,
+        donor_set=donor_set,
+        gender=gender,
     )
 
     jobs: dict = _state["jobs"]
@@ -569,6 +611,9 @@ DASHBOARD_HTML = """<!doctype html>
       <div><label>Thai Prompt</label>
         <textarea id="m-prompt">โปรโมชั่นวันนี้ลดสูงสุดห้าสิบเปอร์เซ็นต์ รีบสั่งเลยนะคะ เดี๋ยวของหมด</textarea></div>
       <div><label>Voice ID (leave blank = auto)</label><input class="fc" id="m-voice" placeholder="auto"></div>
+      <div><label>Donor sex (blank = default)</label>
+        <select class="fc" id="m-sex"><option value="">default</option><option value="female">female</option><option value="male">male</option></select></div>
+      <div><label>Donor set (blank = random of that sex)</label><input class="fc" id="m-donor" placeholder="random"></div>
       <div><label>Callback URL (blank = default)</label><input class="fc" id="m-cb" placeholder="default"></div>
     </div>
     <div class="foot">
@@ -606,6 +651,7 @@ function render(){
   tb.innerHTML=list.map((j,i)=>{
     const url=j.audio_src;
     const emo=(j.tones||[]).filter(Boolean).join(', ')||'—';
+    const donor=j.donor_set?` · ${esc(j.donor_set)}`:'';
     const sj=j.job_id&&j.job_id.length>18?j.job_id.slice(0,16)+'…':j.job_id;
     return `<tr>
       <td class="num" style="color:var(--dim)">${j.position?'#'+j.position:i+1}</td>
@@ -613,7 +659,7 @@ function render(){
       <td><span class="mono" title="${esc(j.job_id)}">${esc(sj||'—')}</span></td>
       <td><div class="snippet" title="${esc(j.prompt||'')}">${esc(j.prompt||'—')}</div></td>
       <td><span class="tag">${esc(j.voice_id||'auto')}</span></td>
-      <td><span class="mono">${esc(emo)}</span></td>
+      <td><span class="mono" title="donor: ${esc(j.donor_set||'auto')} (${esc(j.sex||'—')})">${esc(emo)}${donor}</span></td>
       <td class="num">${j.chunks_total||0}</td>
       <td class="num" style="color:var(--muted)">${esc((j.created||'').split(' ')[1]||'')}</td>
       <td class="num">${secs(j.waited_s)}</td>
@@ -652,6 +698,8 @@ function closeTest(){ document.getElementById('test-bg').classList.remove('on');
 async function submitTest(){
   const body={ prompt:document.getElementById('m-prompt').value,
                voice_id:document.getElementById('m-voice').value.trim(),
+               sex:document.getElementById('m-sex').value,
+               donor_set:document.getElementById('m-donor').value.trim(),
                callback_url:document.getElementById('m-cb').value.trim() };
   try{
     const r=await fetch('/webhook/live-ai-create-new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});

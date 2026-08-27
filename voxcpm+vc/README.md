@@ -25,6 +25,48 @@ the reference voice, with `f0_condition` so the emotional pitch contour survives
 VoxCPM2's own emotion feature is unused: the leading style parenthetical is stripped
 before generation, because in continuation mode it would be read aloud.
 
+## n8n LiveAI webhook (same port)
+
+The async webhook contract from the production `:8010` service is also hosted here, on
+this same port, so a script posted from n8n is synthesized through the emotion pipeline
+above instead of the plain LoRA path. It answers `{"status":"success"}` immediately,
+runs the job on a single FIFO worker, then POSTs the uploaded audio URL to `callback_url`.
+
+| Method | Path | Purpose |
+|--------|------|---------|
+| POST | `/webhook/live-ai-create-new` | accept a script, enqueue (bare alias: `/live-ai-create-new`) |
+| GET  | `/webhook` | monitoring dashboard |
+| GET  | `/webhook/jobs`, `/webhook/jobs/{id}` | job state as JSON |
+| GET  | `/webhook/health` | queue + delivery status |
+| GET  | `/webhook/voices` | target (SeedVC) voices |
+| GET  | `/webhook/audio/{queue_id}` | locally-rendered take |
+
+Request body — the `:8010` fields are all accepted (unknown ones ignored): `prompt`,
+`job_id`, `queue_id`, `voice_id` (→ SeedVC target; blank = auto seed voice),
+`callback_url` (blank = default). `voice_text`, `ref_text`, `audio_speed` and
+`country_code` are accepted for compatibility but not used by this pipeline. Emotion is
+auto-annotated per chunk from the text — no emotion field is needed.
+
+Two optional extensions choose the **donor** whose emotion is cloned:
+
+| Field | Meaning |
+|-------|---------|
+| `sex` | `"male"` / `"female"` — which donor gender to clone emotion from. Blank → `default_gender` (female). |
+| `donor_set` | pin one specific actor set (e.g. `female_002`). Blank → **a random complete set of `sex` is drawn per job**, so takes vary. |
+
+The random pick is made when the job is enqueued and shown on the dashboard, so it is
+stable across a job's retries. Delivery reuses the `:8010` env vars, so one `.env`
+points both services at the same upload endpoint:
+
+```
+SIANGTTS_UPLOAD_URL=...        # upload endpoint (returns {"file_url": ...})
+SIANGTTS_UPLOAD_TOKEN=...      # bearer for the upload
+SIANGTTS_DEFAULT_CALLBACK=...  # used when a request omits callback_url
+```
+
+Output is 44.1 kHz WAV (SeedVC's native rate). `audio_speed` from the n8n body is
+currently ignored — the pipeline has no tempo stage.
+
 ## Ports
 
 | Port | Service | Shared with |

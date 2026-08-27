@@ -43,3 +43,6 @@ takes/
 # Local benchmark/diagnostic outputs (large audio, not source)
 test_runs/
 scratch/
+
+# n8n webhook queue scratch
+webhook_work/
