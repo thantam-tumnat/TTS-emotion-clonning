@@ -5,3 +5,21 @@ tmp/
 
 # Local Go toolchain copy (not source)
 .tools/
+
+# Downloaded model weights / HF caches — regenerated on first run, hundreds of MB
+# each and over GitHub's 100 MB hard limit. Never commit these.
+checkpoints/
+**/checkpoints/
+*.pth
+*.pt
+*.ckpt
+*.safetensors
+*.onnx
+
+# Generated audio: benchmark takes, scratch renders, the webhook queue's work dir,
+# and the voice-timbre cache. All regenerable. NOTE: ref/ donor recordings are real
+# project data and are deliberately NOT ignored.
+**/test_runs/
+**/scratch/
+**/voice_cache/
+**/webhook_work/
