@@ -3,7 +3,7 @@ title SiangTTS Master Service Launcher
 echo ================================================================
 echo           🚀 Launching SiangTTS Microservices in Order
 echo ================================================================
-echo.
+set "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
 
 echo [1/6] Starting Python GPU Worker on port 8021...
 start "[1/6] GPU Service (:8021)" cmd /k "cd /d ""%~dp0voice-cloning"" && uv run uvicorn src.gpu_service:app --host 127.0.0.1 --port 8021"

@@ -29,6 +29,7 @@ if not exist "%SEEDVC_PYTHON%" (
 )
 
 cd /d "%~dp0voxcpm+vc"
+set "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
 echo ================================================================
 echo  Starting SeedVC worker on http://127.0.0.1:8022
 echo  repo:   %SEEDVC_REPO%

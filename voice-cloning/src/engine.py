@@ -333,6 +333,12 @@ class Engine:
             job.finished = time.time()
             self.running = None
             job._event.set()
+            try:
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
+            except Exception:
+                pass
 
     # -- delivery -------------------------------------------------------- #
 

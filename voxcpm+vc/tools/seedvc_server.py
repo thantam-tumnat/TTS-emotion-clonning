@@ -100,6 +100,10 @@ def main() -> int:
             import traceback
             traceback.print_exc()
             return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
+        finally:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
