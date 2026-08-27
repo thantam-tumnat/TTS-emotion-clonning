@@ -10,7 +10,16 @@ rem The model weights are large (~2 GB). If you already have them under another
 rem checkout, set HF_HOME to that cache instead of downloading a second copy.
 rem ---------------------------------------------------------------------------
 if "%SEEDVC_REPO%"=="" set SEEDVC_REPO=C:\Users\%USERNAME%\Desktop\seed-vc
-if "%SEEDVC_PYTHON%"=="" set SEEDVC_PYTHON=%SEEDVC_REPO%\..\seedvc-venv\Scripts\python.exe
+
+if "%SEEDVC_PYTHON%"=="" (
+    if exist "%SEEDVC_REPO%\seedvc-venv\Scripts\python.exe" (
+        set "SEEDVC_PYTHON=%SEEDVC_REPO%\seedvc-venv\Scripts\python.exe"
+    ) else if exist "%SEEDVC_REPO%\..\seedvc-venv\Scripts\python.exe" (
+        set "SEEDVC_PYTHON=%SEEDVC_REPO%\..\seedvc-venv\Scripts\python.exe"
+    ) else (
+        set "SEEDVC_PYTHON=%SEEDVC_REPO%\seedvc-venv\Scripts\python.exe"
+    )
+)
 
 if not exist "%SEEDVC_PYTHON%" (
     echo ERROR: SeedVC python not found at %SEEDVC_PYTHON%

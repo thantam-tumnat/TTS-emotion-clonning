@@ -30,6 +30,7 @@ from app.models import (
     BenchmarkTakeRequest,
     BenchmarkTakeResult,
     BenchmarkSessionSummary,
+    PipelineTraceRequest,
 )
 from app.config import settings
 from app.segmenter import segment_text
@@ -148,6 +149,12 @@ static_dir = os.path.join(os.path.dirname(os.path.dirname(__file__)), "static")
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
+# Where the Pipeline Explorer keeps each run's stage-by-stage audio (donor / VoxCPM2 /
+# SeedVC), served back by /api/pipeline/audio.
+from pathlib import Path as _Path
+PIPELINE_RUNS_DIR = _Path(__file__).resolve().parent.parent / "test_runs" / "_pipeline"
+PIPELINE_RUNS_DIR.mkdir(parents=True, exist_ok=True)
+
 
 @app.get("/", include_in_schema=False)
 def root_ui():
@@ -177,6 +184,15 @@ def tests_ui():
     if os.path.exists(page):
         return FileResponse(page)
     return {"message": "Test runner UI not found."}
+
+
+@app.get("/pipeline", include_in_schema=False)
+def pipeline_ui():
+    """Pipeline Explorer: play each stage donor -> VoxCPM2 -> SeedVC for one utterance."""
+    page = os.path.join(static_dir, "pipeline.html")
+    if os.path.exists(page):
+        return FileResponse(page)
+    return {"message": "Pipeline Explorer UI not found."}
 
 
 @app.get("/api/tests/suites")
@@ -780,4 +796,122 @@ def get_donor_audio_endpoint(donor_set: str, emotion: str):
         wav,
         media_type="audio/wav",
         headers={"Content-Disposition": f'inline; filename="{donor_set}_{wav.name}"'},
+    )
+
+
+# ---------------------------------------------------------------------------
+# Pipeline Explorer — donor -> VoxCPM2 (continuation) -> SeedVC, every stage kept
+# ---------------------------------------------------------------------------
+
+@app.get("/api/pipeline/donor-sets")
+def pipeline_donor_sets_endpoint():
+    """Donor sets (one actor each) with their emotions and transcripts."""
+    return {"sets": voxcpm_vc_service.donor_sets_ui()}
+
+
+@app.get("/api/pipeline/speakers")
+def pipeline_speakers_endpoint():
+    """Target voices to clone (reference clips available to the studio)."""
+    return {"speakers": siangtts_service.list_speakers()}
+
+
+@app.get("/api/pipeline/defaults")
+def pipeline_defaults_endpoint():
+    """Server default value + bounds for each VoxCPM2 knob (for the UI table)."""
+    return voxcpm_vc_service.tuning_defaults()
+
+
+@app.post("/api/pipeline/trace")
+def pipeline_trace_endpoint(req: PipelineTraceRequest):
+    """Run one utterance through the whole pipeline, returning a URL per stage."""
+    run_id = f"run_{datetime.now().strftime('%Y%m%d_%H%M%S_%f')}"
+    run_dir = PIPELINE_RUNS_DIR / run_id
+    try:
+        result = voxcpm_vc_service.render_trace(
+            donor_set=req.donor_set,
+            emotion=req.emotion,
+            run_dir=run_dir,
+            text=req.text,
+            speaker_id=req.speaker_id,
+            tuning=req.tuning.model_dump(exclude_none=True) if req.tuning else None,
+        )
+    except (VoxCPMVCUnavailable, SynthesizerUnavailable) as e:
+        raise HTTPException(status_code=503, detail=str(e))
+    except (ValueError, FileNotFoundError) as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Pipeline failed: {e}")
+
+    def url(name: str) -> str:
+        return f"/api/pipeline/audio/{run_id}/{name}"
+
+    stages = [
+        {
+            "key": "donor",
+            "label": "1. Donor clip (emotion source)",
+            "hint": "คลิปอ้างอิงอารมณ์จาก dataset (บุคลิกต้นทาง)",
+            "url": url(result["files"]["donor"]),
+        },
+        {
+            "key": "voxcpm",
+            "label": "2. VoxCPM2 (emotional, donor timbre)",
+            "hint": f"VoxCPM2 โคลนอารมณ์+พูดข้อความ ({result['gen_secs']}s) — ยังเป็นเสียง donor",
+            "url": url(result["files"]["voxcpm"]),
+        },
+        {
+            "key": "vc",
+            "label": "3. SeedVC output (cloned voice)",
+            "hint": f"แปลง timbre เป็นเสียงที่เลือก ({result['vc_secs']}s) — ผลลัพธ์สุดท้าย",
+            "url": url(result["files"]["vc"]),
+        },
+    ]
+    return {
+        "run_id": run_id,
+        "emotion": result["emotion"],
+        "donor_set": result["donor_set"],
+        "target": result["target"],
+        "gen_text": result["gen_text"],
+        "donor_transcript": result["donor_transcript"],
+        "tuning": result.get("tuning"),
+        "stages": stages,
+    }
+
+
+@app.get("/api/pipeline/audio/{run_id}/{filename}")
+def pipeline_audio_endpoint(run_id: str, filename: str):
+    """Serve one stage's audio from a pipeline run."""
+    if "/" in run_id or "\\" in run_id or ".." in run_id or "/" in filename or "\\" in filename or ".." in filename:
+        raise HTTPException(status_code=400, detail="Invalid path")
+    path = (PIPELINE_RUNS_DIR / run_id / filename).resolve()
+    base = PIPELINE_RUNS_DIR.resolve()
+    if base not in path.parents or not path.exists():
+        raise HTTPException(status_code=404, detail="Audio file not found")
+    media = "audio/mpeg" if path.suffix.lower() == ".mp3" else "audio/wav"
+    return FileResponse(path, media_type=media,
+                        headers={"Content-Disposition": f'inline; filename="{path.name}"'})
+
+
+@app.get("/api/donor-clip/{donor_set}/{emotion}")
+def donor_clip_endpoint(donor_set: str, emotion: str):
+    """Serve one emotion's donor reference clip (alias used by the benchmark page)."""
+    for part in (donor_set, emotion):
+        if "/" in part or "\\" in part or ".." in part:
+            raise HTTPException(status_code=400, detail="Invalid path")
+    # donor_set may be a bare gender ("female"/"male") when the picker is on
+    # "auto"; resolve that to a concrete set first.
+    resolved = donor_set
+    try:
+        voxcpm_vc_service.donor_clip(donor_set, emotion)
+    except (FileNotFoundError, ValueError):
+        try:
+            resolved = voxcpm_vc_service.resolve_donor_set(None, gender=donor_set)
+        except Exception:
+            resolved = donor_set
+    path = voxcpm_vc_service.get_donor_clip_path(resolved, emotion)
+    if path is None or not path.exists():
+        raise HTTPException(status_code=404, detail="Donor clip not found")
+    return FileResponse(
+        path,
+        media_type="audio/wav",
+        headers={"Content-Disposition": f'inline; filename="{resolved}_{path.name}"'},
     )

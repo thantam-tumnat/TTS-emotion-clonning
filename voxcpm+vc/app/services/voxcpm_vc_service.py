@@ -160,6 +160,37 @@ class VoxCPMVCService:
             })
         return out
 
+    def donor_sets_ui(self) -> List[Dict[str, Any]]:
+        """``list_donor_sets`` reshaped for the studio/pipeline pickers.
+
+        The canonical shape carries ``emotions`` as a dict keyed by emotion; the
+        front-end wants a list of ``{id, transcript}`` plus a human name and a
+        ``same_person`` flag, so this adapts without changing the canonical contract
+        that ``/api/donors`` and ``status`` depend on.
+        """
+        out: List[Dict[str, Any]] = []
+        for s in self.list_donor_sets():
+            actor_id = s.get("actor_id")
+            gender = s.get("gender")
+            if actor_id:
+                name = f"{gender.title()} · Actor {actor_id}" if gender else f"Actor {actor_id}"
+            else:
+                name = str(s["id"]).replace("_", " ").title()
+            out.append({
+                "id": s["id"],
+                "name": name,
+                "gender": gender,
+                "actor_id": actor_id,
+                "same_person": bool(actor_id),
+                "mean_agreement": s.get("mean_agreement"),
+                "complete": s.get("complete"),
+                "emotions": [
+                    {"id": emo, "transcript": (meta or {}).get("text", "")}
+                    for emo, meta in (s.get("emotions") or {}).items()
+                ],
+            })
+        return out
+
     def resolve_donor_set(self, donor_set: Optional[str], gender: Optional[str] = None) -> str:
         """Pick the set to clone emotion from.
 
@@ -351,17 +382,32 @@ class VoxCPMVCService:
             pass
         return None
 
-    def _convert(self, source: Path, target: Path, output: Path) -> Path:
+    def _convert(
+        self,
+        source: Path,
+        target: Path,
+        output: Path,
+        *,
+        auto_f0_adjust: Optional[bool] = None,
+        semi_tone_shift: int = 0,
+    ) -> Path:
+        """Convert ``source``'s timbre to ``target`` via the SeedVC worker.
+
+        ``auto_f0_adjust`` / ``semi_tone_shift`` default to the server config; the
+        F0-compare experiment overrides them per call so one VoxCPM2 generation can be
+        converted several ways (see ``render_f0_compare``).
+        """
         import httpx
 
+        af0 = settings.seedvc_auto_f0_adjust if auto_f0_adjust is None else bool(auto_f0_adjust)
         payload = {
             "source": str(source.resolve()),
             "target": str(target.resolve()),
             "output": str(output.resolve()),
             "f0_condition": settings.seedvc_f0_condition,
-            "auto_f0_adjust": settings.seedvc_auto_f0_adjust,
+            "auto_f0_adjust": af0,
             "diffusion_steps": settings.seedvc_diffusion_steps,
-            "semi_tone_shift": 0,
+            "semi_tone_shift": int(semi_tone_shift),
             "inference_cfg_rate": settings.seedvc_inference_cfg_rate,
         }
         try:
@@ -653,6 +699,8 @@ class VoxCPMVCService:
         cfg_value: float = 2.5,
         inference_timesteps: int = 10,
         lora_mode: Optional[str] = "on",
+        pre_vc_sink: Optional[dict] = None,
+        debug_sink: Optional[dict] = None,
     ) -> Tuple[List[dict], int, List[Optional[str]]]:
         """One generation, assembled every way ``variants`` asks for.
 
@@ -660,6 +708,11 @@ class VoxCPMVCService:
         deterministic, so two renders would differ by more than the assembly. It also
         matters more here than in the sibling studio, because a second render would
         pay for a second pass through SeedVC as well.
+
+        When a caller passes ``pre_vc_sink`` it gets back one joined clip of the
+        VoxCPM2 output *before* SeedVC ({"wav": bytes, "sr": int}); ``debug_sink`` is
+        filled with the raw model inputs ({"chunks": [...]}). Both describe the single
+        shared generation, so they are produced once regardless of variant count.
         """
         import numpy as np
         import soundfile as sf
@@ -670,6 +723,9 @@ class VoxCPMVCService:
             butt_join_with_spans,
             voiced_rms,
         )
+
+        pre_vc_chunks: Optional[List[Tuple[Any, int]]] = [] if pre_vc_sink is not None else None
+        debug_chunks: Optional[List[dict]] = [] if debug_sink is not None else None
 
         rendered, sample_rate = self.render_chunks(
             texts,
@@ -683,7 +739,27 @@ class VoxCPMVCService:
             cfg_value=cfg_value,
             inference_timesteps=inference_timesteps,
             lora_mode=lora_mode,
+            pre_vc_out=pre_vc_chunks,
+            debug_out=debug_chunks,
         )
+
+        if debug_sink is not None:
+            debug_sink["chunks"] = debug_chunks or []
+
+        if pre_vc_sink is not None and pre_vc_chunks:
+            pre_sr = pre_vc_chunks[0][1]
+            gap = np.zeros(int(0.06 * pre_sr), dtype=np.float32)
+            pieces: List[Any] = []
+            for idx, (arr, _asr) in enumerate(pre_vc_chunks):
+                if idx:
+                    pieces.append(gap)
+                pieces.append(np.asarray(arr, dtype=np.float32))
+            pre_audio = np.concatenate(pieces) if pieces else np.zeros(1, dtype=np.float32)
+            pre_buf = io.BytesIO()
+            sf.write(pre_buf, pre_audio, pre_sr, format="WAV", subtype="PCM_16")
+            pre_vc_sink["wav"] = pre_buf.getvalue()
+            pre_vc_sink["sr"] = int(pre_sr)
+            pre_vc_sink["dur_s"] = round(len(pre_audio) / pre_sr, 3)
 
         usable = [c for c in rendered if c.audio is not None and np.asarray(c.audio).size]
         chunk_tones: List[Optional[str]] = [c.tone for c in usable]
@@ -722,6 +798,331 @@ class VoxCPMVCService:
             })
 
         return takes, sample_rate, chunk_tones
+
+    # ------------------------------------------------------------------ #
+    # Pipeline explorer + F0 compare (single-utterance, stage-by-stage)
+    # ------------------------------------------------------------------ #
+
+    def get_donor_clip_path(self, donor_set: str, emotion: str) -> Optional[Path]:
+        wav = self.donor_dir / donor_set / f"{emotion}_1.wav"
+        return wav if wav.is_file() else None
+
+    def tuning_defaults(self) -> Dict[str, Any]:
+        """Server default value + bounds for each VoxCPM2 knob (for the pipeline UI).
+
+        VoxCPM2 exposes only cfg_value and inference_timesteps -- the F5 studio's
+        sway/target_rms/silence knobs have no equivalent here, so they are absent.
+        """
+        return {
+            "values": {
+                "cfg_value": settings.voxcpm_cfg_value if hasattr(settings, "voxcpm_cfg_value") else 2.5,
+                "inference_timesteps": settings.voxcpm_inference_timesteps
+                if hasattr(settings, "voxcpm_inference_timesteps") else 10,
+            },
+            "specs": {
+                "cfg_value": {"min": 1.0, "max": 10.0, "step": 0.1},
+                "inference_timesteps": {"min": 4, "max": 50, "step": 1},
+            },
+        }
+
+    def _generate_one(
+        self,
+        synth: Any,
+        donor_set: str,
+        emotion: str,
+        body: str,
+        *,
+        cfg_value: float,
+        inference_timesteps: int,
+        lora_mode: Optional[str],
+    ) -> Tuple[Any, int]:
+        """One VoxCPM2 continuation-mode generation for a single piece of text.
+
+        Returns (audio, rate). Shares the batch/single-engine shim render_chunks uses,
+        so it works against the queue gateway and the in-process mock alike.
+        """
+        import numpy as np
+
+        handle = self._donor_handle(synth, donor_set, emotion)
+        batch = getattr(synth, "render_batch", None)
+        if batch is None:
+            rate = int(getattr(synth, "sample_rate", 48000) or 48000)
+            audio = synth.synth(
+                text=body,
+                prompt_cache=handle,
+                cfg_value=cfg_value,
+                inference_timesteps=inference_timesteps,
+                lora_mode=lora_mode,
+            )
+            return self._depeak(audio), rate
+
+        audios, rate = batch(
+            [body],
+            prompt_cache=handle,
+            cfg_value=cfg_value,
+            inference_timesteps=inference_timesteps,
+            lora_mode=lora_mode,
+        )
+        if not audios:
+            raise RuntimeError("engine returned no audio")
+        return self._depeak(audios[0]), int(rate)
+
+    @staticmethod
+    def _median_f0(wav_path: Path) -> Optional[float]:
+        """Median voiced F0 (Hz) of a clip via autocorrelation, transcript-free.
+
+        Used to anchor the F0-compare "B" mode: the constant semitone shift that moves
+        the donor's *neutral* register onto the target speaker's register is derived
+        from these two medians, so emotion offsets ride on top unchanged. Returns None
+        when nothing voiced is measurable.
+        """
+        import numpy as np
+        import soundfile as sf
+
+        try:
+            y, sr = sf.read(str(wav_path), dtype="float32")
+            if y.ndim > 1:
+                y = y.mean(axis=1)
+            if y.size == 0 or sr <= 0:
+                return None
+            frame = int(sr * 0.030)
+            hop = int(sr * 0.010)
+            if len(y) < frame:
+                return None
+            rms = float(np.sqrt(np.mean(y.astype("float64") ** 2)))
+            min_lag = max(1, int(sr / 450))
+            max_lag = int(sr / 60)
+            cands: List[float] = []
+            for i in range(0, len(y) - frame, hop):
+                fr = y[i:i + frame]
+                if np.sqrt(np.mean(fr ** 2)) < max(rms * 0.2, 1e-4):
+                    continue
+                w = fr * np.hanning(len(fr))
+                corr = np.correlate(w, w, mode="full")[len(w) - 1:]
+                if len(corr) <= max_lag or corr[0] <= 0:
+                    continue
+                region = corr[min_lag:max_lag]
+                if region.size == 0:
+                    continue
+                peak = int(np.argmax(region)) + min_lag
+                if corr[peak] > 0.3 * corr[0]:
+                    cands.append(float(sr / peak))
+            if len(cands) < 3:
+                return None
+            return float(np.median(cands))
+        except Exception:
+            return None
+
+    def render_trace(
+        self,
+        *,
+        donor_set: str,
+        emotion: str,
+        run_dir: Path,
+        text: Optional[str] = None,
+        speaker_id: Optional[str] = None,
+        ref_audio_bytes: Optional[bytes] = None,
+        ref_filename: Optional[str] = None,
+        tuning: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        """Run one utterance donor -> VoxCPM2 -> SeedVC, keeping every stage on disk.
+
+        Returns the donor clip, the VoxCPM2 output (emotional speech still in the
+        donor's timbre) and the SeedVC output (timbre swapped to the target), so the
+        caller can offer playback of each step.
+        """
+        import numpy as np
+        import shutil
+        import soundfile as sf
+
+        emotion = self.validate_emotion(emotion)
+        donor_wav = self.get_donor_clip_path(donor_set, emotion)
+        if donor_wav is None:
+            raise FileNotFoundError(f"No donor clip for set '{donor_set}', emotion '{emotion}'")
+        donor_txt_p = donor_wav.with_suffix(".txt")
+        donor_txt = donor_txt_p.read_text(encoding="utf-8").strip() if donor_txt_p.exists() else ""
+
+        target_wav, temp_target = self._target_voice_path(speaker_id, ref_audio_bytes, ref_filename)
+
+        # Text to synthesize: the user's text, else the donor transcript as a default.
+        gen_text_raw = (text or "").strip() or donor_txt
+        body = strip_instruction(gen_text_raw)
+        if not body:
+            raise ValueError("No text to synthesize")
+
+        tuning = tuning or {}
+        cfg_value = float(tuning.get("cfg_value") if tuning.get("cfg_value") is not None else 2.5)
+        inference_timesteps = int(
+            tuning.get("inference_timesteps") if tuning.get("inference_timesteps") is not None else 10
+        )
+
+        if settings.seedvc_required and self.seedvc_health() is None:
+            raise VoxCPMVCUnavailable(
+                f"SeedVC worker at {self.seedvc_url} is not responding."
+            )
+
+        run_dir.mkdir(parents=True, exist_ok=True)
+        donor_out = run_dir / f"donor_{emotion}{donor_wav.suffix.lower()}"
+        stage_a = run_dir / f"A_voxcpm_{emotion}.wav"
+        stage_b = run_dir / f"B_vc_{emotion}.wav"
+
+        try:
+            shutil.copy2(donor_wav, donor_out)
+
+            synth = self._synth()
+            t0 = time.time()
+            audio, gen_rate = self._generate_one(
+                synth, donor_set, emotion, body,
+                cfg_value=cfg_value, inference_timesteps=inference_timesteps, lora_mode="on",
+            )
+            sf.write(str(stage_a), np.asarray(audio, dtype="float32"), gen_rate,
+                     format="WAV", subtype="PCM_16")
+            gen_secs = time.time() - t0
+
+            t0 = time.time()
+            self._convert(stage_a, Path(target_wav), stage_b)
+            vc_secs = time.time() - t0
+        finally:
+            if temp_target is not None:
+                temp_target.unlink(missing_ok=True)
+
+        return {
+            "emotion": emotion,
+            "donor_set": donor_set,
+            "gen_text": gen_text_raw,
+            "donor_transcript": donor_txt,
+            "target": speaker_id or (ref_filename or "upload" if ref_audio_bytes else None) or Path(target_wav).stem,
+            "tuning": {"cfg_value": cfg_value, "inference_timesteps": inference_timesteps},
+            "gen_secs": round(gen_secs, 1),
+            "vc_secs": round(vc_secs, 1),
+            "files": {
+                "donor": donor_out.name,
+                "voxcpm": stage_a.name,
+                "vc": stage_b.name,
+            },
+        }
+
+    # F0-compare modes. Each converts the SAME VoxCPM2 output a different way so the
+    # emotion-vs-register trade-off can be judged by ear:
+    #   baseline = current behaviour (SeedVC re-centres every emotion's pitch to the
+    #              target -> flat register, emotion pitch lost).
+    #   A        = keep VoxCPM2's absolute pitch (emotion survives) but in the donor's
+    #              register, not the target's.
+    #   B        = keep the pitch contour, shifted by a constant so the donor's neutral
+    #              lands on the target's register -> emotion AND register.
+    F0_COMPARE_MODES: List[Dict[str, Any]] = [
+        {"id": "baseline", "label": "ปัจจุบัน (auto-f0)", "auto_f0_adjust": True, "shift": "none"},
+        {"id": "A", "label": "A · คงอารมณ์", "auto_f0_adjust": False, "shift": "none"},
+        {"id": "B", "label": "B · คงอารมณ์+ตรง target", "auto_f0_adjust": False, "shift": "to_target"},
+    ]
+
+    def render_f0_compare(
+        self,
+        text: str,
+        *,
+        emotion: str,
+        speaker_id: Optional[str] = None,
+        ref_audio_bytes: Optional[bytes] = None,
+        ref_filename: Optional[str] = None,
+        gender: Optional[str] = None,
+        donor_set: Optional[str] = None,
+        cfg_value: float = 2.5,
+        inference_timesteps: int = 10,
+    ) -> Dict[str, Any]:
+        """Generate one utterance once with VoxCPM2, then voice-convert it three ways.
+
+        Returns ``{"modes": [{id,label,wav,sr,auto_f0_adjust,semi_tone_shift}],
+        "pre_vc": {wav,sr}, "diag": {...}}``. The heavy generation runs a single time;
+        the three modes differ only in the SeedVC F0 handling. Single-utterance scope.
+        """
+        import numpy as np
+        import soundfile as sf
+
+        emotion = self.validate_emotion(emotion)
+        body = strip_instruction(text)
+        if not body:
+            raise ValueError("No text to synthesize")
+
+        chosen_set = self.resolve_donor_set(donor_set, gender=gender)
+        target_wav, temp_target = self._target_voice_path(speaker_id, ref_audio_bytes, ref_filename)
+
+        if settings.seedvc_required and self.seedvc_health() is None:
+            raise VoxCPMVCUnavailable(
+                f"SeedVC worker at {self.seedvc_url} is not responding."
+            )
+
+        # B's constant shift: move the donor's NEUTRAL register onto the target's.
+        # Using neutral (not this emotion) as the anchor keeps the emotion's own pitch
+        # offset intact after the shift.
+        semi_shift_b = 0
+        target_med = self._median_f0(Path(target_wav))
+        donor_neutral_med = None
+        try:
+            neutral_wav, _ = self.donor_clip(chosen_set, "neutral")
+            donor_neutral_med = self._median_f0(neutral_wav)
+        except Exception:
+            donor_neutral_med = None
+        if target_med and donor_neutral_med and donor_neutral_med > 0:
+            semi_shift_b = int(round(12.0 * math.log2(target_med / donor_neutral_med)))
+            semi_shift_b = max(-12, min(12, semi_shift_b))
+
+        scratch = Path("scratch/voxcpm_vc")
+        scratch.mkdir(parents=True, exist_ok=True)
+        ts = int(time.time() * 1000)
+        src_wav = scratch / f"f0cmp_{emotion}_{ts}.wav"
+
+        modes_out: List[Dict[str, Any]] = []
+        pre_vc: Dict[str, Any] = {}
+        try:
+            synth = self._synth()
+            audio, gen_rate = self._generate_one(
+                synth, chosen_set, emotion, body,
+                cfg_value=cfg_value, inference_timesteps=inference_timesteps, lora_mode="on",
+            )
+            arr = np.asarray(audio, dtype="float32")
+            sf.write(str(src_wav), arr, gen_rate, format="WAV", subtype="PCM_16")
+
+            pbuf = io.BytesIO()
+            sf.write(pbuf, arr, gen_rate, format="WAV", subtype="PCM_16")
+            pre_vc = {"wav": pbuf.getvalue(), "sr": int(gen_rate)}
+
+            for spec in self.F0_COMPARE_MODES:
+                shift = semi_shift_b if spec["shift"] == "to_target" else 0
+                vc_out = scratch / f"f0cmp_{emotion}_{spec['id']}_{ts}.wav"
+                self._convert(
+                    src_wav, Path(target_wav), vc_out,
+                    auto_f0_adjust=spec["auto_f0_adjust"], semi_tone_shift=shift,
+                )
+                marr, sr = sf.read(str(vc_out), dtype="float32")
+                if marr.ndim > 1:
+                    marr = marr.mean(axis=1)
+                obuf = io.BytesIO()
+                sf.write(obuf, marr, sr, format="WAV", subtype="PCM_16")
+                modes_out.append({
+                    "id": spec["id"],
+                    "label": spec["label"],
+                    "wav": obuf.getvalue(),
+                    "sr": int(sr),
+                    "auto_f0_adjust": spec["auto_f0_adjust"],
+                    "semi_tone_shift": int(shift),
+                })
+                vc_out.unlink(missing_ok=True)
+        finally:
+            src_wav.unlink(missing_ok=True)
+            if temp_target is not None:
+                temp_target.unlink(missing_ok=True)
+
+        return {
+            "modes": modes_out,
+            "pre_vc": pre_vc,
+            "diag": {
+                "emotion": emotion,
+                "donor": f"{chosen_set}/{emotion}_1.wav",
+                "target_med_hz": round(target_med, 1) if target_med else None,
+                "donor_neutral_med_hz": round(donor_neutral_med, 1) if donor_neutral_med else None,
+                "b_semi_tone_shift": semi_shift_b,
+            },
+        }
 
     # ------------------------------------------------------------------ #
 

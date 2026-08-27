@@ -269,6 +269,10 @@ class LLMTagConversionResult(BaseModel):
 class BenchmarkSessionInitRequest(BaseModel):
     name: Optional[str] = None
     speaker_id: Optional[str] = None
+    # The actor that supplies emotion for every take in this session, and the
+    # fallback gender when no set is named.
+    gender: Optional[str] = "female"
+    donor_set: Optional[str] = None
     text: str = Field(min_length=1, max_length=5000)
     emotions: List[str] = Field(default_factory=lambda: [t.value for t in Tone])
     repeats: int = Field(default=3, ge=1, le=10)
@@ -309,6 +313,14 @@ class BenchmarkTakeRequest(BaseModel):
     instruction: Optional[str] = None
     intensity: int = Field(default=2, ge=1, le=3)
     speaker_id: Optional[str] = None
+    # Which actor's recordings supply the emotion for this take, and the fallback
+    # gender when no set is named. The donor is the whole point of this pipeline, so
+    # the benchmark pins it the same way /synthesize does.
+    gender: Optional[str] = "female"
+    donor_set: Optional[str] = Field(
+        default=None,
+        description="Same-person emotion donor set id (e.g. 'female_0031'). None = auto by gender.",
+    )
     cfg_value: float = Field(default=2.5, ge=1.0, le=10.0)
     inference_timesteps: int = Field(default=10, ge=4, le=50)
     lora_mode: Optional[Literal["on", "off", "legacy"]] = "on"
@@ -318,6 +330,9 @@ class BenchmarkTakeRequest(BaseModel):
     # is the only way a DSP comparison is not also a comparison of two samplings.
     # Empty means the single-take behaviour driven by post_process above.
     variants: Optional[List[ABVariantSpec]] = Field(default=None, max_length=6)
+    # When true, also render the F0-compare trio (baseline / A / B) from one VoxCPM2
+    # generation, so the emotion-vs-register trade-off can be judged by ear.
+    f0_compare: bool = False
 
 
 class BenchmarkTakeVariant(BaseModel):
@@ -327,6 +342,17 @@ class BenchmarkTakeVariant(BaseModel):
     filename: str
     audio_url: str
     metrics: Optional[dict] = None
+
+
+class BenchmarkF0Variant(BaseModel):
+    """One SeedVC F0 treatment (baseline / A / B) of a single VoxCPM2 generation."""
+    id: str
+    label: str
+    filename: str
+    audio_url: str
+    metrics: Optional[dict] = None
+    auto_f0_adjust: bool = True
+    semi_tone_shift: int = 0
 
 
 class BenchmarkTakeResult(BaseModel):
@@ -342,8 +368,19 @@ class BenchmarkTakeResult(BaseModel):
     metrics: Optional[dict] = None
     elapsed_s: float = 0.0
     error: Optional[str] = None
+    # The VoxCPM2 output *before* SeedVC (emotional speech still in the donor's
+    # timbre), so the UI can play the pre-conversion stage next to the final result.
+    pre_vc_url: Optional[str] = None
+    pre_vc_filename: Optional[str] = None
+    # The exact inputs handed to each model stage (VoxCPM2 + SeedVC) for this take, so
+    # the UI can show what was actually sent. Shape: {"chunks": [{...}]}.
+    model_input: Optional[dict] = None
     # Every DSP treatment of this take, first entry mirroring the fields above.
     variants: List[BenchmarkTakeVariant] = Field(default_factory=list)
+    # The F0-compare trio (baseline / A / B) when requested, plus its diagnostics
+    # (measured medians and B's computed shift). Empty when f0_compare was off.
+    f0_variants: List[BenchmarkF0Variant] = Field(default_factory=list)
+    f0_diag: Optional[dict] = None
     # How the take's voice was pinned: "speaker", "seed", "reference", or "none".
     # "none" means nothing anchored the timbre, so this take is a fresh random
     # speaker and will not match the others -- the UI flags it. Optional so old
@@ -364,3 +401,28 @@ class BenchmarkSessionSummary(BaseModel):
     params: dict
 
 
+
+
+class PipelineTuning(BaseModel):
+    """VoxCPM2 acoustic overrides for one Pipeline Explorer run.
+
+    Only the two knobs VoxCPM2 exposes are here; anything unset falls back to the
+    server default. (The F5 studio also tuned sway/target_rms/silence -- those are
+    F5-specific and have no VoxCPM2 equivalent, so they are intentionally absent.)
+    """
+    cfg_value: Optional[float] = Field(default=None, ge=1.0, le=10.0)
+    inference_timesteps: Optional[int] = Field(default=None, ge=4, le=50)
+
+
+class PipelineTraceRequest(BaseModel):
+    """One run of donor -> VoxCPM2 (continuation) -> SeedVC, every stage kept playable."""
+    donor_set: str = Field(min_length=1, description="Donor set id, e.g. 'female_0031'")
+    emotion: str = Field(min_length=1, description="neutral|happy|sad|angry|frustrated")
+    speaker_id: Optional[str] = Field(default=None, description="Target voice to clone (from ref/)")
+    text: Optional[str] = Field(
+        default=None, max_length=5000,
+        description="Text to synthesize; empty falls back to the donor transcript",
+    )
+    tuning: Optional[PipelineTuning] = Field(
+        default=None, description="VoxCPM2 overrides; null uses server defaults",
+    )

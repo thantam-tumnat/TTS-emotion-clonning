@@ -253,6 +253,41 @@
   color: #ffffff;
 }
 
+/* Per-emotion donor preview button on each selection tile. */
+.emotion-pill-chk .emo-donor-play {
+  margin-left: auto;
+  width: 20px;
+  height: 20px;
+  flex: 0 0 auto;
+  border-radius: 50%;
+  border: 1px solid rgba(234, 179, 8, 0.5);
+  background: rgba(234, 179, 8, 0.12);
+  color: #eab308;
+  font-size: 9px;
+  line-height: 1;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 0;
+  transition: all 0.15s ease;
+}
+.emotion-pill-chk .emo-donor-play:hover {
+  background: rgba(234, 179, 8, 0.25);
+  transform: scale(1.1);
+}
+
+/* An emotion the selected donor set has no clip for: dimmed and not selectable,
+   with its donor-play button hidden (set inline via JS). */
+.emotion-pill-chk.emotion-unavailable {
+  opacity: 0.4;
+  cursor: not-allowed;
+  filter: grayscale(0.6);
+}
+.emotion-pill-chk.emotion-unavailable input {
+  cursor: not-allowed;
+}
+
 .action-links {
   display: flex;
   align-items: center;
@@ -610,6 +645,116 @@
   border-color: #3b82f6;
   background: rgba(59, 130, 246, 0.15);
   box-shadow: 0 0 10px rgba(59, 130, 246, 0.25);
+}
+
+/* Pre-SeedVC (Thonburian F5) player: amber-tinted to read as the intermediate stage. */
+.mini-take-prevc {
+  margin-top: 5px;
+  min-width: 140px;
+  background: rgba(234, 179, 8, 0.06);
+  border-color: rgba(234, 179, 8, 0.35);
+}
+.mini-take-prevc.is-playing {
+  border-color: #eab308;
+  background: rgba(234, 179, 8, 0.16);
+  box-shadow: 0 0 10px rgba(234, 179, 8, 0.25);
+}
+.mini-prevc-label {
+  font-size: 11px;
+  color: #d1a63a;
+  font-weight: 600;
+  white-space: nowrap;
+}
+
+/* F0-compare enable toggle in the param bar (a real, visible checkbox). */
+.f0-compare-toggle {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 12px;
+  color: var(--text-secondary, #cbd5e1);
+  user-select: none;
+}
+.f0-compare-toggle input {
+  width: 15px;
+  height: 15px;
+  accent-color: #38bdf8;
+  cursor: pointer;
+  margin: 0;
+}
+.f0-compare-toggle:hover { color: var(--text-primary, #f1f5f9); }
+
+/* F0-compare trio (baseline / A / B): three SeedVC treatments of one F5 take. */
+.f0-compare-row {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 4px;
+  margin-top: 5px;
+}
+.f0-compare-label {
+  font-size: 10px;
+  color: #7dd3fc;
+  font-weight: 600;
+  white-space: nowrap;
+  margin-right: 2px;
+}
+.btn-f0-cmp {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  font-size: 10px;
+  font-weight: 600;
+  color: #bae6fd;
+  background: rgba(56, 189, 248, 0.08);
+  border: 1px solid rgba(56, 189, 248, 0.35);
+  border-radius: 999px;
+  cursor: pointer;
+  transition: background .15s, border-color .15s;
+}
+.btn-f0-cmp:hover {
+  background: rgba(56, 189, 248, 0.18);
+  border-color: #38bdf8;
+}
+.btn-f0-cmp.is-playing {
+  background: rgba(56, 189, 248, 0.28);
+  border-color: #38bdf8;
+  box-shadow: 0 0 8px rgba(56, 189, 248, 0.3);
+}
+.f0-cmp-id { letter-spacing: .2px; }
+
+/* "What was sent to the model" JSON inspector, per take cell. */
+.btn-model-input {
+  margin-top: 5px;
+  font-size: 10.5px;
+  padding: 3px 8px;
+  border-radius: 6px;
+  border: 1px solid #334155;
+  background: #131a2a;
+  color: #94a3b8;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+.btn-model-input:hover {
+  border-color: #475569;
+  color: #cbd5e1;
+}
+.model-input-json {
+  margin-top: 5px;
+  max-width: 320px;
+  max-height: 240px;
+  overflow: auto;
+  background: #0b1120;
+  border: 1px solid #1e293b;
+  border-radius: 6px;
+  padding: 8px 10px;
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: #a5b4fc;
+  white-space: pre;
+  font-family: "JetBrains Mono", ui-monospace, monospace;
 }
 
 .mini-take-player.is-pending {
@@ -1353,127 +1498,3 @@
   color: var(--text-muted);
   margin-left: auto;
 }
-
-/* ==========================================================================
-   Intensity level picker + per-row level chips
-   ==========================================================================
-   Ticking more than one level splits every emotion into one matrix row per
-   level, so the level has to be visible on the row as well as in the picker. */
-.bench-lvl-count {
-  font-size: 0.68rem;
-  color: var(--text-muted);
-  font-family: var(--font-code);
-  white-space: nowrap;
-}
-
-.bench-lvl-count.is-multi {
-  color: #f0abfc;
-  font-weight: 600;
-}
-
-.bench-lvl-picker {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 4px;
-}
-
-.bench-lvl-opt {
-  display: inline-flex;
-  align-items: center;
-  justify-content: center;
-  flex: 1 1 0;
-  border: 1px solid var(--border-color);
-  border-radius: 6px;
-  padding: 4px 8px;
-  background: var(--bg-input);
-  color: var(--text-secondary);
-  font-size: 0.72rem;
-  cursor: pointer;
-  transition: all 0.15s ease;
-  white-space: nowrap;
-}
-
-.bench-lvl-opt:hover { border-color: var(--border-hover); color: var(--text-primary); }
-
-.bench-lvl-opt.active {
-  background: rgba(217, 70, 239, 0.15);
-  border-color: #d946ef;
-  color: #f0abfc;
-  font-weight: 600;
-}
-
-.bench-lvl-opt input { position: absolute; opacity: 0; width: 0; height: 0; }
-
-#bench-lvl-hint { margin-top: 5px; }
-
-/* Level badge shown on each results-matrix row. */
-.level-chip {
-  display: inline-flex;
-  align-items: center;
-  font-family: var(--font-mono, ui-monospace, Consolas, monospace);
-  font-size: 10.5px;
-  font-weight: 600;
-  padding: 2px 6px;
-  border-radius: 5px;
-  border: 1px solid rgba(217, 70, 239, 0.35);
-  background: rgba(217, 70, 239, 0.12);
-  color: #f0abfc;
-}
-
-.level-chip.lvl-1 {
-  border-color: rgba(148, 163, 184, 0.35);
-  background: rgba(148, 163, 184, 0.12);
-  color: #cbd5e1;
-}
-
-.level-chip.lvl-3 {
-  border-color: rgba(248, 113, 113, 0.4);
-  background: rgba(248, 113, 113, 0.14);
-  color: #fca5a5;
-}
-
-/* Plays take 1 of the same emotion at each level, back to back. */
-.btn-compare-levels {
-  display: inline-flex;
-  align-items: center;
-  gap: 5px;
-  margin-top: 5px;
-  padding: 3px 9px;
-  border-radius: 6px;
-  border: 1px solid rgba(217, 70, 239, 0.35);
-  background: rgba(217, 70, 239, 0.1);
-  color: #f0abfc;
-  font-size: 11px;
-  font-family: inherit;
-  cursor: pointer;
-  white-space: nowrap;
-  transition: all 0.15s ease;
-}
-
-.btn-compare-levels:hover { background: rgba(217, 70, 239, 0.2); }
-.btn-compare-levels.playing { background: rgba(217, 70, 239, 0.3); color: #fff; }
-
-/* Voice-anchor guard: flag takes generated without a pinned voice.
-   Such takes are unconditioned samples -- a different speaker each time --
-   so they are called out rather than left for the ear to catch. */
-.mini-voice-warn {
-  color: #f59e0b;
-  font-weight: 700;
-  margin-left: 4px;
-  cursor: help;
-}
-.mini-take-player.is-unpinned {
-  border-color: #f59e0b !important;
-  box-shadow: 0 0 0 1px rgba(245, 158, 11, 0.35);
-}
-.voice-anchor-warning {
-  margin-top: 10px;
-  padding: 10px 12px;
-  border: 1px solid #f59e0b;
-  border-radius: 8px;
-  background: rgba(245, 158, 11, 0.10);
-  color: #b45309;
-  font-size: 0.8rem;
-  line-height: 1.5;
-}
-.voice-anchor-warning strong { color: #92400e; }

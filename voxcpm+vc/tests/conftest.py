@@ -53,7 +53,9 @@ def stub_seedvc(monkeypatch, tmp_path):
     def fake_health(self):
         return {"status": "ok", "device": "stub"}
 
-    def fake_convert(self, source, target, output):
+    def fake_convert(self, source, target, output, **kwargs):
+        # Accept the F0-compare kwargs (auto_f0_adjust / semi_tone_shift) and ignore
+        # them: the stub is a pass-through, so the three F0 modes differ only by name.
         audio, sr = sf.read(str(source), dtype="float32")
         sf.write(str(output), audio, sr, format="WAV", subtype="PCM_16")
         return output

@@ -242,3 +242,77 @@ def test_donor_audio_endpoint_streams_a_clip():
 def test_donor_audio_endpoint_404s_on_a_missing_emotion():
     chosen = vc.voxcpm_vc_service.resolve_donor_set(None, gender="female")
     assert client.get(f"/api/donors/{chosen}/bewildered/audio").status_code == 404
+
+
+# --------------------------------------------------------------------------- #
+# Pipeline Explorer + benchmark donor/pre-VC/F0 (merged from the :8012 workflow)
+# --------------------------------------------------------------------------- #
+
+def test_donor_sets_ui_shape_is_frontend_ready():
+    """The picker needs `emotions` as a list of {id, transcript}, plus a name."""
+    sets = vc.voxcpm_vc_service.donor_sets_ui()
+    assert sets
+    s = sets[0]
+    assert s["id"] and s["name"]
+    assert isinstance(s["emotions"], list)
+    assert {"id", "transcript"} <= set(s["emotions"][0])
+
+
+def test_pipeline_donor_sets_and_defaults_endpoints():
+    ds = client.get("/api/pipeline/donor-sets")
+    assert ds.status_code == 200 and ds.json()["sets"]
+    d = client.get("/api/pipeline/defaults")
+    assert d.status_code == 200
+    assert "cfg_value" in d.json()["values"]
+
+
+def test_pipeline_trace_keeps_every_stage(engine, tmp_path, monkeypatch):
+    """One utterance donor -> VoxCPM2 -> SeedVC leaves three playable stages."""
+    chosen = vc.voxcpm_vc_service.resolve_donor_set(None, gender="female")
+    # A house target must exist; point the default target at a real clip.
+    target = _target_clip(tmp_path)
+    monkeypatch.setattr(vc.VoxCPMVCService, "_default_target", lambda self: target)
+
+    res = client.post("/api/pipeline/trace", json={
+        "donor_set": chosen, "emotion": "angry", "text": "ทดสอบเสียงโกรธ",
+    })
+    assert res.status_code == 200, res.text
+    body = res.json()
+    keys = {s["key"] for s in body["stages"]}
+    assert keys == {"donor", "voxcpm", "vc"}
+    for st in body["stages"]:
+        got = client.get(st["url"])
+        assert got.status_code == 200
+
+
+def test_benchmark_presets_expose_donor_sets():
+    body = client.get("/api/benchmark/presets").json()
+    assert body["donor_sets"]
+    assert body["default_params"]["gender"] == "female"
+
+
+def test_run_take_pins_the_requested_donor_and_returns_pre_vc(engine, tmp_path, monkeypatch):
+    """A benchmark take clones the requested donor and hands back the pre-SeedVC clip."""
+    target = _target_clip(tmp_path)
+    monkeypatch.setattr(vc.VoxCPMVCService, "_default_target", lambda self: target)
+    chosen = vc.voxcpm_vc_service.resolve_donor_set(None, gender="female")
+
+    init = client.post("/api/benchmark/session/init", json={
+        "text": "ทดสอบ", "emotions": ["angry"], "repeats": 1,
+        "gender": "female", "donor_set": chosen,
+    }).json()
+    sid = init["session_id"]
+
+    res = client.post("/api/benchmark/run-take", json={
+        "session_id": sid, "emotion": "angry", "take_idx": 1, "text": "ทดสอบเสียงโกรธ",
+        "donor_set": chosen, "gender": "female", "f0_compare": True,
+    })
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["pre_vc_url"]
+    assert body["model_input"] and body["model_input"]["chunks"]
+    # The donor named in the debug trace is the one requested.
+    assert body["model_input"]["chunks"][0]["donor_set"] == chosen
+    # F0-compare trio present (baseline / A / B).
+    assert {m["id"] for m in body["f0_variants"]} == {"baseline", "A", "B"}
+    assert client.get(body["pre_vc_url"]).status_code == 200

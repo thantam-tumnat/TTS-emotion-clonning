@@ -9,7 +9,11 @@ def test_benchmark_presets():
     assert res.status_code == 200
     data = res.json()
     assert "emotions" in data
-    assert len(data["emotions"]) == 10
+    # Ten annotator tones plus the donor-only emotion "frustrated", which this
+    # pipeline can test directly because every donor set carries a clip for it.
+    ids = [e["id"] for e in data["emotions"]]
+    assert len(data["emotions"]) == 11
+    assert "frustrated" in ids
     assert "preset_sentences" in data
     assert len(data["preset_sentences"]) >= 1
 

@@ -22,6 +22,7 @@ from app.models import (
     BenchmarkTakeResult,
     BenchmarkSessionSummary,
     BenchmarkTakeVariant,
+    BenchmarkF0Variant,
     ABVariantSpec,
 )
 from app.renderers.voxcpm import format_voxcpm_instruction, VOXCPM_INSTRUCTION_MAP, STYLE_VOCABULARY
@@ -121,6 +122,15 @@ EMOTION_META: Dict[str, Dict[str, Any]] = {
         "color_class": "tone-tired",
         "description": "เหนื่อย อ่อนเพลีย ล้า ง่วง พลังงานต่ำ พูดช้าๆ ถอนหายใจ",
     },
+    # A donor emotion (not an annotator Tone): it has its own thai-ser clip in every
+    # set, so this pipeline can test it directly. It carries no style instruction —
+    # the donor recording is the emotion here — so its default_instruction is empty.
+    "frustrated": {
+        "name_th": "หงุดหงิด / คับข้องใจ",
+        "icon": "😤",
+        "color_class": "tone-frustrated",
+        "description": "หงุดหงิด คับข้องใจ อึดอัด กดดัน เสียงตึงเครียดแต่ไม่ถึงกับตะโกน",
+    },
 }
 
 
@@ -219,6 +229,16 @@ class BenchmarkService:
     def get_presets(self) -> Dict[str, Any]:
         """Return preset sentences, available speakers, and emotion metadata."""
         speakers = siangtts_service.list_speakers()
+
+        def _instruction(k: str, lv: int) -> str:
+            # Donor emotions (e.g. "frustrated") are not annotator Tones and carry no
+            # style parenthetical here — the donor recording is the emotion — so they
+            # have no instruction to format.
+            try:
+                return format_voxcpm_instruction(Tone(k), lv) or ""
+            except ValueError:
+                return ""
+
         return {
             "preset_sentences": PRESET_SENTENCES,
             "emotions": [
@@ -229,17 +249,17 @@ class BenchmarkService:
                     "icon": v["icon"],
                     "color_class": v["color_class"],
                     "description": v["description"],
-                    "default_instruction": format_voxcpm_instruction(Tone(k), 2),
+                    "default_instruction": _instruction(k, 2),
                     # So the matrix can print the real instruction for a row
                     # before that row has been generated.
-                    "instructions": {
-                        str(lv): format_voxcpm_instruction(Tone(k), lv)
-                        for lv in (1, 2, 3)
-                    },
+                    "instructions": {str(lv): _instruction(k, lv) for lv in (1, 2, 3)},
                 }
                 for k, v in EMOTION_META.items()
             ],
             "speakers": speakers,
+            # Same-person emotion donor sets, so the benchmark can pin which actor
+            # supplies the emotion -- the choice that defines this pipeline.
+            "donor_sets": voxcpm_vc_service.donor_sets_ui(),
             "default_params": {
                 "text": PRESET_SENTENCES[0]["text"],
                 "repeats": 3,
@@ -248,6 +268,8 @@ class BenchmarkService:
                 "cfg_value": 2.5,
                 "inference_timesteps": 10,
                 "lora_mode": "on",
+                "gender": "female",
+                "donor_set": None,
             },
         }
 
@@ -278,12 +300,16 @@ class BenchmarkService:
             "intensities": levels,
             "total_takes": total_takes,
             "completed_takes": 0,
+            "gender": getattr(req, "gender", None) or "female",
+            "donor_set": getattr(req, "donor_set", None),
             "params": {
                 "intensity": levels[0],
                 "intensities": levels,
                 "cfg_value": req.cfg_value,
                 "inference_timesteps": req.inference_timesteps,
                 "lora_mode": req.lora_mode or "on",
+                "gender": getattr(req, "gender", None) or "female",
+                "donor_set": getattr(req, "donor_set", None),
             },
             "takes": {},
         }
@@ -357,9 +383,16 @@ class BenchmarkService:
         filename = _name(specs[0])
         out_wav_path = s_dir / filename
 
+        # Emotion here selects a donor recording, not a spoken parenthetical, so pin
+        # the same donor the whole session shares.
+        gender = getattr(req, "gender", None) or session_data.get("gender") or "female"
+        donor_set = getattr(req, "donor_set", None) or session_data.get("donor_set")
+
         try:
+            pre_vc_sink: dict = {}
+            debug_sink: dict = {}
             takes, sr_out, _tones = voxcpm_vc_service.synthesize_variants(
-                [full_text],
+                [clean_text],
                 variants=[
                     {
                         "id": v.id,
@@ -369,12 +402,25 @@ class BenchmarkService:
                     for v in specs
                 ],
                 speaker_id=req.speaker_id,
+                gender=gender,
+                donor_set=donor_set,
                 cfg_value=req.cfg_value,
                 inference_timesteps=req.inference_timesteps,
                 tones=[req.emotion],
                 breaks=[False],
                 lora_mode=req.lora_mode or "on",
+                pre_vc_sink=pre_vc_sink,
+                debug_sink=debug_sink,
             )
+
+            # The VoxCPM2 output before SeedVC (emotional speech still in the donor's
+            # timbre), saved so the UI can A/B it against the converted result.
+            pre_vc_filename = None
+            pre_vc_url = None
+            if pre_vc_sink.get("wav"):
+                pre_vc_filename = f"{row_key}_take_{req.take_idx}__preVC.wav"
+                (s_dir / pre_vc_filename).write_bytes(pre_vc_sink["wav"])
+                pre_vc_url = f"/api/benchmark/audio/{req.session_id}/{pre_vc_filename}"
 
             variant_records = []
             for take, spec in zip(takes, specs):
@@ -388,6 +434,35 @@ class BenchmarkService:
                     "audio_url": f"/api/benchmark/audio/{req.session_id}/{v_name}",
                     "metrics": extract_audio_metrics(audio_arr, sr),
                 })
+
+            # Optional F0-compare trio (baseline / A / B): one VoxCPM2 generation,
+            # three SeedVC treatments, so the emotion-vs-register trade-off is audible.
+            f0_records: List[dict] = []
+            f0_diag = None
+            if getattr(req, "f0_compare", False):
+                cmp = voxcpm_vc_service.render_f0_compare(
+                    clean_text,
+                    emotion=req.emotion,
+                    speaker_id=req.speaker_id,
+                    gender=gender,
+                    donor_set=donor_set,
+                    cfg_value=req.cfg_value,
+                    inference_timesteps=req.inference_timesteps,
+                )
+                f0_diag = cmp.get("diag")
+                for m in cmp.get("modes", []):
+                    f_name = f"{row_key}_take_{req.take_idx}__f0_{m['id']}.wav"
+                    (s_dir / f_name).write_bytes(m["wav"])
+                    f_arr, f_sr = sf.read(io.BytesIO(m["wav"]), dtype="float32")
+                    f0_records.append({
+                        "id": m["id"],
+                        "label": m["label"],
+                        "filename": f_name,
+                        "audio_url": f"/api/benchmark/audio/{req.session_id}/{f_name}",
+                        "metrics": extract_audio_metrics(f_arr, f_sr),
+                        "auto_f0_adjust": bool(m["auto_f0_adjust"]),
+                        "semi_tone_shift": int(m["semi_tone_shift"]),
+                    })
 
             # The first variant stands in for the take at the top level, so every
             # existing reader -- the results matrix, the ZIP export, old session
@@ -414,7 +489,12 @@ class BenchmarkService:
                 "filename": filename,
                 "audio_url": f"/api/benchmark/audio/{req.session_id}/{filename}",
                 "metrics": metrics,
+                "pre_vc_url": pre_vc_url,
+                "pre_vc_filename": pre_vc_filename,
+                "model_input": debug_sink or None,
                 "variants": variant_records,
+                "f0_variants": f0_records,
+                "f0_diag": f0_diag,
                 "voice_anchor": voice_anchor,
                 "elapsed_s": elapsed_s,
                 "error": None,
@@ -438,7 +518,12 @@ class BenchmarkService:
                 audio_url=take_record["audio_url"],
                 filename=filename,
                 metrics=metrics,
+                pre_vc_url=pre_vc_url,
+                pre_vc_filename=pre_vc_filename,
+                model_input=debug_sink or None,
                 variants=[BenchmarkTakeVariant(**v) for v in variant_records],
+                f0_variants=[BenchmarkF0Variant(**v) for v in f0_records],
+                f0_diag=f0_diag,
                 voice_anchor=voice_anchor,
                 elapsed_s=elapsed_s,
                 error=None,
