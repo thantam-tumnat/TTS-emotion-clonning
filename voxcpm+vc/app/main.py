@@ -1,3 +1,4 @@
+import asyncio
 import os
 from datetime import datetime
 from contextlib import asynccontextmanager
@@ -472,7 +473,8 @@ async def synthesize_endpoint(req: SynthesizeRequest):
     if not text:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    parts, tones, breaks = _plan_chunks(
+    parts, tones, breaks = await asyncio.to_thread(
+        _plan_chunks,
         text,
         auto_annotate=req.auto_annotate,
         guidance=req.guidance,
@@ -488,7 +490,8 @@ async def synthesize_endpoint(req: SynthesizeRequest):
 
     debug: list[dict] = []
     try:
-        wav_bytes = voxcpm_vc_service.synthesize_many(
+        wav_bytes = await asyncio.to_thread(
+            voxcpm_vc_service.synthesize_many,
             parts,
             speaker_id=req.speaker_id,
             tones=tones,
@@ -557,7 +560,8 @@ async def synthesize_with_upload_endpoint(
     if not clean_text:
         raise HTTPException(status_code=400, detail="Text cannot be empty")
 
-    parts, tones, breaks = _plan_chunks(
+    parts, tones, breaks = await asyncio.to_thread(
+        _plan_chunks,
         clean_text,
         auto_annotate=auto_annotate,
         guidance=guidance,
@@ -584,7 +588,8 @@ async def synthesize_with_upload_endpoint(
     filename = f"{ts}_custom_{lora_tag}.wav"
 
     try:
-        wav_bytes = voxcpm_vc_service.synthesize_many(
+        wav_bytes = await asyncio.to_thread(
+            voxcpm_vc_service.synthesize_many,
             parts,
             ref_audio_bytes=audio_bytes,
             ref_filename=ref_filename,
@@ -617,7 +622,7 @@ async def synthesize_with_upload_endpoint(
 
 
 @app.post("/synthesize/ab", response_model=ABSynthesizeResponse)
-def synthesize_ab_endpoint(req: ABSynthesizeRequest):
+async def synthesize_ab_endpoint(req: ABSynthesizeRequest):
     """Render one generation and return it assembled several ways.
 
     Two ordinary /synthesize calls cannot answer "did the post-processing help",
@@ -635,7 +640,8 @@ def synthesize_ab_endpoint(req: ABSynthesizeRequest):
     if len(seen) != len(req.variants):
         raise HTTPException(status_code=400, detail="Variant ids must be unique")
 
-    parts, tones, breaks = _plan_chunks(
+    parts, tones, breaks = await asyncio.to_thread(
+        _plan_chunks,
         text,
         auto_annotate=req.auto_annotate,
         guidance=req.guidance,
@@ -653,7 +659,8 @@ def synthesize_ab_endpoint(req: ABSynthesizeRequest):
 
     run_id = f"ab_{datetime.now().strftime('%Y%m%d_%H%M%S')}"
     try:
-        takes, sample_rate, chunk_tones = voxcpm_vc_service.synthesize_variants(
+        takes, sample_rate, chunk_tones = await asyncio.to_thread(
+            voxcpm_vc_service.synthesize_variants,
             parts,
             variants=specs,
             speaker_id=req.speaker_id,
