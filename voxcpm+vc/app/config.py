@@ -62,6 +62,13 @@ class Settings(BaseSettings):
     siangtts_default_callback: str = (
         "https://test.looklike.ai/api/v1/live-gpt/n8n/audio-callback"
     )
+    # Emotion annotation via LLM. When on, a script with no hand-written style tags is
+    # sent to the LLM (Gemini/OpenAI) to label each clause's emotion, and the accept
+    # endpoint blocks on that round-trip before it replies. Turn OFF (WEBHOOK_USE_LLM=false)
+    # to skip the LLM entirely: hand-written [tags] are still honoured, but un-tagged
+    # text is synthesized neutral. Kills the "accept hangs on a slow/overloaded LLM"
+    # stall at the cost of auto-emotion. See app/webhook.py:_plan_chunks.
+    webhook_use_llm: bool = True
     # Job scratch dir (finished takes are uploaded, then deleted unless keep is on).
     webhook_work_dir: str = "webhook_work"
     webhook_keep_work: bool = False

@@ -42,6 +42,7 @@ from pydantic import BaseModel
 
 from app.config import settings
 from app.annotator import annotator
+from app.models import Segment, Tone
 from app.segmenter import segment_text
 from app.renderers import get_renderer
 from app.renderers.voxcpm import split_style_chunk_specs
@@ -84,9 +85,11 @@ class Job:
     queue_id: str
     voice_id: str
     callback_url: str
-    parts: List[str]
-    tones: List[Optional[str]]
-    breaks: List[bool]
+    # Planned in the worker (see _run_job), not at accept time, so the HTTP response
+    # comes back immediately like the :8010 webhook instead of blocking on the LLM.
+    parts: List[str] = field(default_factory=list)
+    tones: List[Optional[str]] = field(default_factory=list)
+    breaks: List[bool] = field(default_factory=list)
     prompt: str = ""
     status: str = "queued"              # queued | running | completed | failed
     error: Optional[str] = None
@@ -171,6 +174,16 @@ async def _run_job(job: Job) -> None:
 
     try:
         work.mkdir(parents=True, exist_ok=True)
+
+        # Plan the chunks here, not at accept time: emotion annotation may call the LLM
+        # (when enabled), and doing it in the worker keeps the accept response instant,
+        # exactly like the :8010 webhook. A script that normalizes to nothing fails the
+        # job (reported via callback) instead of a synchronous HTTP 400.
+        job.parts, job.tones, job.breaks = await asyncio.to_thread(
+            _plan_chunks, job.prompt, settings.webhook_use_llm
+        )
+        if not any(p.strip() for p in job.parts):
+            raise RuntimeError("prompt is empty after normalize")
 
         # Generation is blocking (HTTP to the GPU service + SeedVC), so keep it off
         # the event loop or the accept endpoint stalls behind it.
@@ -293,10 +306,12 @@ def _pick_donor_set(sex: str, donor_set: str):
     return None, want
 
 
-def _plan_chunks(text: str):
-    """Split into per-emotion chunks. Hand-written style tags win; otherwise the
-    text is auto-annotated so each chunk carries the tone that selects its donor."""
-    specs = split_style_chunk_specs(text, use_llm=True)
+def _plan_chunks(text: str, use_llm: bool = True):
+    """Split into per-emotion chunks. Hand-written style tags always win. Un-tagged text
+    is auto-annotated by the LLM so each chunk carries the tone that selects its donor --
+    unless ``use_llm`` is off (WEBHOOK_USE_LLM=false), in which case the whole script is
+    rendered neutral and no LLM is contacted."""
+    specs = split_style_chunk_specs(text, use_llm=use_llm)
     if specs:
         return (
             [s.text for s in specs],
@@ -304,10 +319,16 @@ def _plan_chunks(text: str):
             [s.break_before for s in specs],
         )
 
-    clauses = segment_text(text)
-    annotated = annotator.annotate(original_text=text, clauses=clauses)
     renderer = get_renderer("voxcpm")
-    rendered = renderer.render(annotated.segments)
+    if use_llm:
+        clauses = segment_text(text)
+        segments = annotator.annotate(original_text=text, clauses=clauses).segments
+    else:
+        # No LLM: one neutral segment. synthesize_many still splits it into safe
+        # generation-sized pieces internally, so long scripts are fine here.
+        segments = [Segment(text=text, tone=Tone.NEUTRAL, intensity=2)]
+
+    rendered = renderer.render(segments)
     if rendered.chunks:
         return (
             [c.text for c in rendered.chunks],
@@ -322,20 +343,20 @@ def _plan_chunks(text: str):
 # ---------------------------------------------------------------------------
 
 async def _accept(body: WebhookBody) -> JSONResponse:
-    """Validate + enqueue. Chunk planning runs here (not in the worker) so a bad
-    script is rejected in the HTTP response instead of only via callback."""
+    """Enqueue and return success immediately, like the :8010 webhook — the script is
+    planned and synthesized in the worker, and any problem is reported via callback.
+    Only a trivially-empty prompt is rejected inline (no LLM, no GPU touched here)."""
     queue_id = body.queue_id or str(uuid.uuid4())
     callback_url = body.callback_url or settings.siangtts_default_callback
 
-    parts, tones, breaks = await asyncio.to_thread(_plan_chunks, body.prompt)
-    if not any(p.strip() for p in parts):
+    if not body.prompt.strip():
         return JSONResponse(
-            {"status": "error", "error": "prompt is empty after normalize"},
+            {"status": "error", "error": "prompt is empty"},
             status_code=400,
         )
 
-    # Pick the donor now (not in the worker) so the choice is fixed when the job is
-    # queued and visible on the dashboard, and a random pick is stable across retries.
+    # Pick the donor now (fast, local — no network) so the choice is fixed when the job
+    # is queued and visible on the dashboard, and a random pick is stable across retries.
     donor_set, gender = await asyncio.to_thread(_pick_donor_set, body.sex, body.donor_set)
 
     job = Job(
@@ -343,9 +364,6 @@ async def _accept(body: WebhookBody) -> JSONResponse:
         queue_id=queue_id,
         voice_id=body.voice_id.strip() or settings.webhook_default_voice.strip(),
         callback_url=callback_url,
-        parts=parts,
-        tones=tones,
-        breaks=breaks,
         prompt=body.prompt,
         donor_set=donor_set,
         gender=gender,
@@ -363,8 +381,8 @@ async def _accept(body: WebhookBody) -> JSONResponse:
                 del jobs[jid]
 
     await _state["queue"].put(job)
-    print(f"[{queue_id}] queued — {len(parts)} chunk(s), voice={job.voice_id or 'auto'}")
-    return JSONResponse({"status": "success", "job_id": job.job_id, "chunks": len(parts)})
+    print(f"[{queue_id}] queued — voice={job.voice_id or 'auto'}, donor={donor_set or 'auto'}")
+    return JSONResponse({"status": "success", "job_id": job.job_id})
 
 
 @router.post("/webhook/live-ai-create-new")
@@ -704,7 +722,7 @@ async function submitTest(){
   try{
     const r=await fetch('/webhook/live-ai-create-new',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});
     const d=await r.json();
-    if(d.status==='success'){ toast('Queued: '+d.job_id+' ('+d.chunks+' chunk)'); closeTest(); tick(); }
+    if(d.status==='success'){ toast('Queued: '+d.job_id); closeTest(); tick(); }
     else toast('Error: '+(d.error||'failed'));
   }catch(e){ toast('Request failed'); }
 }
