@@ -121,6 +121,7 @@ def engine(monkeypatch):
     eng = _RecordingEngine()
     monkeypatch.setattr(vc.VoxCPMVCService, "_synth", lambda self: eng)
     vc.voxcpm_vc_service._donor_handles.clear()
+    vc.voxcpm_vc_service._target_handles.clear()
     return eng
 
 
@@ -191,18 +192,19 @@ def test_generated_text_has_no_instruction_left(engine, tmp_path):
 
 
 def test_output_is_at_the_conversion_rate(engine, tmp_path):
-    """SeedVC decides the rate of the finished take, not VoxCPM2."""
+    """SeedVC decides the rate of the finished take, not VoxCPM2 (non-neutral path)."""
     chunks, rate = vc.voxcpm_vc_service.render_chunks(
         ["ทดสอบ"],
         ref_audio_bytes=_target_clip(tmp_path).read_bytes(),
         ref_filename="target.wav",
-        tones=["neutral"],
+        tones=["angry"],
     )
     assert chunks
-    # The suite's stub converter passes audio through, so the rate it reports is the
-    # engine's; the point asserted is that the rate comes back from the converted
-    # file rather than being assumed.
-    assert rate == engine.sample_rate
+    # Real SeedVC always emits SEEDVC_SAMPLE_RATE regardless of what VoxCPM2
+    # rendered at; the stub mirrors that so this asserts the rate comes back from
+    # the converted file rather than being assumed to match the engine's.
+    assert rate == vc.SEEDVC_SAMPLE_RATE
+    assert rate != engine.sample_rate
 
 
 def test_seedvc_down_fails_loudly(monkeypatch, engine, tmp_path):
@@ -214,9 +216,111 @@ def test_seedvc_down_fails_loudly(monkeypatch, engine, tmp_path):
             ["ทดสอบ"],
             ref_audio_bytes=_target_clip(tmp_path).read_bytes(),
             ref_filename="target.wav",
-            tones=["neutral"],
+            tones=["angry"],
         )
     assert "8022" in str(exc.value)
+
+
+# --------------------------------------------------------------------------- #
+# Neutral skips donor + SeedVC (voxcpm_vc_skip_neutral)
+# --------------------------------------------------------------------------- #
+
+def test_neutral_clones_target_ref_directly_not_a_donor(engine, tmp_path):
+    """With the skip on, neutral's voice handle is built from the target ref, with
+    no transcript (zero-shot) -- not from a donor clip in continuation mode."""
+    target = _target_clip(tmp_path)
+
+    vc.voxcpm_vc_service.render_chunks(
+        ["สวัสดีครับ"],
+        ref_audio_bytes=target.read_bytes(),
+        ref_filename="target.wav",
+        tones=["neutral"],
+    )
+
+    assert len(engine.voices) == 1
+    path, transcript = engine.voices[0]
+    # A donor clip is always built with its transcript (continuation mode); the
+    # target ref is cloned zero-shot, so no transcript and no donor filename.
+    assert transcript is None
+    assert not path.endswith("_1.wav")
+
+
+def test_neutral_skip_does_not_call_seedvc_convert(monkeypatch, engine, tmp_path):
+    calls = []
+    monkeypatch.setattr(
+        vc.VoxCPMVCService, "_convert",
+        lambda self, *a, **k: calls.append(1) or a[2],
+    )
+
+    vc.voxcpm_vc_service.render_chunks(
+        ["สวัสดีครับ"],
+        ref_audio_bytes=_target_clip(tmp_path).read_bytes(),
+        ref_filename="target.wav",
+        tones=["neutral"],
+    )
+
+    assert calls == []
+
+
+def test_neutral_skip_still_resamples_to_the_seedvc_rate(engine, tmp_path):
+    """Bypassing SeedVC must not leave the take at VoxCPM2's own rate -- a mixed
+    take (neutral + another emotion) has to land on one consistent sample rate."""
+    chunks, rate = vc.voxcpm_vc_service.render_chunks(
+        ["สวัสดีครับ"],
+        ref_audio_bytes=_target_clip(tmp_path).read_bytes(),
+        ref_filename="target.wav",
+        tones=["neutral"],
+    )
+    assert chunks
+    assert rate == vc.SEEDVC_SAMPLE_RATE
+    assert rate != engine.sample_rate
+
+
+def test_neutral_skip_does_not_require_seedvc_up(monkeypatch, engine, tmp_path):
+    """An all-neutral take never touches SeedVC, so its being down must not fail it."""
+    monkeypatch.setattr(vc.VoxCPMVCService, "seedvc_health", lambda self: None)
+
+    chunks, _rate = vc.voxcpm_vc_service.render_chunks(
+        ["สวัสดีครับ"],
+        ref_audio_bytes=_target_clip(tmp_path).read_bytes(),
+        ref_filename="target.wav",
+        tones=["neutral"],
+    )
+    assert chunks
+
+
+def test_skip_neutral_flag_off_restores_the_donor_plus_vc_path(monkeypatch, engine, tmp_path):
+    """The flag is reversible: turned off, neutral goes back through a donor and
+    SeedVC exactly like every other emotion."""
+    monkeypatch.setattr(vc.settings, "voxcpm_vc_skip_neutral", False, raising=False)
+    chosen = vc.voxcpm_vc_service.resolve_donor_set(None, gender="female")
+    donor_wav, _txt = vc.voxcpm_vc_service.donor_clip(chosen, "neutral")
+
+    vc.voxcpm_vc_service.render_chunks(
+        ["สวัสดีครับ"],
+        ref_audio_bytes=_target_clip(tmp_path).read_bytes(),
+        ref_filename="target.wav",
+        tones=["neutral"],
+        donor_set=chosen,
+    )
+
+    assert len(engine.voices) == 1
+    path, transcript = engine.voices[0]
+    assert donor_wav.name in path
+    assert transcript is not None
+
+
+def test_mixed_take_keeps_neutral_and_other_emotions_at_one_rate(engine, tmp_path):
+    """Neutral (skipped, resampled by hand) and angry (via SeedVC) must assemble at
+    the same sample rate in one take."""
+    chunks, rate = vc.voxcpm_vc_service.render_chunks(
+        ["(neutral) หนึ่ง", "(angry) สอง"],
+        ref_audio_bytes=_target_clip(tmp_path).read_bytes(),
+        ref_filename="target.wav",
+        tones=["neutral", "angry"],
+    )
+    assert len(chunks) == 2
+    assert rate == vc.SEEDVC_SAMPLE_RATE
 
 
 # --------------------------------------------------------------------------- #
