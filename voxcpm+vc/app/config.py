@@ -150,6 +150,12 @@ class Settings(BaseSettings):
     # of its rendered length; wider risks WSOLA artefacts and a robotic drag, tighter
     # leaves a fast sad read still faster than the donor.
     voxcpm_vc_max_pace_stretch: float = float(os.getenv("VOXCPM_VC_MAX_PACE_STRETCH", "0.35"))
+    # Neutral has no emotion-specific pitch contour to steal from a donor, so the
+    # donor+SeedVC round trip buys nothing there and only adds a GPU stage and its
+    # conversion artefacts. When on, neutral chunks clone the target ref directly
+    # (VoxCPM2 zero-shot, no donor, no SeedVC) instead of going through the normal
+    # donor -> VoxCPM2 -> SeedVC path. Other emotions are untouched.
+    voxcpm_vc_skip_neutral: bool = os.getenv("VOXCPM_VC_SKIP_NEUTRAL", "1") not in ("0", "false", "False", "")
 
     # SiangTTS / VoxCPM2 Voice Cloning
     siangtts_base_model: str = "openbmb/VoxCPM2"

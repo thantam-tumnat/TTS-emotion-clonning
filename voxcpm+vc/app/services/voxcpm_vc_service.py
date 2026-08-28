@@ -110,6 +110,9 @@ class VoxCPMVCService:
         # the same bytes on every request, so encoding it once per process is the
         # difference between one upload and one per chunk.
         self._donor_handles: Dict[Tuple[str, str], str] = {}
+        # Resolved target-ref path -> voice handle, for the skip-VC neutral path
+        # (zero-shot cloning of the target directly, no donor involved).
+        self._target_handles: Dict[str, Any] = {}
         self._manifest: Optional[dict] = None
         # (set_id, emotion) -> the donor clip's own pace, seconds of voiced audio per
         # spoken character. Measured once per clip; it is a property of the recording.
@@ -297,6 +300,44 @@ class VoxCPMVCService:
         if isinstance(handle, str) and handle:
             self._donor_handles[key] = handle
         return handle
+
+    def _target_handle(self, synth: Any, target_wav: Path) -> Any:
+        """Zero-shot voice handle for the target ref itself (no transcript).
+
+        Used only by the skip-VC neutral path: VoxCPM2 clones the target's timbre
+        directly with no donor and no continuation mode, so there is nothing for
+        SeedVC to convert afterwards. Cached by resolved path like donor handles.
+        """
+        key = str(target_wav.resolve())
+        cached = self._target_handles.get(key)
+        if cached:
+            return cached
+        handle = synth.build_voice(key)
+        if isinstance(handle, str) and handle:
+            self._target_handles[key] = handle
+        return handle
+
+    @staticmethod
+    def _resample_to(audio: Any, sr_from: int, sr_to: int) -> Any:
+        """Resample ``audio`` from ``sr_from`` to ``sr_to``.
+
+        Needed only for chunks that skip SeedVC: everything that goes through
+        SeedVC comes back at SEEDVC_SAMPLE_RATE regardless of what VoxCPM2 rendered
+        at, so a chunk that bypasses it has to be brought to that same rate by hand
+        before assembly, or a mixed take (neutral + another emotion) would carry two
+        different sample rates into one WAV.
+        """
+        import numpy as np
+
+        arr = np.asarray(audio, dtype="float32")
+        if sr_from == sr_to or arr.size == 0:
+            return arr
+        import torch
+        import torchaudio
+
+        t = torch.from_numpy(arr)
+        out = torchaudio.functional.resample(t, sr_from, sr_to)
+        return out.numpy().astype("float32")
 
     def _target_voice_path(
         self,
@@ -662,16 +703,6 @@ class VoxCPMVCService:
                     for piece in pieces
                 ], rate
 
-        if settings.seedvc_required and self.seedvc_health() is None:
-            raise VoxCPMVCUnavailable(
-                f"SeedVC worker at {self.seedvc_url} is not responding. Without it the "
-                f"take would come back in the donor's voice, not '{speaker_id or 'the uploaded clip'}'."
-            )
-
-        scratch = Path("scratch/voxcpm_vc")
-        scratch.mkdir(parents=True, exist_ok=True)
-        run_id = int(time.time() * 1000)
-
         # One job per emotion rather than per chunk: every piece of an emotion shares
         # that emotion's donor prompt cache, and the service can only guarantee that
         # if it sees them together. Grouping across the whole take (not just runs of
@@ -681,19 +712,45 @@ class VoxCPMVCService:
         for idx, (_src, _body, _brk, emotion) in enumerate(planned):
             groups.setdefault(emotion, []).append(idx)
 
+        # SeedVC is only needed for groups that actually convert through it -- a take
+        # that is all-neutral with the skip enabled never touches the worker, and
+        # should not fail just because it happens to be down.
+        needs_seedvc = any(
+            not (emotion == "neutral" and settings.voxcpm_vc_skip_neutral)
+            for emotion in groups
+        )
+        if needs_seedvc and settings.seedvc_required and self.seedvc_health() is None:
+            raise VoxCPMVCUnavailable(
+                f"SeedVC worker at {self.seedvc_url} is not responding. Without it the "
+                f"take would come back in the donor's voice, not '{speaker_id or 'the uploaded clip'}'."
+            )
+
+        scratch = Path("scratch/voxcpm_vc")
+        scratch.mkdir(parents=True, exist_ok=True)
+        run_id = int(time.time() * 1000)
+
         generated: List[Optional[Any]] = [None] * len(planned)
         gen_rate = int(getattr(synth, "sample_rate", 48000) or 48000)
 
         try:
             for emotion, indices in groups.items():
-                handle = self._donor_handle(synth, chosen_set, emotion)
-                donor_wav, donor_txt = self.donor_clip(chosen_set, emotion)
+                skip_vc = emotion == "neutral" and settings.voxcpm_vc_skip_neutral
 
-                print(
-                    f"[VoxCPM+VC] {emotion}: {len(indices)} piece(s) cloning "
-                    f"{chosen_set}/{donor_wav.name}",
-                    file=sys.stderr,
-                )
+                if skip_vc:
+                    handle = self._target_handle(synth, Path(target_wav))
+                    print(
+                        f"[VoxCPM+VC] neutral: {len(indices)} piece(s) cloning target "
+                        f"ref directly (VC skipped)",
+                        file=sys.stderr,
+                    )
+                else:
+                    handle = self._donor_handle(synth, chosen_set, emotion)
+                    donor_wav, donor_txt = self.donor_clip(chosen_set, emotion)
+                    print(
+                        f"[VoxCPM+VC] {emotion}: {len(indices)} piece(s) cloning "
+                        f"{chosen_set}/{donor_wav.name}",
+                        file=sys.stderr,
+                    )
 
                 audios, gen_rate = batch(
                     [planned[i][1] for i in indices],
@@ -710,17 +767,24 @@ class VoxCPMVCService:
                         f"({emotion})"
                     )
                 for slot, audio in zip(indices, audios):
-                    paced = self._match_to_donor_pace(
-                        self._depeak(audio), gen_rate, planned[slot][1], chosen_set, emotion
-                    )
-                    generated[slot] = paced
+                    if skip_vc:
+                        # No donor was cloned, so there is no donor pace to match --
+                        # the target ref's own natural pace is what should come out.
+                        generated[slot] = self._depeak(audio)
+                    else:
+                        generated[slot] = self._match_to_donor_pace(
+                            self._depeak(audio), gen_rate, planned[slot][1], chosen_set, emotion
+                        )
 
                 if debug_out is not None:
                     debug_out.append({
                         "emotion": emotion,
-                        "donor_set": chosen_set,
-                        "donor_clip": donor_wav.name,
-                        "donor_text": donor_txt,
+                        # "" not None: main.py puts this straight into a response
+                        # header, and a None header value is a 500 (no .encode()).
+                        "donor_set": "" if skip_vc else chosen_set,
+                        "donor_clip": None if skip_vc else donor_wav.name,
+                        "donor_text": None if skip_vc else donor_txt,
+                        "skip_vc": skip_vc,
                         "pieces": [planned[i][1] for i in indices],
                         "cfg_value": cfg_value,
                         "inference_timesteps": inference_timesteps,
@@ -733,20 +797,28 @@ class VoxCPMVCService:
                 if audio is None:
                     continue
 
-                src_path = scratch / f"gen_{run_id}_{idx:03d}_{emotion}.wav"
-                out_path = scratch / f"vc_{run_id}_{idx:03d}_{emotion}.wav"
-                sf.write(str(src_path), np.asarray(audio, dtype="float32"), gen_rate,
-                         format="WAV", subtype="PCM_16")
+                skip_vc = emotion == "neutral" and settings.voxcpm_vc_skip_neutral
 
                 if pre_vc_out is not None:
                     pre_vc_out.append((np.asarray(audio, dtype="float32"), gen_rate))
 
-                try:
-                    self._convert(src_path, target_wav, out_path, **f0_kw)
-                    converted, sr = sf.read(str(out_path), dtype="float32")
-                finally:
-                    src_path.unlink(missing_ok=True)
-                    out_path.unlink(missing_ok=True)
+                if skip_vc:
+                    # Already the target's own timbre -- just bring it to the rate
+                    # every SeedVC-converted chunk lands at, so a take mixing neutral
+                    # with another emotion assembles at one consistent sample rate.
+                    converted = self._resample_to(audio, gen_rate, SEEDVC_SAMPLE_RATE)
+                    sr = SEEDVC_SAMPLE_RATE
+                else:
+                    src_path = scratch / f"gen_{run_id}_{idx:03d}_{emotion}.wav"
+                    out_path = scratch / f"vc_{run_id}_{idx:03d}_{emotion}.wav"
+                    sf.write(str(src_path), np.asarray(audio, dtype="float32"), gen_rate,
+                             format="WAV", subtype="PCM_16")
+                    try:
+                        self._convert(src_path, target_wav, out_path, **f0_kw)
+                        converted, sr = sf.read(str(out_path), dtype="float32")
+                    finally:
+                        src_path.unlink(missing_ok=True)
+                        out_path.unlink(missing_ok=True)
 
                 if converted.ndim > 1:
                     converted = converted.mean(axis=1)

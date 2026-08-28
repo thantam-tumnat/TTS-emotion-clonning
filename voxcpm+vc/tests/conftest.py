@@ -56,15 +56,24 @@ def stub_seedvc(monkeypatch, tmp_path):
     def fake_convert(self, source, target, output, **kwargs):
         # Accept the F0-compare kwargs (auto_f0_adjust / semi_tone_shift) and ignore
         # them: the stub is a pass-through, so the three F0 modes differ only by name.
+        # It does mimic one real behaviour worth keeping honest: SeedVC's f0-condition
+        # models always emit SEEDVC_SAMPLE_RATE regardless of the source rate, so a
+        # test mixing a skip-VC (resampled by hand) chunk with a converted one is
+        # exercising a real invariant, not a stub artefact.
         audio, sr = sf.read(str(source), dtype="float32")
+        if sr != vc.SEEDVC_SAMPLE_RATE:
+            audio = vc.VoxCPMVCService._resample_to(audio, sr, vc.SEEDVC_SAMPLE_RATE)
+            sr = vc.SEEDVC_SAMPLE_RATE
         sf.write(str(output), audio, sr, format="WAV", subtype="PCM_16")
         return output
 
     monkeypatch.setattr(vc.VoxCPMVCService, "seedvc_health", fake_health)
     monkeypatch.setattr(vc.VoxCPMVCService, "_convert", fake_convert)
-    # A donor handle is cached per process; the mock engine hands back a different
-    # kind of object than the real one, so a handle built under one must not leak
-    # into a test running under the other.
+    # A donor/target handle is cached per process; the mock engine hands back a
+    # different kind of object than the real one, so a handle built under one must
+    # not leak into a test running under the other.
     vc.voxcpm_vc_service._donor_handles.clear()
+    vc.voxcpm_vc_service._target_handles.clear()
     yield
     vc.voxcpm_vc_service._donor_handles.clear()
+    vc.voxcpm_vc_service._target_handles.clear()
