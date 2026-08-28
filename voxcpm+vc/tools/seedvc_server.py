@@ -40,7 +40,25 @@ class ConvertRequest(BaseModel):
     inference_cfg_rate: float = 0.7
 
 
+def _load_env_file(path: str = ".env") -> None:
+    """Load `KEY=value` lines from `.env` in the cwd. Real env vars always win."""
+    env_path = Path(path)
+    if not env_path.exists():
+        return
+    with open(env_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k, v = k.strip(), v.strip().strip("'").strip('"')
+            if k and k not in os.environ:
+                os.environ[k] = v
+
+
 def main() -> int:
+    _load_env_file()  # picks up HF_TOKEN etc. from voxcpm+vc/.env (this script's cwd)
+
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seedvc-repo", required=True, help="path to a seed-vc checkout")
     ap.add_argument("--host", default="127.0.0.1")
