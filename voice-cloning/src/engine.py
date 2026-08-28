@@ -333,12 +333,20 @@ class Engine:
             job.finished = time.time()
             self.running = None
             job._event.set()
-            try:
-                import torch
-                if torch.cuda.is_available():
-                    torch.cuda.empty_cache()
-            except Exception:
-                pass
+            # `torch.cuda.empty_cache()` forces a full device sync. Running it
+            # after *every* job serialised that stall into the hot path even
+            # though the allocator would have reused the freed blocks on the
+            # next generation anyway. Only reclaim when it actually earns its
+            # cost: after a failed job (fragmentation is likely) or when a
+            # deployer opts back into the old always-on behaviour for a tight
+            # VRAM host via VOXCPM_EMPTY_CACHE=always.
+            if job.status == "failed" or os.getenv("VOXCPM_EMPTY_CACHE") == "always":
+                try:
+                    import torch
+                    if torch.cuda.is_available():
+                        torch.cuda.empty_cache()
+                except Exception:
+                    pass
 
     # -- delivery -------------------------------------------------------- #
 

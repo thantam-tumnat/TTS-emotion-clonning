@@ -21,6 +21,7 @@ this binds to localhost and is trusted, like the sibling GPU service.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -99,11 +100,20 @@ def main() -> int:
         except Exception as e:                                    # noqa: BLE001
             import traceback
             traceback.print_exc()
-            return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
-        finally:
+            # Reclaim after a failure, where a partial run may have fragmented VRAM.
             import torch
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+            return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
+        finally:
+            # `empty_cache()` forces a device sync; calling it after every
+            # successful convert stalled the diffusion hot path for a reclaim the
+            # allocator would have made on the next call anyway. Opt back in on a
+            # VRAM-starved host with SEEDVC_EMPTY_CACHE=always.
+            if os.getenv("SEEDVC_EMPTY_CACHE") == "always":
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
