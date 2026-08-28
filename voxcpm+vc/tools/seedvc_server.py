@@ -21,6 +21,7 @@ this binds to localhost and is trusted, like the sibling GPU service.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 import time
 from pathlib import Path
@@ -39,7 +40,25 @@ class ConvertRequest(BaseModel):
     inference_cfg_rate: float = 0.7
 
 
+def _load_env_file(path: str = ".env") -> None:
+    """Load `KEY=value` lines from `.env` in the cwd. Real env vars always win."""
+    env_path = Path(path)
+    if not env_path.exists():
+        return
+    with open(env_path, encoding="utf-8") as f:
+        for line in f:
+            line = line.strip()
+            if not line or line.startswith("#") or "=" not in line:
+                continue
+            k, v = line.split("=", 1)
+            k, v = k.strip(), v.strip().strip("'").strip('"')
+            if k and k not in os.environ:
+                os.environ[k] = v
+
+
 def main() -> int:
+    _load_env_file()  # picks up HF_TOKEN etc. from voxcpm+vc/.env (this script's cwd)
+
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--seedvc-repo", required=True, help="path to a seed-vc checkout")
     ap.add_argument("--host", default="127.0.0.1")
@@ -99,11 +118,20 @@ def main() -> int:
         except Exception as e:                                    # noqa: BLE001
             import traceback
             traceback.print_exc()
-            return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
-        finally:
+            # Reclaim after a failure, where a partial run may have fragmented VRAM.
             import torch
             if torch.cuda.is_available():
                 torch.cuda.empty_cache()
+            return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
+        finally:
+            # `empty_cache()` forces a device sync; calling it after every
+            # successful convert stalled the diffusion hot path for a reclaim the
+            # allocator would have made on the next call anyway. Opt back in on a
+            # VRAM-starved host with SEEDVC_EMPTY_CACHE=always.
+            if os.getenv("SEEDVC_EMPTY_CACHE") == "always":
+                import torch
+                if torch.cuda.is_available():
+                    torch.cuda.empty_cache()
 
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
