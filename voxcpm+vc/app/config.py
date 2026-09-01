@@ -58,7 +58,7 @@ class Settings(BaseSettings):
     # one .env line points both services at the same delivery endpoint.
     # ------------------------------------------------------------------ #
     siangtts_upload_url: str = "https://looklike.ai/api/v1/live-gpt/upload"
-    siangtts_upload_token: str = ""
+    siangtts_upload_token: str = "n8n_c31b66de94ccfdb3b15970f21b0b4f20cf65dd1e0ad742d1"
     siangtts_default_callback: str = (
         "https://test.looklike.ai/api/v1/live-gpt/n8n/audio-callback"
     )

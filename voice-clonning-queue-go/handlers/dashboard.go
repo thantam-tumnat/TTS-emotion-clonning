@@ -799,8 +799,15 @@ const dashboardHTML = `<!doctype html>
             // 3. View Details
             actionBtns += '<button class="btn btn-detail" onclick="openDetailModal(\'' + j.job_id + '\')">ℹ Details</button>';
 
+            var statusTitle = (j.status === 'failed' && j.error) ? ' title="' + escapeHtml(j.error) + '"' : '';
+            var errorSnippet = '';
+            if (j.status === 'failed' && j.error) {
+              var shortErr = j.error.length > 80 ? j.error.slice(0, 80) + '…' : j.error;
+              errorSnippet = '<div style="color:var(--accent-red); font-size:11px; margin-top:3px; max-width:220px; white-space:normal;">' + escapeHtml(shortErr) + '</div>';
+            }
+
             rowsHtml += '<tr>' +
-              '<td><span class="pill ' + statusClass + '">' + j.status + '</span></td>' +
+              '<td><span class="pill ' + statusClass + '"' + statusTitle + '>' + j.status + '</span>' + errorSnippet + '</td>' +
               '<td class="mono"><strong>' + j.job_id + '</strong></td>' +
               '<td><span class="lane-tag ' + laneClass + '">' + j.lane + '</span></td>' +
               '<td>' + clientName + '</td>' +
