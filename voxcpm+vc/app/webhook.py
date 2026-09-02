@@ -36,7 +36,7 @@ from pathlib import Path
 from typing import List, Optional
 
 import httpx
-from fastapi import APIRouter
+from fastapi import APIRouter, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -75,6 +75,16 @@ async def _meta_register(job: "Job") -> None:
         "raw_prompt": job.prompt,
         "lane": META_LANE,
         "client": META_CLIENT,
+        # The body as it arrived, alongside what this studio read it as. voice_id,
+        # sex and donor_set are all silently defaulted when the caller omits them
+        # (see _accept and _pick_donor_set), and a take in the house voice looks
+        # exactly like a take in the requested one -- so the dashboard gets both
+        # halves and can say which fields the caller actually sent.
+        "request": {"received": job.request, "resolved": job.resolved},
+        # Put the resolved target on the row itself too: the per-emotion render
+        # jobs behind it are conditioned on *donor* clips, so the card would
+        # otherwise label this request with a donor handle.
+        "voice": {"speaker_id": job.voice_id} if job.voice_id else None,
     }
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
@@ -155,6 +165,11 @@ class Job:
     # True once this job's visibility-only row is registered on the queue gateway, so
     # progress PATCHes know there is something to update (see _meta_register).
     meta_registered: bool = False
+    # The caller's JSON body verbatim, and what this studio resolved it into. Kept
+    # for the dashboards (this one and :8020), which is the only place a silent
+    # default -- an omitted voice_id, an unreadable sex -- is visible at all.
+    request: dict = field(default_factory=dict)
+    resolved: dict = field(default_factory=dict)
 
     def as_dict(self, position: Optional[int] = None) -> dict:
         now = time.time()
@@ -183,6 +198,8 @@ class Job:
             "audio_src": audio_src,
             "has_local_audio": has_audio,
             "error": self.error,
+            "request": self.request,
+            "resolved": self.resolved,
         }
 
 
@@ -362,8 +379,41 @@ def _cleanup(work_dir: Path) -> None:
 # importing app.main, which would be a circular import)
 # ---------------------------------------------------------------------------
 
+# Values of `sex` this webhook recognises. Anything else is *not* rejected -- the
+# n8n flow has been sending free text for a long time -- but it does not silently
+# pass for a deliberate choice either: it resolves to the configured default and is
+# reported as unrecognised, because "female" and "ชาย" would otherwise both produce
+# a female donor and look identical afterwards.
+_MALE_WORDS = {"m", "male", "man", "ชาย", "ผู้ชาย"}
+_FEMALE_WORDS = {"f", "female", "woman", "หญิง", "ผู้หญิง"}
+
+
+def _normalize_sex(sex: str) -> tuple[str, str]:
+    """`sex` from the body -> ("male"|"female", where that answer came from)."""
+    raw = (sex or "").strip()
+    if not raw:
+        default = (settings.default_gender or "female").strip().lower()
+        want = "male" if default in _MALE_WORDS else "female"
+        return want, f"not sent — DEFAULT_GENDER={default or 'female'}"
+
+    low = raw.lower()
+    if low in _MALE_WORDS:
+        return "male", "request"
+    if low in _FEMALE_WORDS:
+        return "female", "request"
+    # Historical rule: anything starting with "m" was male and everything else was
+    # female, which quietly turned a typo into a female donor. Same outcome, but
+    # named as the guess it is.
+    want = "male" if low.startswith("m") else "female"
+    return want, f"unrecognised {raw!r} — guessed {want}"
+
+
 def _pick_donor_set(sex: str, donor_set: str):
-    """Choose the donor whose emotion is cloned, returning (donor_set, gender).
+    """Choose the donor whose emotion is cloned.
+
+    Returns ``(donor_set, gender, sources)``, where ``sources`` says where the sex
+    and the donor came from so the dashboards can show a default standing in for
+    something the caller never sent.
 
     An explicit ``donor_set`` is pinned as-is (the synth validates it). Otherwise a
     random complete set of the requested sex is drawn, so successive jobs vary the
@@ -371,18 +421,26 @@ def _pick_donor_set(sex: str, donor_set: str):
     configured gender when blank. When no set matches, donor_set comes back None and
     the gender is handed on so the synth can resolve or raise a clear error.
     """
+    want, sex_source = _normalize_sex(sex)
+
     ds = donor_set.strip()
     if ds:
-        return ds, None
-    g = (sex or settings.default_gender or "female").strip().lower()
-    want = "male" if g.startswith("m") else "female"
+        # A pinned actor already carries its own sex; the `sex` field is not read.
+        return ds, None, {"sex_source": "not used — donor_set pinned", "donor_set_source": "request"}
+
     sets = voxcpm_vc_service.list_donor_sets()
     pool = [s["id"] for s in sets if s.get("gender") == want and s.get("complete")]
     if not pool:
         pool = [s["id"] for s in sets if s.get("gender") == want]
     if pool:
-        return random.choice(pool), want
-    return None, want
+        return random.choice(pool), want, {
+            "sex_source": sex_source,
+            "donor_set_source": f"random {want} donor ({len(pool)} available)",
+        }
+    return None, want, {
+        "sex_source": sex_source,
+        "donor_set_source": f"no {want} donor set — resolved at render time",
+    }
 
 
 def _plan_chunks(text: str, use_llm: bool = True):
@@ -421,7 +479,7 @@ def _plan_chunks(text: str, use_llm: bool = True):
 # Endpoints
 # ---------------------------------------------------------------------------
 
-async def _accept(body: WebhookBody) -> JSONResponse:
+async def _accept(body: WebhookBody, received: Optional[dict] = None) -> JSONResponse:
     """Enqueue and return success immediately, like the :8010 webhook — the script is
     planned and synthesized in the worker, and any problem is reported via callback.
     Only a trivially-empty prompt is rejected inline (no LLM, no GPU touched here)."""
@@ -436,16 +494,40 @@ async def _accept(body: WebhookBody) -> JSONResponse:
 
     # Pick the donor now (fast, local — no network) so the choice is fixed when the job
     # is queued and visible on the dashboard, and a random pick is stable across retries.
-    donor_set, gender = await asyncio.to_thread(_pick_donor_set, body.sex, body.donor_set)
+    donor_set, gender, sources = await asyncio.to_thread(
+        _pick_donor_set, body.sex, body.donor_set
+    )
+
+    # Every one of these three can be a default the caller never asked for, and the
+    # resulting take sounds like a normal one either way. Record which is which here,
+    # where the body is still in hand, and ship it to both dashboards.
+    asked_voice = body.voice_id.strip()
+    default_voice = settings.webhook_default_voice.strip()
+    voice_id = asked_voice or default_voice
+    if asked_voice:
+        voice_source = "request"
+    elif default_voice:
+        voice_source = "not sent — WEBHOOK_DEFAULT_VOICE"
+    else:
+        voice_source = "not sent — no default; the first clip in ref/ is used"
 
     job = Job(
         job_id=body.job_id or queue_id,
         queue_id=queue_id,
-        voice_id=body.voice_id.strip() or settings.webhook_default_voice.strip(),
+        voice_id=voice_id,
         callback_url=callback_url,
         prompt=body.prompt,
         donor_set=donor_set,
         gender=gender,
+        request=received if received is not None else body.model_dump(),
+        resolved={
+            "voice_id": voice_id or None,
+            "voice_id_source": voice_source,
+            "sex": gender,
+            "sex_source": sources["sex_source"],
+            "donor_set": donor_set,
+            "donor_set_source": sources["donor_set_source"],
+        },
     )
 
     jobs: dict = _state["jobs"]
@@ -463,19 +545,38 @@ async def _accept(body: WebhookBody) -> JSONResponse:
     # Mirror the request onto the queue dashboard immediately, so the admin sees the
     # full backlog now rather than only when this studio's serial worker reaches it.
     await _meta_register(job)
-    print(f"[{queue_id}] queued — voice={job.voice_id or 'auto'}, donor={donor_set or 'auto'}")
+    print(
+        f"[{queue_id}] queued — voice={job.voice_id or 'auto'} ({voice_source}), "
+        f"donor={donor_set or 'auto'} ({sources['donor_set_source']}), "
+        f"sex={gender or '-'} ({sources['sex_source']})"
+    )
     return JSONResponse({"status": "success", "job_id": job.job_id})
 
 
+async def _received_body(request: Request) -> Optional[dict]:
+    """The caller's JSON exactly as posted, for the dashboards.
+
+    Deliberately the *raw* body rather than the parsed model: a field n8n spelled
+    wrong is dropped by the model and is precisely what an operator staring at a
+    take in the wrong voice needs to see. Returns None if it is not a JSON object,
+    in which case the parsed model stands in.
+    """
+    try:
+        data = await request.json()
+    except Exception:                                                 # noqa: BLE001
+        return None
+    return data if isinstance(data, dict) else None
+
+
 @router.post("/webhook/live-ai-create-new")
-async def webhook(body: WebhookBody) -> JSONResponse:
-    return await _accept(body)
+async def webhook(body: WebhookBody, request: Request) -> JSONResponse:
+    return await _accept(body, await _received_body(request))
 
 
 @router.post("/live-ai-create-new")
-async def webhook_bare(body: WebhookBody) -> JSONResponse:
+async def webhook_bare(body: WebhookBody, request: Request) -> JSONResponse:
     """Bare alias for callers pointed straight at the old n8n node path."""
-    return await _accept(body)
+    return await _accept(body, await _received_body(request))
 
 
 def _positions() -> dict:

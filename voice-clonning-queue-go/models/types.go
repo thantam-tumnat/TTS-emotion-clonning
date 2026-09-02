@@ -26,17 +26,23 @@ type RenderRequest struct {
 	// it the dashboard shows N unrelated rows for what the user asked once --
 	// and an OOM on one piece leaves its siblings queued for a take that can no
 	// longer be assembled.
-	ParentID   *string     `json:"parent_id,omitempty"`
-	RawPrompt  string      `json:"raw_prompt,omitempty"`
-	Prompt     string      `json:"prompt,omitempty"`
-	Chunks     []string    `json:"chunks"`
-	Voice      *VoiceSpec  `json:"voice,omitempty"`
-	CFGValue   float64     `json:"cfg_value"`
-	Timesteps  int         `json:"timesteps"`
-	LoRA       interface{} `json:"lora,omitempty"`
-	Output     OutputSpec  `json:"output"`
-	Lane       string      `json:"lane"`
-	Client     string      `json:"client"`
+	ParentID *string `json:"parent_id,omitempty"`
+	// Request is the payload the *upstream* caller sent, verbatim -- the n8n body
+	// the :8013 studio received, plus what it resolved that body into. The studio
+	// rewrites voice_id, sex and donor_set with defaults before anything reaches
+	// here, so without the original the dashboard cannot show that a fallback
+	// happened. Opaque on purpose: the gateway only stores and serves it.
+	Request   map[string]interface{} `json:"request,omitempty"`
+	RawPrompt string                 `json:"raw_prompt,omitempty"`
+	Prompt    string                 `json:"prompt,omitempty"`
+	Chunks    []string               `json:"chunks"`
+	Voice     *VoiceSpec             `json:"voice,omitempty"`
+	CFGValue  float64                `json:"cfg_value"`
+	Timesteps int                    `json:"timesteps"`
+	LoRA      interface{}            `json:"lora,omitempty"`
+	Output    OutputSpec             `json:"output"`
+	Lane      string                 `json:"lane"`
+	Client    string                 `json:"client"`
 }
 
 // JobStatus represents the state of a render job.
@@ -66,6 +72,7 @@ const (
 type RenderJob struct {
 	JobID       string                 `json:"job_id"`
 	ParentID    string                 `json:"parent_id,omitempty"`
+	Request     map[string]interface{} `json:"request,omitempty"`
 	RawPrompt   string                 `json:"raw_prompt,omitempty"`
 	Chunks      []string               `json:"chunks"`
 	Voice       *VoiceSpec             `json:"voice,omitempty"`
@@ -141,6 +148,7 @@ func NewRenderJob(req RenderRequest, jobID string) *RenderJob {
 	return &RenderJob{
 		JobID:       jobID,
 		ParentID:    parentID,
+		Request:     req.Request,
 		RawPrompt:   rawPrompt,
 		Chunks:      req.Chunks,
 		Voice:       req.Voice,
@@ -211,6 +219,12 @@ func (j *RenderJob) AsDict(position *int) map[string]interface{} {
 		"ran_s":        ran,
 		"has_audio":    hasAudio,
 		"external":     j.External,
+	}
+
+	// Only when there is one: every render job carries this key otherwise, and an
+	// empty object on the card reads as "the caller sent nothing".
+	if len(j.Request) > 0 {
+		res["request"] = j.Request
 	}
 
 	if j.Status == StatusQueued && position != nil {

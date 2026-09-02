@@ -642,6 +642,39 @@ const dashboardHTML = `<!doctype html>
       background: rgba(100, 116, 139, 0.25); color: #cbd5e1; padding: 2px 7px;
       border-radius: 5px; font-size: 10px; font-weight: 700; white-space: nowrap;
     }
+    /* A default quietly standing in for something the caller did not send. Amber,
+       not red: the request still ran, it just did not run as asked. */
+    .badge-fallback {
+      background: rgba(245, 158, 11, 0.16); color: #fbbf24;
+      border: 1px solid rgba(245, 158, 11, 0.35);
+      padding: 2px 7px; border-radius: 5px; font-size: 10px; font-weight: 700;
+      white-space: nowrap;
+    }
+    .resolved-grid {
+      display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 9px;
+    }
+    .resolved-item {
+      background: #0d1320; border: 1px solid var(--border-subtle);
+      border-radius: 7px; padding: 7px 11px; min-width: 132px;
+    }
+    .resolved-item.fallback {
+      border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.07);
+    }
+    .resolved-key {
+      font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
+      color: var(--text-dim); font-weight: 700;
+    }
+    .resolved-val {
+      font-family: 'JetBrains Mono', monospace; font-size: 12px;
+      color: var(--text-muted); word-break: break-all; margin-top: 2px;
+    }
+    .resolved-src { font-size: 10px; color: var(--text-dim); margin-top: 3px; }
+    .req-json {
+      background: #0d1320; border: 1px solid var(--border-subtle); border-radius: 8px;
+      padding: 10px 13px; margin: 0; max-height: 260px; overflow: auto;
+      font-family: 'JetBrains Mono', monospace; font-size: 11.5px; line-height: 1.55;
+      color: var(--text-muted); white-space: pre; word-break: normal;
+    }
     /* Actions live in the header, not the body: a collapsed card still has to
        offer Play and Cancel, or every playback costs an extra click. */
     .req-actions { display: flex; gap: 6px; flex-shrink: 0; margin-left: 4px; }
@@ -942,17 +975,40 @@ const dashboardHTML = `<!doctype html>
         var client = head.client || '-';
         var lane = head.lane || 'batch';
 
-        // The caller's voice_id lands in the render spec as speaker_id (handle for
+        // What the caller actually asked for, when the request payload is attached:
+        // the :8013 pipeline generates in a *donor's* voice and only swaps timbre
+        // to the target afterwards, so its render children carry donor handles here.
+        // Reading those would label the card with the donor, not the voice_id.
+        var reqPayload = null;
+        for (var q = 0; q < members.length; q++) {
+          if (members[q].request) { reqPayload = members[q].request; break; }
+        }
+        var voiceId = '';
+        if (reqPayload && reqPayload.resolved && reqPayload.resolved.voice_id) {
+          voiceId = reqPayload.resolved.voice_id;
+        }
+        // Otherwise the voice_id lands in the render spec as speaker_id (handle for
         // an uploaded clip). Take it from whichever member actually carries a voice
         // -- an external parent row often has none while its render children do.
-        var voiceId = '';
-        for (var v = 0; v < members.length; v++) {
+        for (var v = 0; v < members.length && !voiceId; v++) {
           var vs = members[v].voice;
           if (!vs) continue;
           if (vs.speaker_id) { voiceId = vs.speaker_id; break; }
           if (vs.handle && !voiceId) voiceId = vs.handle;
         }
         if (!voiceId) voiceId = 'auto';
+
+        // Flag the silent substitutions on the collapsed card: a request that named
+        // no voice_id or no sex is served by a default, and a take in the wrong
+        // voice otherwise looks like a correct one.
+        // The badge names the fields, not the reasons -- the reasons are a sentence
+        // each and belong in the expanded card. Hovering gives them back.
+        var fellBack = [], fellBackWhy = [];
+        if (reqPayload && reqPayload.resolved) {
+          var rs = reqPayload.resolved;
+          if (isSubstituted(rs.voice_id_source)) { fellBack.push('voice_id'); fellBackWhy.push('voice_id: ' + rs.voice_id_source); }
+          if (isSubstituted(rs.sex_source)) { fellBack.push('sex'); fellBackWhy.push('sex: ' + rs.sex_source); }
+        }
 
         var rawPrompt = '';
         for (var r = 0; r < members.length; r++) {
@@ -1024,6 +1080,7 @@ const dashboardHTML = `<!doctype html>
             '<span class="req-meta">' +
               '<span class="lane-tag lane-' + lane + '">' + lane + '</span>' +
               '<span class="voice-tag" title="voice_id">&#127908; ' + escapeHtml(voiceId) + '</span>' +
+              (fellBack.length ? '<span class="badge-fallback" title="' + escapeHtml(fellBackWhy.join(' | ')) + '">&#9888; defaulted: ' + escapeHtml(fellBack.join(', ')) + '</span>' : '') +
               '<span><b>' + escapeHtml(client) + '</b></span>' +
               '<span>wait ' + fmtSecs(waited) + '</span>' +
               '<span>gpu ' + fmtSecs(ran) + '</span>' +
@@ -1038,6 +1095,7 @@ const dashboardHTML = `<!doctype html>
               '<div class="raw-prompt-container" style="padding:10px 13px;border-radius:8px;">' +
                 '<div style="white-space:pre-wrap;line-height:1.6;">' + escapeHtml(rawPrompt) + '</div>' +
               '</div>' : '') +
+            renderRequestPayload(reqPayload) +
             '<div class="req-section">Chunks sent to the GPU (' + chunkRows.length + ')</div>' +
             renderChunkRows(chunkRows) +
             (g.children.length > 1 ? '<div class="req-section">Render jobs in this request (' + g.children.length + ')</div>' + renderSubJobs(g.children) : '') +
@@ -1049,6 +1107,49 @@ const dashboardHTML = `<!doctype html>
       host.innerHTML = html;
       document.getElementById('val-oom').innerText = oomCount;
       updatePlayButtons();
+    }
+
+    // A source string that means the caller did not choose this value. A donor set
+    // drawn at random is *not* one of these -- varying the actor is the documented
+    // behaviour, and flagging it would drown the fields that really were guessed.
+    function isSubstituted(src) {
+      if (!src) return false;
+      return src.indexOf('not sent') === 0 || src.indexOf('unrecognised') === 0;
+    }
+
+    // The upstream request exactly as it arrived, above the pipeline's reading of
+    // it. Shown as JSON rather than as fields: the point is to see what the caller
+    // really sent -- including keys the studio ignores and values it overrode.
+    function renderRequestPayload(req) {
+      if (!req) return '';
+      var received = req.received || req;
+      var resolved = req.resolved || null;
+      var out = '<div class="req-section">Request received from the caller</div>';
+
+      if (resolved) {
+        var rows = [
+          ['voice_id', resolved.voice_id || '(none)', resolved.voice_id_source],
+          ['sex', resolved.sex || '(none)', resolved.sex_source],
+          ['donor_set', resolved.donor_set || '(auto)', resolved.donor_set_source]
+        ];
+        out += '<div class="resolved-grid">';
+        for (var i = 0; i < rows.length; i++) {
+          var src = rows[i][2] || '';
+          var isFallback = isSubstituted(src);
+          out += '<div class="resolved-item' + (isFallback ? ' fallback' : '') + '">' +
+            '<div class="resolved-key">' + rows[i][0] + '</div>' +
+            '<div class="resolved-val">' + escapeHtml(String(rows[i][1])) + '</div>' +
+            (src ? '<div class="resolved-src">from ' + escapeHtml(src) + '</div>' : '') +
+            '</div>';
+        }
+        out += '</div>';
+      }
+
+      var text;
+      try { text = JSON.stringify(received, null, 2); }
+      catch (e) { text = String(received); }
+      out += '<pre class="req-json">' + escapeHtml(text) + '</pre>';
+      return out;
     }
 
     function renderChunkRows(rows) {
@@ -1291,6 +1392,14 @@ const dashboardHTML = `<!doctype html>
         html += '<div>' +
           '<div class="section-label" style="color:var(--accent-red);">❌ Error Details</div>' +
           '<div class="error-box">' + job.error + '</div>' +
+          '</div>';
+      }
+
+      // What the caller posted, before the studio applied any default to it.
+      if (job.request) {
+        html += '<div>' +
+          '<div class="section-label" style="color:var(--accent-purple);">&#128231; Request received from the caller</div>' +
+          renderRequestPayload(job.request) +
           '</div>';
       }
 
