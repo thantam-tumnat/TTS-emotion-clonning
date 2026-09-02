@@ -193,6 +193,49 @@ def test_caller_supplied_request_id_is_used_verbatim(engine, tmp_path):
     assert engine.parent_ids == ["wh_queue_id_42"]
 
 
+def test_take_out_records_what_the_render_actually_fed_the_model(engine, tmp_path):
+    """The dashboards report the take from this, so it has to name the real files.
+
+    `sex` and `donor_set` on the request are only ever *inputs to a choice* -- the
+    model sees a donor clip and a target clip. Without these recorded, a take in the
+    wrong voice can only be diagnosed by listening to it.
+    """
+    chosen = vc.voxcpm_vc_service.resolve_donor_set(None, gender="male")
+    target = _target_clip(tmp_path)
+    take: dict = {}
+
+    vc.voxcpm_vc_service.render_chunks(
+        ["(angry) โกรธมาก"],
+        ref_audio_bytes=target.read_bytes(),
+        ref_filename="target.wav",
+        tones=["angry"],
+        donor_set=chosen,
+        take_out=take,
+    )
+
+    assert take["donor_set"] == chosen
+    # The clip SeedVC converts into, as a resolved path: two reference directories
+    # can hold the same voice_id, so the name alone would not settle which was read.
+    assert take["target_clip"].endswith(".wav")
+    assert take["target_from"] == "uploaded clip"
+    assert take["seedvc"]["diffusion_steps"] == vc.settings.seedvc_diffusion_steps
+    assert take["skip_neutral_vc"] == bool(vc.settings.voxcpm_vc_skip_neutral)
+
+
+def test_take_out_names_the_pinned_speaker_as_the_target(engine, tmp_path, monkeypatch):
+    monkeypatch.setattr(
+        vc.VoxCPMVCService, "_target_voice_path",
+        lambda self, sid, b, f: (_target_clip(tmp_path), None),
+    )
+    take: dict = {}
+
+    vc.voxcpm_vc_service.render_chunks(
+        ["(angry) โกรธมาก"], speaker_id="voice-42", tones=["angry"], take_out=take
+    )
+
+    assert take["target_from"] == "voice-42"
+
+
 def test_one_job_per_emotion_not_per_chunk(engine, tmp_path):
     """Chunks sharing an emotion share that emotion's prompt cache, in one job."""
     chosen = vc.voxcpm_vc_service.resolve_donor_set(None, gender="female")

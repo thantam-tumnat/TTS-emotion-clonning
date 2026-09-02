@@ -70,9 +70,15 @@ const (
 
 // RenderJob represents an active or completed job in the queue.
 type RenderJob struct {
-	JobID       string                 `json:"job_id"`
-	ParentID    string                 `json:"parent_id,omitempty"`
-	Request     map[string]interface{} `json:"request,omitempty"`
+	JobID    string                 `json:"job_id"`
+	ParentID string                 `json:"parent_id,omitempty"`
+	Request  map[string]interface{} `json:"request,omitempty"`
+	// Engine is what the pipeline actually fed the model, PATCHed in once a take
+	// has run: the donor clip each emotion was cloned from, the target SeedVC
+	// converted into, and the knobs both were given. `request` says what was asked
+	// for; this says what happened, and the two differ every time a default or a
+	// random donor stands in.
+	Engine      map[string]interface{} `json:"engine,omitempty"`
 	RawPrompt   string                 `json:"raw_prompt,omitempty"`
 	Chunks      []string               `json:"chunks"`
 	Voice       *VoiceSpec             `json:"voice,omitempty"`
@@ -111,6 +117,7 @@ type JobUpdate struct {
 	Error       *string                 `json:"error,omitempty"`
 	ErrorKind   *string                 `json:"error_kind,omitempty"`
 	Result      *map[string]interface{} `json:"result,omitempty"`
+	Engine      *map[string]interface{} `json:"engine,omitempty"`
 }
 
 // NewRenderJob creates an initialized RenderJob.
@@ -225,6 +232,9 @@ func (j *RenderJob) AsDict(position *int) map[string]interface{} {
 	// empty object on the card reads as "the caller sent nothing".
 	if len(j.Request) > 0 {
 		res["request"] = j.Request
+	}
+	if len(j.Engine) > 0 {
+		res["engine"] = j.Engine
 	}
 
 	if j.Status == StatusQueued && position != nil {

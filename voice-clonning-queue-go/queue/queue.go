@@ -111,6 +111,9 @@ func (q *PriorityQueue) UpdateJob(jobID string, upd models.JobUpdate) bool {
 	if upd.Result != nil {
 		job.Result = *upd.Result
 	}
+	if upd.Engine != nil {
+		job.Engine = *upd.Engine
+	}
 	if upd.Error != nil {
 		job.Error = upd.Error
 	}

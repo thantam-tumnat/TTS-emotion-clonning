@@ -636,6 +636,7 @@ class VoxCPMVCService:
         request_id: Optional[str] = None,
         pre_vc_out: Optional[List[Tuple[Any, int]]] = None,
         debug_out: Optional[List[dict]] = None,
+        take_out: Optional[dict] = None,
     ) -> Tuple[List[Any], int]:
         """Generate every chunk and convert it to the target voice.
 
@@ -643,6 +644,12 @@ class VoxCPMVCService:
         generation jobs on the queue gateway; callers that already show their own row
         on the dashboard (the webhook meta job) pass a ``*-internal`` name so the raw
         per-emotion jobs are collapsed out of the admin view.
+
+        ``take_out`` is filled with the take-level facts this method resolves --
+        which clip SeedVC converts *into*, which donor actor was drawn, how F0 was
+        treated. ``debug_out`` covers the per-emotion half. Together they are what
+        actually reached the model, as opposed to what the caller asked for, and the
+        two are only the same when every field of the request was honoured.
 
         ``request_id`` ties every generation job this take submits to one row on
         that dashboard. One take becomes one job per emotion, so without it the
@@ -692,6 +699,28 @@ class VoxCPMVCService:
         # Constant across chunks -- the shift depends only on this donor + target -- so
         # compute it once here rather than per chunk in the convert loop below.
         f0_kw = self._f0_convert_kwargs(chosen_set, Path(target_wav))
+
+        if take_out is not None:
+            take_out.update({
+                # The file, not the name: two reference directories can hold the same
+                # voice_id, and "which clip did it actually read" is the question.
+                "target_clip": str(Path(target_wav).resolve()),
+                "target_from": (
+                    "uploaded clip" if ref_audio_bytes
+                    else speaker_id or "no speaker pinned — house voice from ref/"
+                ),
+                "donor_set": chosen_set,
+                "gender_asked": gender,
+                "skip_neutral_vc": bool(settings.voxcpm_vc_skip_neutral),
+                "seedvc": {
+                    "f0_mode": settings.seedvc_f0_mode,
+                    "f0_condition": settings.seedvc_f0_condition,
+                    "diffusion_steps": settings.seedvc_diffusion_steps,
+                    "inference_cfg_rate": settings.seedvc_inference_cfg_rate,
+                    "auto_f0_adjust": f0_kw.get("auto_f0_adjust", settings.seedvc_auto_f0_adjust),
+                    "semi_tone_shift": f0_kw.get("semi_tone_shift", 0),
+                },
+            })
 
         synth = self._synth()
         batch = getattr(synth, "render_batch", None)
@@ -896,6 +925,7 @@ class VoxCPMVCService:
         request_id: Optional[str] = None,
         pre_vc_out: Optional[List[Tuple[Any, int]]] = None,
         debug_out: Optional[List[dict]] = None,
+        take_out: Optional[dict] = None,
     ) -> bytes:
         """Render every chunk and join them into one take. Returns WAV bytes."""
         import soundfile as sf
@@ -919,6 +949,7 @@ class VoxCPMVCService:
             request_id=request_id,
             pre_vc_out=pre_vc_out,
             debug_out=debug_out,
+            take_out=take_out,
         )
 
         if post_process:

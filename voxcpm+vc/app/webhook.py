@@ -170,6 +170,10 @@ class Job:
     # default -- an omitted voice_id, an unreadable sex -- is visible at all.
     request: dict = field(default_factory=dict)
     resolved: dict = field(default_factory=dict)
+    # What the pipeline actually fed the model, filled in once the take has run:
+    # the donor clip per emotion, the target SeedVC converted into, the knobs both
+    # were given. `resolved` is a promise made at accept time; this is the receipt.
+    engine: dict = field(default_factory=dict)
 
     def as_dict(self, position: Optional[int] = None) -> dict:
         now = time.time()
@@ -200,6 +204,7 @@ class Job:
             "error": self.error,
             "request": self.request,
             "resolved": self.resolved,
+            "engine": self.engine,
         }
 
 
@@ -265,6 +270,7 @@ async def _run_job(job: Job) -> None:
         # Generation is blocking (HTTP to the GPU service + SeedVC), so keep it off
         # the event loop or the accept endpoint stalls behind it.
         debug: List[dict] = []
+        take: dict = {}
         wav_bytes = await asyncio.to_thread(
             voxcpm_vc_service.synthesize_many,
             job.parts,
@@ -281,10 +287,18 @@ async def _run_job(job: Job) -> None:
             # the rest of this take down with it rather than grinding on.
             request_id=job.queue_id,
             debug_out=debug,
+            take_out=take,
         )
         # Keep the pinned/random pick; if none was resolvable up front, record what
         # the synth actually fell back to.
         job.donor_set = job.donor_set or (debug[0]["donor_set"] if debug else None)
+
+        # Publish the receipt now that the take exists. Sent as its own PATCH rather
+        # than folded into the completion one, so it still lands if the upload or the
+        # callback afterwards blows up -- those are exactly the runs someone will
+        # want to inspect.
+        job.engine = _engine_report(job, take, debug)
+        await _meta_patch(job, engine=job.engine)
 
         out = work / f"{job.queue_id}.wav"
         out.write_bytes(wav_bytes)
@@ -440,6 +454,44 @@ def _pick_donor_set(sex: str, donor_set: str):
     return None, want, {
         "sex_source": sex_source,
         "donor_set_source": f"no {want} donor set — resolved at render time",
+    }
+
+
+def _engine_report(job: "Job", take: dict, groups: List[dict]) -> dict:
+    """What actually reached the model, as one flat object for the dashboards.
+
+    Deliberately a separate thing from `resolved`: that is the request read at accept
+    time, this is what the render really did with it. They disagree whenever a donor
+    was drawn at random, a neutral chunk skipped SeedVC, or a piece was split -- and
+    a take that sounds wrong is diagnosed by the difference.
+    """
+    return {
+        # SeedVC target -- the voice the take is delivered in.
+        "voice_id": job.voice_id or None,
+        "target_clip": take.get("target_clip"),
+        "target_from": take.get("target_from"),
+        # Donor -- the actor whose delivery each emotion was cloned from. This is
+        # the `sex` field's only effect, and it never reaches the model directly.
+        "sex": job.gender,
+        "donor_set": take.get("donor_set") or job.donor_set,
+        "skip_neutral_vc": take.get("skip_neutral_vc"),
+        "seedvc": take.get("seedvc"),
+        "groups": [
+            {
+                "emotion": g.get("emotion"),
+                # Empty donor_set means the group skipped VC and was cloned straight
+                # from the target clip, so there is no donor to name.
+                "donor_set": g.get("donor_set") or None,
+                "donor_clip": g.get("donor_clip"),
+                "donor_text": g.get("donor_text"),
+                "voice_converted": not g.get("skip_vc"),
+                "cfg_value": g.get("cfg_value"),
+                "timesteps": g.get("inference_timesteps"),
+                "lora": g.get("lora_mode"),
+                "pieces": g.get("pieces") or [],
+            }
+            for g in groups
+        ],
     }
 
 

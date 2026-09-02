@@ -676,6 +676,14 @@ const dashboardHTML = `<!doctype html>
       font-family: 'JetBrains Mono', monospace;
     }
     .btn-json.on { background: rgba(139, 92, 246, 0.3); color: #ddd6fe; }
+    .btn-engine {
+      background: rgba(6, 182, 212, 0.14);
+      color: #22d3ee;
+      border: 1px solid rgba(6, 182, 212, 0.35);
+    }
+    .btn-engine.on { background: rgba(6, 182, 212, 0.3); color: #cffafe; }
+    .vc-on { color: #22d3ee; font-size: 11px; }
+    .vc-off { color: #fbbf24; font-size: 11px; }
     .json-toggle {
       background: none; border: none; cursor: pointer; padding: 0 0 6px;
       color: var(--text-dim); font-size: 11px; font-weight: 700;
@@ -930,6 +938,16 @@ const dashboardHTML = `<!doctype html>
       renderRequests(currentJobsData);
     }
 
+    // Same idea for the receipt: what the pipeline actually fed the model, which
+    // only exists once the take has run.
+    var openEngine = {};
+
+    function toggleEngine(gid) {
+      openEngine[gid] = !openEngine[gid];
+      if (openEngine[gid]) openGroups[gid] = true;
+      renderRequests(currentJobsData);
+    }
+
     // Worst-first, so a request shows the state that needs attention: something
     // still on the GPU outranks something waiting, and a failure outranks a
     // sibling that happened to finish before the OOM hit.
@@ -1003,9 +1021,10 @@ const dashboardHTML = `<!doctype html>
         // the :8013 pipeline generates in a *donor's* voice and only swaps timbre
         // to the target afterwards, so its render children carry donor handles here.
         // Reading those would label the card with the donor, not the voice_id.
-        var reqPayload = null;
+        var reqPayload = null, enginePayload = null;
         for (var q = 0; q < members.length; q++) {
-          if (members[q].request) { reqPayload = members[q].request; break; }
+          if (!reqPayload && members[q].request) reqPayload = members[q].request;
+          if (!enginePayload && members[q].engine) enginePayload = members[q].engine;
         }
         var voiceId = '';
         if (reqPayload && reqPayload.resolved && reqPayload.resolved.voice_id) {
@@ -1094,6 +1113,10 @@ const dashboardHTML = `<!doctype html>
           actions += '<button class="btn btn-json' + (openJson[g.id] ? ' on' : '') + '" title="the JSON this request arrived with, and what the pipeline resolved it to"' +
             ' onclick="event.stopPropagation();toggleJson(\'' + g.id + '\')">{ } JSON</button>';
         }
+        if (enginePayload) {
+          actions += '<button class="btn btn-engine' + (openEngine[g.id] ? ' on' : '') + '" title="what actually went into the model: donor clip per emotion, the target SeedVC converted into, and the knobs"' +
+            ' onclick="event.stopPropagation();toggleEngine(\'' + g.id + '\')">&#9881; Engine</button>';
+        }
         actions += '<button class="btn btn-detail" onclick="event.stopPropagation();openDetailModal(\'' + (head.job_id || g.id) + '\')">ℹ Details</button>';
 
         html += '<div class="req-card' + (isOpen ? ' open' : '') + (oomJob ? ' oom' : '') + '">' +
@@ -1124,6 +1147,7 @@ const dashboardHTML = `<!doctype html>
                 '<div style="white-space:pre-wrap;line-height:1.6;">' + escapeHtml(rawPrompt) + '</div>' +
               '</div>' : '') +
             renderRequestPayload(reqPayload, !!openJson[g.id], g.id) +
+            renderEnginePayload(enginePayload, !!openEngine[g.id], g.id) +
             '<div class="req-section">Chunks sent to the GPU (' + chunkRows.length + ')</div>' +
             renderChunkRows(chunkRows) +
             (g.children.length > 1 ? '<div class="req-section">Render jobs in this request (' + g.children.length + ')</div>' + renderSubJobs(g.children) : '') +
@@ -1181,6 +1205,58 @@ const dashboardHTML = `<!doctype html>
       if (gid === undefined) return out + '<pre class="req-json">' + escapeHtml(text) + '</pre>';
 
       out += '<button class="json-toggle" onclick="event.stopPropagation();toggleJson(\'' + gid + '\')">' +
+        (showJson ? '&#9660; hide raw JSON' : '&#9654; show raw JSON') + '</button>';
+      if (showJson) out += '<pre class="req-json">' + escapeHtml(text) + '</pre>';
+      return out;
+    }
+
+    // The receipt: what the model was actually given. Read against the request
+    // block above it -- a take in the wrong voice is almost always a field that
+    // did not survive the trip from one to the other.
+    function renderEnginePayload(eng, showJson, gid) {
+      if (!eng) return '';
+      var out = '<div class="req-section">What actually went into the model</div>';
+
+      var clip = eng.target_clip || '';
+      var clipShort = clip ? clip.split(/[/\\]/).pop() : '(none)';
+      var rows = [
+        ['voice_id (SeedVC target)', eng.voice_id || '(none)', eng.target_from || ''],
+        ['target clip', clipShort, clip],
+        ['sex', eng.sex || '(not used)', 'picks the donor, never reaches the model directly'],
+        ['donor_set', eng.donor_set || '(none)', 'the actor every emotion was cloned from']
+      ];
+      out += '<div class="resolved-grid">';
+      for (var i = 0; i < rows.length; i++) {
+        out += '<div class="resolved-item" title="' + escapeHtml(String(rows[i][2] || '')) + '">' +
+          '<div class="resolved-key">' + escapeHtml(rows[i][0]) + '</div>' +
+          '<div class="resolved-val">' + escapeHtml(String(rows[i][1])) + '</div>' +
+          '</div>';
+      }
+      out += '</div>';
+
+      var groups = eng.groups || [];
+      for (var k = 0; k < groups.length; k++) {
+        var gp = groups[k];
+        var vc = gp.voice_converted
+          ? '<span class="vc-on">donor &#8594; SeedVC &#8594; target</span>'
+          : '<span class="vc-off">cloned from the target clip directly (VC skipped)</span>';
+        out += '<div class="subjob-row">' +
+          '<span class="pill pill-completed">' + escapeHtml(gp.emotion || '?') + '</span>' +
+          '<span class="mono">' + escapeHtml(gp.donor_clip || '-') + '</span>' +
+          vc +
+          '<span style="margin-left:auto;">' + ((gp.pieces || []).length) + ' piece(s) &middot; cfg ' +
+          escapeHtml(String(gp.cfg_value)) + ' &middot; ' + escapeHtml(String(gp.timesteps)) +
+          ' steps &middot; lora ' + escapeHtml(String(gp.lora)) + '</span>' +
+          '</div>';
+      }
+
+      var text;
+      try { text = JSON.stringify(eng, null, 2); }
+      catch (e) { text = String(eng); }
+
+      if (gid === undefined) return out + '<pre class="req-json">' + escapeHtml(text) + '</pre>';
+
+      out += '<button class="json-toggle" onclick="event.stopPropagation();toggleEngine(\'' + gid + '\')">' +
         (showJson ? '&#9660; hide raw JSON' : '&#9654; show raw JSON') + '</button>';
       if (showJson) out += '<pre class="req-json">' + escapeHtml(text) + '</pre>';
       return out;
@@ -1434,6 +1510,13 @@ const dashboardHTML = `<!doctype html>
         html += '<div>' +
           '<div class="section-label" style="color:var(--accent-purple);">&#128231; Request received from the caller</div>' +
           renderRequestPayload(job.request) +
+          '</div>';
+      }
+
+      if (job.engine) {
+        html += '<div>' +
+          '<div class="section-label" style="color:var(--accent-cyan);">&#9881; What actually went into the model</div>' +
+          renderEnginePayload(job.engine) +
           '</div>';
       }
 

@@ -41,6 +41,10 @@ class _FakeClient:
         _FakeClient.posts.append((url, json))
         return _FakeResponse()
 
+    async def patch(self, url, json=None):
+        _FakeClient.posts.append((url, json))
+        return _FakeResponse()
+
 
 @pytest.fixture(autouse=True)
 def stub_gateway_and_donors(monkeypatch):
@@ -178,3 +182,91 @@ def test_random_donor_pick_is_named_as_random():
 
     assert resolved["donor_set"] == "m_one"
     assert resolved["donor_set_source"].startswith("random male")
+
+
+# --------------------------------------------------------------------------- #
+# The receipt: what actually went into the model
+# --------------------------------------------------------------------------- #
+
+def test_engine_report_separates_the_target_from_the_donor():
+    """`sex` never reaches the model -- it only picks the donor. The report has to
+    show both halves, or a take in the wrong voice cannot be told apart from a take
+    with the wrong donor."""
+    job = wh.Job(job_id="j", queue_id="q", voice_id="voice-42", callback_url="")
+    job.gender = "male"
+    take = {
+        "target_clip": "C:/temp/tts_jobs/voices/voice-42.mp3",
+        "target_from": "voice-42",
+        "donor_set": "male_003",
+        "skip_neutral_vc": True,
+        "seedvc": {"f0_mode": "B", "semi_tone_shift": -3},
+    }
+    groups = [
+        {"emotion": "angry", "donor_set": "male_003", "donor_clip": "angry.wav",
+         "donor_text": "โกรธ", "skip_vc": False, "pieces": ["a", "b"],
+         "cfg_value": 2.5, "inference_timesteps": 10, "lora_mode": "on"},
+        {"emotion": "neutral", "donor_set": "", "donor_clip": None, "donor_text": None,
+         "skip_vc": True, "pieces": ["c"],
+         "cfg_value": 2.5, "inference_timesteps": 10, "lora_mode": "on"},
+    ]
+
+    rep = wh._engine_report(job, take, groups)
+
+    assert rep["voice_id"] == "voice-42"
+    assert rep["target_clip"].endswith("voice-42.mp3")
+    assert rep["sex"] == "male"
+    assert rep["donor_set"] == "male_003"
+    assert rep["seedvc"]["semi_tone_shift"] == -3
+    # The emotional group is donor -> SeedVC -> target; the neutral one skipped the
+    # conversion and was cloned from the target clip, so it has no donor to name.
+    assert rep["groups"][0]["voice_converted"] is True
+    assert rep["groups"][0]["donor_clip"] == "angry.wav"
+    assert rep["groups"][0]["pieces"] == ["a", "b"]
+    assert rep["groups"][1]["voice_converted"] is False
+    assert rep["groups"][1]["donor_set"] is None
+
+
+def test_engine_report_reaches_the_dashboard_after_the_take(monkeypatch, tmp_path):
+    """A PATCH of its own, before upload and callback -- a run that dies at upload
+    is exactly the one someone will want the receipt for."""
+    monkeypatch.setattr(wh.settings, "webhook_use_llm", False, raising=False)
+    # Keep the take's scratch dir out of the project tree.
+    monkeypatch.setattr(wh, "WORK_ROOT", tmp_path / "work")
+
+    def fake_synth(parts, **kw):
+        kw["take_out"].update({"target_clip": "ref/house.wav", "target_from": "voice-9",
+                               "donor_set": "female_002", "skip_neutral_vc": True,
+                               "seedvc": {"f0_mode": "B"}})
+        kw["debug_out"].append({"emotion": "neutral", "donor_set": "", "skip_vc": True,
+                                "pieces": list(parts), "cfg_value": 2.5,
+                                "inference_timesteps": 10, "lora_mode": "on"})
+        return b"RIFFfake"
+
+    monkeypatch.setattr(wh.voxcpm_vc_service, "synthesize_many", fake_synth)
+
+    async def fake_upload(path):
+        return "https://example.invalid/take.wav"
+
+    async def fake_callback(url, job, *, error):
+        return None
+
+    monkeypatch.setattr(wh, "_upload", fake_upload)
+    monkeypatch.setattr(wh, "_post_callback", fake_callback)
+
+    async def go():
+        wh._state["jobs"] = {}
+        wh._state["queue"] = asyncio.Queue()
+        body = {"prompt": "ทดสอบระบบ", "voice_id": "voice-9"}
+        await wh._accept(wh.WebhookBody(**body), body)
+        job = list(wh._state["jobs"].values())[0]
+        await wh._run_job(job)
+        return job
+
+    job = asyncio.run(go())
+
+    patches = [p for (url, p) in _FakeClient.posts if "engine" in (p or {})]
+    assert patches, "the engine receipt was never sent to the gateway"
+    assert patches[0]["engine"]["donor_set"] == "female_002"
+    assert patches[0]["engine"]["voice_id"] == "voice-9"
+    assert job.engine["groups"][0]["voice_converted"] is False
+    assert job.status == "completed"
