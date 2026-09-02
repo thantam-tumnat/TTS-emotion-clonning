@@ -2,6 +2,7 @@ package handlers
 
 import (
 	"fmt"
+	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -311,10 +312,20 @@ func (h *JobsHandler) GetAudio(c *fiber.Ctx) error {
 	}
 
 	if job.Result != nil {
+		// A path is only good while the producer's scratch directory survives — the
+		// studio wipes its own the moment a take is delivered — so a stale entry
+		// falls through to the uploaded copy rather than answering 404.
 		if files, ok := job.Result["files"].([]interface{}); ok && len(files) > 0 {
 			if firstFile, ok := files[0].(string); ok && firstFile != "" {
-				return c.SendFile(firstFile)
+				if _, err := os.Stat(firstFile); err == nil {
+					return c.SendFile(firstFile)
+				}
 			}
+		}
+		// The delivered artifact for an external row: its owner uploaded the take
+		// and kept nothing local, so playback has to come from where it landed.
+		if url, ok := job.Result["file_url"].(string); ok && url != "" {
+			return c.Redirect(url, fiber.StatusFound)
 		}
 	}
 

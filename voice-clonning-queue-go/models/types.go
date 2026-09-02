@@ -176,9 +176,15 @@ func (j *RenderJob) AsDict(position *int) map[string]interface{} {
 		ran = &r
 	}
 
+	// Three ways a row can offer playback, in the order GetAudio tries them: bytes
+	// held in memory, a file still on this disk, or -- for an external row whose
+	// owner already uploaded and deleted its scratch copy -- the delivered URL.
 	hasAudio := len(j.AudioWAV) > 0
 	if !hasAudio && j.Result != nil {
 		if files, ok := j.Result["files"].([]interface{}); ok && len(files) > 0 {
+			hasAudio = true
+		}
+		if url, ok := j.Result["file_url"].(string); ok && url != "" {
 			hasAudio = true
 		}
 	}

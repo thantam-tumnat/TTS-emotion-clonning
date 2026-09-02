@@ -279,15 +279,10 @@ async def _run_job(job: Job) -> None:
         # Mark the dashboard row done only now — after generate + SeedVC + assemble +
         # upload — so "completed" there means the whole take is delivered, not just that
         # the GPU generation finished.
-        # `files` is what the gateway reads to decide a row has playable audio
-        # (RenderJob.AsDict), so send the assembled take's path alongside the URL.
-        # Without it the request's own card offers no Play button and the operator
-        # ends up auditioning a single pre-VC chunk from one of its child jobs.
-        await _meta_patch(
-            job,
-            status="completed",
-            result={"file_url": job.file_url, "files": [str(out.resolve())]},
-        )
+        # Only the uploaded URL is worth publishing: `work` is wiped a few lines
+        # below (see the finally block), so a local path here would be a dead link
+        # by the time anyone clicks Play on the dashboard.
+        await _meta_patch(job, status="completed", result={"file_url": job.file_url})
         await _post_callback(job.callback_url, job, error=None)
         print(f"[{job.queue_id}] done -> {job.file_url}")
 
