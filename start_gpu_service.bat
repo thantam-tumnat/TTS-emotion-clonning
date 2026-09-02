@@ -13,6 +13,19 @@ rem after a job (default 0.15). VOXCPM_EMPTY_CACHE=always restores the old
 rem reclaim-after-every-job behaviour.
 rem   set "VOXCPM_RECLAIM_BELOW=0.15"
 
+rem --- Idle policy (this is what keeps the card free for everything else) ---
+rem The weights are not loaded at startup. The first request that needs them
+rem loads them, and they are dropped again once the queue has been quiet --
+rem handing ~6 GB back to the driver for the SeedVC worker, AI Live Studio, or
+rem whatever else wants the card. "hot" restores the old always-resident
+rem behaviour; use it if a reload turns out to cost more than the memory is worth.
+rem   set "SIANGTTS_IDLE_MODE=hot"
+rem Seconds of quiet before the weights are dropped (default 180). Keep it longer
+rem than one generate-then-convert round trip, or every take pays for a reload.
+rem   set "SIANGTTS_IDLE_TTL=180"
+rem To take the card back right now, without waiting out the timer:
+rem   curl -X POST http://127.0.0.1:8021/v2/gpu/release
+
 echo ================================================================
 echo  🚀 Starting SiangTTS Python GPU Worker on port 8021...
 echo ================================================================

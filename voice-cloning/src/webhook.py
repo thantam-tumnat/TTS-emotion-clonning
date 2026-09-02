@@ -73,7 +73,7 @@ AUDIO_EXTS = (".mp3", ".wav", ".m4a", ".ogg", ".flac")
 DEFAULT_VOICE = "thai_female"
 DEFAULT_CALLBACK = os.environ.get(
     "SIANGTTS_DEFAULT_CALLBACK",
-    "https://test.looklike.ai/api/v1/live-gpt/n8n/audio-callback",
+    "https://api.vrlive.io/api/v1/live-gpt/n8n/audio-callback",
 )
 DEFAULT_REF_TEXT = (
     "ริ้วรอยลดเลือน จุดด่างดำจางลง ผิวไร้ปัญหาสิว "

@@ -12,6 +12,12 @@ python and the seed-vc checkout on the path:
     <seedvc-venv>/python tools/seedvc_server.py \
         --seedvc-repo <path-to-seed-vc> --port 8022
 
+The wrapper is built on the first conversion, not at startup, and dropped
+again once nothing has asked for one in SEEDVC_IDLE_TTL seconds -- this card is
+shared with the VoxCPM2 service and with whatever else the operator is running,
+and a worker between takes has no business holding 2 GB of it. SEEDVC_IDLE_MODE
+=hot restores the old always-resident behaviour.
+
 POST /convert  {source, target, output, f0_condition, auto_f0_adjust,
                 diffusion_steps, semi_tone_shift}  -> writes `output`, returns
                 {"output":..., "sample_rate":...}. Paths are absolute and local;
@@ -21,10 +27,12 @@ this binds to localhost and is trusted, like the sibling GPU service.
 from __future__ import annotations
 
 import argparse
+import gc
 import os
 import sys
 import threading
 import time
+import traceback
 from pathlib import Path
 
 from pydantic import BaseModel
@@ -98,6 +106,131 @@ def _is_oom(exc: BaseException) -> bool:
     return any(m in text for m in ("out of memory", "outofmemoryerror", "alloc_failed"))
 
 
+# --------------------------------------------------------------------------- #
+# Idle policy
+#
+# "unload" drops the wrapper once the worker has been quiet, so the card goes
+# back to the VoxCPM2 service on :8021 and to whatever else needs it; "hot" keeps
+# it resident forever, which is what this used to do.
+#
+# The TTL has a floor set by the pipeline rather than by taste: a take generates
+# every chunk on :8021 first and only then converts them all here, so this worker
+# sits idle through a whole generation phase in the middle of work that is not
+# finished. Too short and every take pays for a reload it did not need.
+# --------------------------------------------------------------------------- #
+
+IDLE_MODE = os.getenv("SEEDVC_IDLE_MODE", "unload").strip().lower()
+IDLE_TTL = float(os.getenv("SEEDVC_IDLE_TTL", "180"))
+IDLE_CHECK_S = float(os.getenv("SEEDVC_IDLE_CHECK", "10"))
+
+
+class WrapperHolder:
+    """The SeedVCWrapper, present or absent, behind one stable reference.
+
+    `/convert` asks for it and gets one; the watcher thread drops it when the
+    worker has been quiet. Both go through `gpu_lock`, so a release can never
+    land underneath a running conversion.
+
+    `device` is cached rather than read off the wrapper, because /health reports
+    it and the studio polls /health before every render -- reading it from the
+    model would load 2 GB of weights to answer a question about a config string.
+    """
+
+    def __init__(self, build, *, mode: str = IDLE_MODE, ttl: float = IDLE_TTL,
+                 device: str = "auto") -> None:
+        self._build = build
+        self._wrapper = None
+        self._lock = threading.Lock()
+        self.mode = mode if mode in ("hot", "unload") else "unload"
+        self.ttl = ttl
+        self.device = device
+        self.last_used = time.time()
+        self.loads = 0
+        self.releases = 0
+
+    @property
+    def loaded(self) -> bool:
+        return self._wrapper is not None
+
+    @property
+    def idle_seconds(self) -> float:
+        return time.time() - self.last_used
+
+    def touch(self) -> None:
+        """From the end of the work as well as the start: a conversion that ran
+        for two minutes should not come out of it eligible for a release."""
+        self.last_used = time.time()
+
+    def get(self):
+        """The wrapper, building it if it is not resident."""
+        self.last_used = time.time()
+        if self._wrapper is not None:
+            return self._wrapper
+        with self._lock:
+            if self._wrapper is None:
+                t0 = time.time()
+                wrapper = self._build()
+                self._wrapper = wrapper
+                self.loads += 1
+                self.device = str(getattr(wrapper, "device", self.device))
+                if self.loads > 1:
+                    print(
+                        f"[seedvc] wrapper back in {time.time()-t0:.0f}s (load #{self.loads})",
+                        flush=True,
+                    )
+            self.last_used = time.time()
+            return self._wrapper
+
+    def should_release(self) -> bool:
+        """Cheap: no lock, no CUDA call. The watcher runs it every tick."""
+        return self.mode == "unload" and self.loaded and self.idle_seconds >= self.ttl
+
+    def release(self, reason: str = "idle") -> bool:
+        """Drop the weights and return the VRAM. Caller must hold `gpu_lock`."""
+        with self._lock:
+            wrapper = self._wrapper
+            if wrapper is None:
+                return False
+            self._wrapper = None
+
+        idle_for = self.idle_seconds
+        del wrapper
+        # collect() before empty_cache(): the tensors are only unreachable once
+        # the reference graph is collected, and the caching allocator only hands
+        # back blocks that no tensor still owns. Skip it and the weights stay on
+        # the card, which was the entire point of releasing them.
+        gc.collect()
+        _reclaim(force=True)
+        self.releases += 1
+        print(
+            f"[seedvc] wrapper released ({reason}) after {idle_for:.0f}s idle",
+            flush=True,
+        )
+        return True
+
+
+def _idle_watcher(holder: WrapperHolder, gpu_lock: threading.Lock) -> None:
+    """Give the card back once nothing has needed it for the TTL.
+
+    Only reaches for the lock when it means to act, and re-checks once it has it:
+    a conversion can start in the gap between deciding and being granted the lock.
+    """
+    while True:
+        time.sleep(IDLE_CHECK_S)
+        try:
+            if not holder.should_release():
+                continue
+            if not gpu_lock.acquire(timeout=1.0):
+                continue                       # busy; it will be touched anyway
+            try:
+                if holder.should_release():
+                    holder.release("idle")
+            finally:
+                gpu_lock.release()
+        except Exception:                                             # noqa: BLE001
+            traceback.print_exc()
+
+
 class ConvertRequest(BaseModel):
     source: str
     target: str
@@ -150,17 +283,44 @@ def main() -> int:
     from fastapi.responses import JSONResponse
     from seed_vc_wrapper import SeedVCWrapper
 
-    print(f"[seedvc] loading SeedVCWrapper (device={args.device or 'auto'}) …", flush=True)
-    t0 = time.time()
-    wrapper = SeedVCWrapper(device=args.device)
-    print(f"[seedvc] ready in {time.time()-t0:.0f}s on {wrapper.device}", flush=True)
+    def load_wrapper():
+        """Build the wrapper. Called on the first conversion, and again after
+        every idle release -- never at startup, so the worker comes up holding
+        no VRAM at all and the card stays free until there is work."""
+        # The cap goes on before the weights: set_per_process_memory_fraction
+        # only bounds allocations made after the call, so applying it to a model
+        # that is already resident caps nothing that matters. It also creates
+        # this process's CUDA context, which is why it is here and not at
+        # startup -- an idle worker should not hold a context either.
+        if MEM_FRACTION and torch.cuda.is_available():
+            try:
+                torch.cuda.set_per_process_memory_fraction(float(MEM_FRACTION))
+                print(f"[seedvc] VRAM capped at {float(MEM_FRACTION):.0%} of the card", flush=True)
+            except Exception as e:                                # noqa: BLE001
+                print(f"[seedvc] could not cap VRAM ({e}); running uncapped", file=sys.stderr)
 
-    if MEM_FRACTION and torch.cuda.is_available():
-        try:
-            torch.cuda.set_per_process_memory_fraction(float(MEM_FRACTION))
-            print(f"[seedvc] VRAM capped at {float(MEM_FRACTION):.0%} of the card", flush=True)
-        except Exception as e:                                    # noqa: BLE001
-            print(f"[seedvc] could not cap VRAM ({e}); running uncapped", file=sys.stderr)
+        print(f"[seedvc] loading SeedVCWrapper (device={args.device or 'auto'}) …", flush=True)
+        t0 = time.time()
+        reserved_before = torch.cuda.memory_reserved() if torch.cuda.is_available() else 0
+        w = SeedVCWrapper(device=args.device)
+        # The duration and the VRAM delta are reported together because together
+        # they are what decide the idle TTL: how long a reload costs, against how
+        # much of the card it hands back -- see the sibling report in
+        # voice-cloning/src/gpu_service.py.
+        took = time.time() - t0
+        if torch.cuda.is_available():
+            free, total = torch.cuda.mem_get_info()
+            weights_gb = (torch.cuda.memory_reserved() - reserved_before) / 1024**3
+            print(
+                f"[seedvc] ready in {took:.0f}s on {w.device} — weights {weights_gb:.2f} GB, "
+                f"card {free / 1024**3:.2f}/{total / 1024**3:.2f} GB free",
+                flush=True,
+            )
+        else:
+            print(f"[seedvc] ready in {took:.0f}s on {w.device}", flush=True)
+        return w
+
+    holder = WrapperHolder(load_wrapper, device=args.device or "auto")
 
     # One GPU, one conversion at a time.
     #
@@ -177,12 +337,26 @@ def main() -> int:
 
     @app.get("/health")
     def health() -> JSONResponse:
+        # Everything here answers from the holder, never from the wrapper. The
+        # studio polls this before every render; if reading it built the model,
+        # the worker would never be idle long enough to release anything.
         body = {
             "status": "ok",
-            "device": str(wrapper.device),
+            "device": holder.device,
             "busy": gpu_lock.locked(),
+            # Residency, not health: a released wrapper is the worker doing
+            # exactly what it was configured to do, so this stays 200.
+            "model_loaded": holder.loaded,
+            "idle_mode": holder.mode,
+            "idle_ttl_s": holder.ttl,
+            "idle_s": round(holder.idle_seconds, 1),
+            "model_loads": holder.loads,
+            "model_releases": holder.releases,
         }
-        if torch.cuda.is_available():
+        # `is_initialized`, not just `is_available`: mem_get_info() would create
+        # this process's CUDA context, taking several hundred MB of the very card
+        # the worker has just handed back, to report on a model it is not holding.
+        if torch.cuda.is_available() and torch.cuda.is_initialized():
             free, total = torch.cuda.mem_get_info()
             body["vram"] = {
                 "free_gb": round(free / 1024**3, 2),
@@ -192,13 +366,28 @@ def main() -> int:
             }
         return JSONResponse(body)
 
+    @app.post("/release")
+    def release() -> JSONResponse:
+        """Give the card back now instead of waiting out the idle timer.
+
+        For the operator about to start another GPU application. Waits for a
+        running conversion to finish rather than interrupting it.
+        """
+        with gpu_lock:
+            released = holder.release("requested")
+        return JSONResponse({"released": released, "model_loaded": holder.loaded})
+
     @app.post("/convert")
     def convert(req: ConvertRequest) -> JSONResponse:
         for p in (req.source, req.target):
             if not Path(p).exists():
                 return JSONResponse({"error": f"missing file: {p}"}, status_code=400)
 
-        with gpu_lock:
+        gpu_lock.acquire()
+        try:
+            # Built inside the lock: the build is GPU work like any other, and
+            # two requests arriving at a cold worker must not each construct one.
+            wrapper = holder.get()
             for attempt in (1, 2):
                 try:
                     # inference_mode, not just no_grad: SeedVC's own wrapper does
@@ -244,7 +433,6 @@ def main() -> int:
                         time.sleep(0.5)
                         continue
 
-                    import traceback
                     traceback.print_exc()
                     _reclaim(force=True)
                     if oom:
@@ -256,9 +444,27 @@ def main() -> int:
                             status_code=503,
                         )
                     return JSONResponse({"error": f"{type(e).__name__}: {e}"}, status_code=500)
+        finally:
+            # The idle clock runs from the end of the conversion, not its start.
+            # A take converts its chunks one after another; if a long convert came
+            # out of the lock already past the TTL, the next chunk would reload
+            # the wrapper it was still using a second ago.
+            holder.touch()
+            gpu_lock.release()
 
         return JSONResponse({"error": "convert fell through without a result"}, status_code=500)
 
+    if holder.mode != "hot":
+        # Daemon: it owns nothing that needs unwinding, and the process should
+        # not be kept alive by a thread whose whole job is to free memory.
+        threading.Thread(target=_idle_watcher, args=(holder, gpu_lock), daemon=True).start()
+
+    print(
+        f"[seedvc] listening on {args.host}:{args.port} — no model loaded "
+        f"(idle_mode={holder.mode}"
+        f"{'' if holder.mode == 'hot' else f' ttl={holder.ttl:.0f}s'})",
+        flush=True,
+    )
     uvicorn.run(app, host=args.host, port=args.port, log_level="warning")
     return 0
 

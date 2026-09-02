@@ -36,7 +36,7 @@ _load_dotenv()
 
 WORK_ROOT = Path(os.environ.get("SIANGTTS_WORK_DIR", "work"))
 UPLOAD_URL = os.environ.get(
-    "SIANGTTS_UPLOAD_URL", "https://looklike.ai/api/v1/live-gpt/upload"
+    "SIANGTTS_UPLOAD_URL", "https://api.vrlive.io/api/v1/live-gpt/upload"
 ).strip()
 UPLOAD_TOKEN = os.environ.get("SIANGTTS_UPLOAD_TOKEN", "").strip()
 FFMPEG = os.environ.get("SIANGTTS_FFMPEG", "ffmpeg")

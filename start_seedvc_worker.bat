@@ -39,6 +39,14 @@ rem SEEDVC_RECLAIM_BELOW is the free-VRAM fraction under which empty_cache() run
 rem after a convert (default 0.15). SEEDVC_EMPTY_CACHE=always reclaims every time.
 rem   set "SEEDVC_RECLAIM_BELOW=0.15"
 
+rem --- Idle policy (see the matching block in start_gpu_service.bat) ---
+rem The wrapper is built by the first convert, not at startup, and dropped again
+rem once the worker has been quiet -- ~2 GB back to the card between takes.
+rem   set "SEEDVC_IDLE_MODE=hot"
+rem   set "SEEDVC_IDLE_TTL=180"
+rem To take the card back right now:
+rem   curl -X POST http://127.0.0.1:8022/release
+
 echo ================================================================
 echo  Starting SeedVC worker on http://127.0.0.1:8022
 echo  repo:   %SEEDVC_REPO%

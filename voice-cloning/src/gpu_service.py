@@ -27,12 +27,16 @@ Config (env):
     SIANGTTS_WORK_DIR       where "files" output lands   (default work/)
     SIANGTTS_SEED_TEXT      line used to mint the neutral seed voice
     SIANGTTS_DEFAULT_LORA   lora mode when a job does not ask (default "shipped")
+    SIANGTTS_IDLE_MODE      "unload" (default) drops the weights when the queue
+                            has been quiet; "hot" keeps them resident forever
+    SIANGTTS_IDLE_TTL       seconds of quiet before that happens (default 180)
 """
 
 from __future__ import annotations
 
 import asyncio
 import os
+import sys
 import tempfile
 import time
 from contextlib import asynccontextmanager
@@ -44,7 +48,15 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 from pydantic import BaseModel, Field
 
 from . import lora as lora_mod
-from .engine import INTERACTIVE_BURST, LANES, Engine, RenderJob, reclaim_vram
+from .engine import (
+    IDLE_MODE,
+    INTERACTIVE_BURST,
+    LANES,
+    Engine,
+    ModelHolder,
+    RenderJob,
+    reclaim_vram,
+)
 from .env_file import load_env_file
 from .voices import UnknownVoice, VoiceStore
 
@@ -136,20 +148,54 @@ def _build_synth() -> Any:
             f"adapter {adapter!r} not found — set SIANGTTS_ADAPTER, or '' for base only"
         )
     print(f"[gpu] loading {BASE_MODEL} adapter={adapter} device={DEVICE or 'auto'} …")
-    return Synthesizer(base_model=BASE_MODEL, adapter_path=adapter, device=DEVICE)
+    # The cap goes on before the weights, not after: set_per_process_memory_fraction
+    # only bounds allocations made after the call, so applying it to a model that
+    # is already resident caps nothing that matters. It lives here rather than at
+    # startup for the same reason the load does -- it creates this process's CUDA
+    # context, and an idle service should not be holding one for a model it has
+    # not loaded.
+    _apply_memory_fraction()
+    import torch                                       # noqa: F401  (for the probe below)
+
+    # Timed, and the VRAM delta reported, because both numbers are inputs to a
+    # decision rather than trivia: how long a load costs sets the idle TTL that
+    # is worth paying for, and what the weights actually occupy says whether
+    # releasing the card between jobs buys the other GPU applications on this
+    # box enough room to matter.
+    t0 = time.time()
+    before = _vram_stats(allow_init=True)
+    synth = Synthesizer(base_model=BASE_MODEL, adapter_path=adapter, device=DEVICE)
+    after = _vram_stats(allow_init=True)
+    took = time.time() - t0
+    if before and after:
+        print(
+            f"[gpu] loaded in {took:.1f}s — weights {after['reserved_gb'] - before['reserved_gb']:.2f} GB, "
+            f"card {after['free_gb']:.2f}/{after['total_gb']:.2f} GB free"
+        )
+    else:
+        print(f"[gpu] loaded in {took:.1f}s")
+    return synth
 
 
-def _vram_stats() -> Optional[dict]:
+def _vram_stats(allow_init: bool = False) -> Optional[dict]:
     """What this process is holding on the card, for /health.
 
     Reported because the two model processes on this box can only be sized
     against each other if both say what they are actually using -- `reserved` is
     the number that matters, since the caching allocator does not give it back.
-    """
-    try:
-        import torch
 
+    Answers None rather than initialising CUDA, unless the caller says otherwise.
+    /health is polled every 1.5 s by the dashboard, and `mem_get_info()` creates
+    this process's CUDA context -- several hundred MB of the very card the
+    service has just handed back, taken for a model it is not even holding.
+    """
+    torch = sys.modules.get("torch")
+    if torch is None:                       # nothing here has touched the GPU yet
+        return None
+    try:
         if not torch.cuda.is_available():
+            return None
+        if not allow_init and not torch.cuda.is_initialized():
             return None
         free, total = torch.cuda.mem_get_info()
         return {
@@ -178,15 +224,25 @@ def _apply_memory_fraction() -> None:
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    synth = _build_synth()
-    _apply_memory_fraction()
-    voices = VoiceStore(synth, CACHE_DIR, _ref_dirs(), seed_text=SEED_TEXT)
-    engine = Engine(synth, voices, WORK_DIR, default_lora=DEFAULT_LORA)
+    # Nothing is loaded here. The service comes up holding no VRAM at all and
+    # builds the model on the first request that actually needs it, so the card
+    # belongs to whatever else is running on this box until there is work.
+    holder = ModelHolder(
+        _build_synth,
+        # A stub has no weights to give back and reloads for free, so releasing
+        # one is all cost and no benefit.
+        mode="hot" if STUB else IDLE_MODE,
+        is_stub=STUB,
+    )
+    voices = VoiceStore(holder, CACHE_DIR, _ref_dirs(), seed_text=SEED_TEXT)
+    engine = Engine(holder, voices, WORK_DIR, default_lora=DEFAULT_LORA)
     engine.start()
     _state["engine"] = engine
     print(
-        f"[gpu] ready — stub={STUB} sr={engine.sample_rate} "
-        f"cache={CACHE_DIR} work={WORK_DIR} refs={[str(d) for d in _ref_dirs()]}"
+        f"[gpu] ready — no model loaded (idle_mode={holder.mode}"
+        f"{'' if holder.mode == 'hot' else f' ttl={holder.ttl:.0f}s'}) "
+        f"stub={STUB} cache={CACHE_DIR} work={WORK_DIR} "
+        f"refs={[str(d) for d in _ref_dirs()]}"
     )
     try:
         yield
@@ -539,9 +595,20 @@ def health() -> JSONResponse:
     if engine is None:
         return JSONResponse({"status": "loading", "stub": STUB}, status_code=503)
     jobs = list(engine.jobs.values())
+    holder = engine.holder
     return JSONResponse({
         "status": "ok",
         "stub": engine.is_stub,
+        # Residency, not health: a released model is a service working exactly as
+        # configured, so this stays 200 and the state is a field. Reading it must
+        # never load anything -- see ModelHolder.
+        "model_loaded": holder.loaded if holder else True,
+        "idle_mode": holder.mode if holder else "hot",
+        "idle_ttl_s": holder.ttl if holder else None,
+        "idle_s": round(holder.idle_seconds, 1) if holder else None,
+        "model_loads": holder.loads if holder else None,
+        "model_releases": holder.releases if holder else None,
+        "load_seconds_total": round(holder.load_seconds, 1) if holder else None,
         "model": BASE_MODEL,
         "adapter": ADAPTER,
         "device": DEVICE or "auto",
@@ -576,6 +643,26 @@ def gpu_reclaim() -> JSONResponse:
     return JSONResponse({"reclaimed": freed, "before": before, "after": _vram_stats()})
 
 
+@app.post("/v2/gpu/release")
+async def gpu_release() -> JSONResponse:
+    """Drop the weights now rather than waiting out the idle timer.
+
+    For the operator about to start another GPU application. The timer exists so
+    that nobody has to think about this in the normal case; when the card is
+    wanted *now*, "wait three minutes for a threshold to expire" is the wrong
+    answer. Waits for a running generation to finish rather than interrupting it.
+    """
+    engine = _engine()
+    before = _vram_stats()
+    released = await engine.release_model("requested")
+    return JSONResponse({
+        "released": released,
+        "model_loaded": engine.holder.loaded if engine.holder else True,
+        "before": before,
+        "after": _vram_stats(),
+    })
+
+
 _PAGE = """<!doctype html><html><head><meta charset="utf-8">
 <title>SiangTTS GPU Service</title>
 <style>
@@ -596,6 +683,7 @@ _PAGE = """<!doctype html><html><head><meta charset="utf-8">
  .cancelled{background:rgba(100,116,139,.15);color:#64748b}
  .lane-interactive{color:#38bdf8}.lane-batch{color:#94a3b8}
  .stub{background:#f87171;color:#111;padding:2px 8px;border-radius:4px;font-size:11px;font-weight:600}
+ .card.model b{font-size:15px} .held{color:#38bdf8} .free{color:#34d399}
 </style></head><body>
 <h1>SiangTTS GPU Service <span id="stub"></span></h1>
 <div class="sub">Shared VoxCPM2 engine · webhook (:8010) and tone studio (:8011) are clients</div>
@@ -611,7 +699,10 @@ async function tick(){
   ['waiting (interactive)', h.waiting.interactive], ['waiting (batch)', h.waiting.batch],
   ['running', h.running ? 1 : 0], ['completed', h.completed], ['failed', h.failed],
   ['voices cached', h.voices.in_memory],
- ].map(([k,v])=>`<div class="card"><b>${v}</b><span>${k}</span></div>`).join('');
+ ].map(([k,v])=>`<div class="card"><b>${v}</b><span>${k}</span></div>`).join('')
+ + `<div class="card model"><b class="${h.model_loaded?'held':'free'}">${
+     h.model_loaded ? 'holding VRAM' : 'card released'}</b><span>model · ${
+     h.idle_mode}${h.model_loaded&&h.idle_mode!=='hot'?` · idle ${Math.round(h.idle_s)}s/${Math.round(h.idle_ttl_s)}s`:''}</span></div>`;
  document.getElementById('rows').innerHTML = (j.jobs||[]).map(r=>`<tr>
   <td><code>${r.job_id}</code></td><td>${r.client||'—'}</td>
   <td class="lane-${r.lane}">${r.lane}</td>

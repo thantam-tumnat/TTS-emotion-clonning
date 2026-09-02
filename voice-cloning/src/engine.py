@@ -20,8 +20,10 @@ production traffic.
 from __future__ import annotations
 
 import asyncio
+import gc
 import io
 import os
+import threading
 import time
 import traceback
 import uuid
@@ -56,6 +58,33 @@ MAX_HISTORY = int(os.environ.get("SIANGTTS_GPU_MAX_HISTORY", "500"))
 # forces a full device sync, so paying for it after every job was pure latency on
 # a healthy host; never paying for it strands this process's high-water mark.
 RECLAIM_BELOW = float(os.environ.get("VOXCPM_RECLAIM_BELOW", "0.15"))
+
+# --------------------------------------------------------------------------- #
+# Idle policy
+#
+# The weights are ~6 GB of a 12 GB card that other GPU applications on this box
+# also want, and a service that has finished its queue is holding them for
+# nobody. "unload" drops them once the queue has been quiet for a while and
+# reloads on the next job; "hot" is the old always-resident behaviour, kept as
+# the escape hatch for when the reload costs more than the memory is worth.
+#
+# Deliberately not offered: parking the weights in system RAM. It frees the same
+# VRAM, but it takes the RAM from the very applications this is meant to make
+# room for -- and on a box that is already paging, Windows would put them on
+# disk anyway, which makes the "fast" path slower than a clean reload.
+# --------------------------------------------------------------------------- #
+
+IDLE_MODE = os.environ.get("SIANGTTS_IDLE_MODE", "unload").strip().lower()
+
+# Quiet time before the weights are dropped. The floor is set by the pipeline
+# rather than by taste: a take generates every chunk here, then converts every
+# chunk on the SeedVC worker, so this process sits idle through a whole
+# conversion phase in the middle of work that is not finished. Too short and
+# every take pays for a reload it did not need.
+IDLE_TTL = float(os.environ.get("SIANGTTS_IDLE_TTL", "180"))
+
+# How often the watcher looks. Cheap: it takes no lock unless it means to act.
+IDLE_CHECK_S = float(os.environ.get("SIANGTTS_IDLE_CHECK", "10"))
 
 
 def _free_fraction():
@@ -115,6 +144,161 @@ def is_oom(exc: BaseException) -> bool:
         pass
     text = f"{type(exc).__name__}: {exc}".lower()
     return any(m in text for m in ("out of memory", "outofmemoryerror", "alloc_failed"))
+
+
+class ModelHolder:
+    """The model, present or absent, behind one reference that never changes.
+
+    Everything that used to hold a `Synthesizer` holds one of these instead and
+    goes on calling `.synth(...)`, `.build_voice(...)`, `.tts_model` as before:
+    the attribute lookup is what loads the weights. That is the point -- there is
+    no list of call sites to keep in sync, and a path that reaches the model
+    without meaning to gets a load rather than an AttributeError.
+
+    Two attributes deliberately do *not* load. `sample_rate` and `is_stub` are
+    read by /health, which a dashboard polls every 1.5 s; answering those from
+    the model would pin the weights in memory forever and defeat the whole
+    exercise. They answer from cached values instead.
+
+    Loading is serialised on its own lock. Callers already hold the engine's
+    `gpu_lock`, but they reach this from worker threads, and two threads arriving
+    together must not each build a model.
+    """
+
+    def __init__(
+        self,
+        build,
+        *,
+        mode: str = IDLE_MODE,
+        ttl: float = IDLE_TTL,
+        sample_rate: int = 48000,
+        is_stub: bool = False,
+    ) -> None:
+        self._build = build
+        self._model: Any = None
+        self._lock = threading.Lock()
+        self.mode = mode if mode in ("hot", "unload") else "unload"
+        self.ttl = ttl
+        # Cached so /health can answer with no model resident. The sample rate is
+        # a property of the checkpoint, so the first load turns this default into
+        # the real value and it never changes again.
+        self._sample_rate = int(sample_rate)
+        self._is_stub = bool(is_stub)
+        self.last_used = time.time()
+        self.loads = 0
+        self.releases = 0
+        self.load_seconds = 0.0
+
+    # -- state ------------------------------------------------------------ #
+
+    @property
+    def loaded(self) -> bool:
+        return self._model is not None
+
+    @property
+    def sample_rate(self) -> int:
+        return self._sample_rate
+
+    @property
+    def is_stub(self) -> bool:
+        return self._is_stub
+
+    @property
+    def idle_seconds(self) -> float:
+        return time.time() - self.last_used
+
+    def touch(self) -> None:
+        """Mark the model as wanted now. Called when a job finishes as well as
+        when one starts, so the idle clock runs from the end of the work."""
+        self.last_used = time.time()
+
+    # -- the model itself -------------------------------------------------- #
+
+    def get(self) -> Any:
+        """The model, loading it if it is not resident."""
+        self.last_used = time.time()
+        if self._model is not None:
+            return self._model
+        with self._lock:
+            if self._model is None:                # else: lost the race, it is built
+                t0 = time.time()
+                model = self._build()
+                took = time.time() - t0
+                self._model = model
+                self.loads += 1
+                self.load_seconds += took
+                self._sample_rate = int(getattr(model, "sample_rate", self._sample_rate))
+                self._is_stub = bool(getattr(model, "is_stub", self._is_stub))
+                if self.loads > 1:
+                    print(f"[gpu] model back in {took:.1f}s (load #{self.loads})", flush=True)
+            self.last_used = time.time()
+            return self._model
+
+    def __getattr__(self, name: str) -> Any:
+        """Anything not defined above is the model's own API, so a load is what
+        the caller is asking for. Private names are excluded: they arrive from
+        copy and pickle protocols during construction, before there is anything
+        to forward to, and answering those with a model load would be absurd."""
+        if name.startswith("_"):
+            raise AttributeError(name)
+        return getattr(self.get(), name)
+
+    # -- releasing --------------------------------------------------------- #
+
+    def should_release(self) -> bool:
+        """Cheap check -- no lock, no CUDA call. The watcher runs this every tick
+        and only reaches for the GPU lock when it comes back true."""
+        return self.mode == "unload" and self.loaded and self.idle_seconds >= self.ttl
+
+    def release(self, reason: str = "idle") -> bool:
+        """Drop the weights and hand the VRAM back to the driver.
+
+        The caller must hold the engine's `gpu_lock`. Releasing underneath a
+        running generation would pull the model out from under it.
+        """
+        with self._lock:
+            model = self._model
+            if model is None:
+                return False
+            self._model = None
+
+        idle_for = self.idle_seconds
+        del model
+        # collect() before empty_cache(), and both are needed: the tensors only
+        # become unreachable once the reference graph is collected, and the
+        # caching allocator only returns blocks no tensor still owns. Skip the
+        # collect and the weights stay on the card, which is the whole exercise.
+        gc.collect()
+        freed = _release_cuda()
+        self.releases += 1
+        print(
+            f"[gpu] model released ({reason}) after {idle_for:.0f}s idle — "
+            f"{'VRAM returned to the driver' if freed else 'nothing on the GPU to reclaim'}",
+            flush=True,
+        )
+        return True
+
+
+def _release_cuda() -> bool:
+    """`empty_cache()` unconditionally. The RECLAIM_BELOW threshold that guards
+    the per-job reclaim does not apply here: giving the memory up is the point,
+    not a side effect worth deferring until the card is tight."""
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return False
+        # `empty_cache()` initialises this process's CUDA context if there is not
+        # one yet -- so calling it on a process holding nothing takes several
+        # hundred MB of the card in the name of giving memory back. If CUDA was
+        # never initialised there is, by definition, nothing here to reclaim.
+        if not torch.cuda.is_initialized():
+            return False
+        torch.cuda.empty_cache()
+        torch.cuda.reset_peak_memory_stats()
+        return True
+    except Exception:                                                # noqa: BLE001
+        return False
 
 
 @dataclass
@@ -187,6 +371,11 @@ class Engine:
         default_lora: Any = None,
     ) -> None:
         self.synth = synth
+        # The same object under a second name, when it is one: `synth` is what
+        # every generation path calls, `holder` is what the lifecycle paths need.
+        # None when a plain Synthesizer was passed in -- the tests do that, and a
+        # model that cannot be released simply never is.
+        self.holder = synth if isinstance(synth, ModelHolder) else None
         self.voices = voices
         self.work_root = Path(work_root)
         self.work_root.mkdir(parents=True, exist_ok=True)
@@ -204,6 +393,7 @@ class Engine:
         self.queues: dict[str, asyncio.Queue] = {lane: asyncio.Queue() for lane in LANES}
         self.running: Optional[str] = None
         self._worker: Optional[asyncio.Task] = None
+        self._idle_task: Optional[asyncio.Task] = None
         self._interactive_streak = 0
         # What the model is currently scaled to, so an unchanged scale costs nothing.
         self._lora_state: Optional[tuple[float, float]] = None
@@ -215,11 +405,16 @@ class Engine:
     def start(self) -> None:
         if self._worker is None:
             self._worker = asyncio.create_task(self._run_forever())
+        if self._idle_task is None and self.holder is not None and self.holder.mode != "hot":
+            self._idle_task = asyncio.create_task(self._idle_loop())
 
     def stop(self) -> None:
         if self._worker is not None:
             self._worker.cancel()
             self._worker = None
+        if self._idle_task is not None:
+            self._idle_task.cancel()
+            self._idle_task = None
 
     @property
     def sample_rate(self) -> int:
@@ -284,6 +479,55 @@ class Engine:
         inter = sorted((j for j in waiting if j.lane == "interactive"), key=lambda j: j.created)
         batch = sorted((j for j in waiting if j.lane == "batch"), key=lambda j: j.created)
         return {j.job_id: i for i, j in enumerate(inter + batch, 1)}
+
+    def _queued(self) -> bool:
+        """Anything waiting in either lane. Read directly off the queues rather
+        than off the job records: this decides whether the model may go away, and
+        a job that has been enqueued but not yet marked is still a job."""
+        return any(not self.queues[lane].empty() for lane in LANES)
+
+    async def release_model(self, reason: str = "manual", *, only_if_idle: bool = False) -> bool:
+        """Give the card back. The one path that drops the weights.
+
+        Takes `gpu_lock`, so it waits out a running generation rather than
+        pulling the model out from under it, and re-checks the idle conditions
+        once it has the lock -- a job can arrive in the gap between the watcher
+        deciding and the lock being granted.
+        """
+        if self.holder is None:
+            return False
+        async with self.gpu_lock:
+            if only_if_idle and (self._queued() or not self.holder.should_release()):
+                return False
+            freed = await asyncio.to_thread(self.holder.release, reason)
+            if freed:
+                # A reloaded model comes back at its default LoRA scale, so the
+                # cached "what the model is scaled to now" is now a lie -- and a
+                # lie that makes `_apply_lora` skip `set_lora_strength` outright,
+                # shipping a take rendered without the Thai LoRA and no error to
+                # show for it. Resetting it here, in the only place that drops
+                # the model, is what keeps the two from drifting apart.
+                self._lora_state = None
+            return freed
+
+    async def _idle_loop(self) -> None:
+        """Hand the card back once nothing has needed it for `IDLE_TTL`.
+
+        The cheap checks run first and take no lock at all, so a busy service
+        pays nothing for this beyond a comparison every `IDLE_CHECK_S`.
+        """
+        while True:
+            try:
+                await asyncio.sleep(IDLE_CHECK_S)
+                if self.holder is None or not self.holder.should_release():
+                    continue
+                if self.running is not None or self._queued():
+                    continue
+                await self.release_model("idle", only_if_idle=True)
+            except asyncio.CancelledError:
+                raise
+            except Exception:                                        # noqa: BLE001
+                traceback.print_exc()
 
     def _evict_history(self) -> None:
         """Bounded history — insertion-ordered, so drop the oldest finished jobs
@@ -433,6 +677,10 @@ class Engine:
             job.finished = time.time()
             self.running = None
             job._event.set()
+            # From the end of the work, not the start: a job that ran for four
+            # minutes should not come out of it already eligible for a release.
+            if self.holder is not None:
+                self.holder.touch()
             # Reclaim after a failure (a partial run leaves the allocator
             # fragmented) and whenever the card is genuinely tight; skip it on the
             # healthy path, where the sync costs more than the memory is worth.

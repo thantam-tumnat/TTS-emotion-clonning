@@ -108,8 +108,12 @@ class Settings(BaseSettings):
 
     # SeedVC worker (its own venv/process -- torch 2.4 conflicts with this env).
     seedvc_url: str = os.getenv("SEEDVC_URL", "http://127.0.0.1:8022")
-    # Generous: a convert can queue behind VoxCPM2 for the same GPU.
-    seedvc_timeout: int = int(os.getenv("SEEDVC_TIMEOUT", "180"))
+    # Generous: a convert can queue behind VoxCPM2 for the same GPU, and the
+    # worker no longer holds its weights between takes -- the first convert after
+    # a quiet spell pays for a reload before it starts diffusing. Sized for the
+    # worst case of all three (reload, queue, convert) rather than the usual one,
+    # because the cost of being wrong is a take that failed for lack of patience.
+    seedvc_timeout: int = int(os.getenv("SEEDVC_TIMEOUT", "300"))
     # Required to keep the donor's pitch emotion. Timbre-only conversion flattens
     # it -- measured on the sibling pipeline as angry falling from +99 Hz median-F0
     # over neutral to -40 Hz. With f0_condition it comes back at +97 Hz.
