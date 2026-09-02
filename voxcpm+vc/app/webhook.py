@@ -492,6 +492,28 @@ async def _accept(body: WebhookBody, received: Optional[dict] = None) -> JSONRes
             status_code=400,
         )
 
+    # A missing voice_id is a broken request, not a request for "any voice". SeedVC
+    # converts *into* a named target, so with nothing pinned this used to fall
+    # through to whatever clip sorted first in ref/ -- delivering a take in a
+    # stranger's voice that is indistinguishable from a correct one until someone
+    # listens. Refuse it here, where the caller still gets an answer it can act on;
+    # WEBHOOK_DEFAULT_VOICE nominates a house voice for callers that really do not
+    # care. Rejected inline (like an empty prompt) because it costs no LLM and no GPU.
+    asked_voice = body.voice_id.strip()
+    default_voice = settings.webhook_default_voice.strip()
+    if not asked_voice and not default_voice:
+        return JSONResponse(
+            {
+                "status": "error",
+                "error": (
+                    "voice_id is required: this pipeline converts every take into a "
+                    "named target voice. Send voice_id, or set WEBHOOK_DEFAULT_VOICE "
+                    "on the service to nominate a default."
+                ),
+            },
+            status_code=400,
+        )
+
     # Pick the donor now (fast, local — no network) so the choice is fixed when the job
     # is queued and visible on the dashboard, and a random pick is stable across retries.
     donor_set, gender, sources = await asyncio.to_thread(
@@ -501,15 +523,8 @@ async def _accept(body: WebhookBody, received: Optional[dict] = None) -> JSONRes
     # Every one of these three can be a default the caller never asked for, and the
     # resulting take sounds like a normal one either way. Record which is which here,
     # where the body is still in hand, and ship it to both dashboards.
-    asked_voice = body.voice_id.strip()
-    default_voice = settings.webhook_default_voice.strip()
     voice_id = asked_voice or default_voice
-    if asked_voice:
-        voice_source = "request"
-    elif default_voice:
-        voice_source = "not sent — WEBHOOK_DEFAULT_VOICE"
-    else:
-        voice_source = "not sent — no default; the first clip in ref/ is used"
+    voice_source = "request" if asked_voice else "not sent — WEBHOOK_DEFAULT_VOICE"
 
     job = Job(
         job_id=body.job_id or queue_id,
@@ -811,7 +826,7 @@ DASHBOARD_HTML = """<!doctype html>
     <div class="body">
       <div><label>Thai Prompt</label>
         <textarea id="m-prompt">โปรโมชั่นวันนี้ลดสูงสุดห้าสิบเปอร์เซ็นต์ รีบสั่งเลยนะคะ เดี๋ยวของหมด</textarea></div>
-      <div><label>Voice ID (leave blank = auto)</label><input class="fc" id="m-voice" placeholder="auto"></div>
+      <div><label>Voice ID (required unless WEBHOOK_DEFAULT_VOICE is set)</label><input class="fc" id="m-voice" placeholder="e.g. 02af962c-96f3-4d48-9195-fdb3715abfae"></div>
       <div><label>Donor sex (blank = default)</label>
         <select class="fc" id="m-sex"><option value="">default</option><option value="female">female</option><option value="male">male</option></select></div>
       <div><label>Donor set (blank = random of that sex)</label><input class="fc" id="m-donor" placeholder="random"></div>

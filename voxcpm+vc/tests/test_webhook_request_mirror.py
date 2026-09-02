@@ -52,19 +52,26 @@ def stub_gateway_and_donors(monkeypatch):
     yield
 
 
-def _accept(body_dict):
-    """Run one accept and return (job, meta_payload)."""
+def _submit(body_dict):
+    """Run one accept and return (response, job_or_None, meta_payload_or_None)."""
 
     async def go():
         wh._state["jobs"] = {}
         wh._state["queue"] = asyncio.Queue()
         body = wh.WebhookBody(**body_dict)
-        await wh._accept(body, body_dict)
-        job = list(wh._state["jobs"].values())[0]
+        resp = await wh._accept(body, body_dict)
+        jobs = list(wh._state["jobs"].values())
         meta = [p for (url, p) in _FakeClient.posts if url.endswith("/v2/jobs/external")]
-        return job, (meta[0] if meta else None)
+        return resp, (jobs[0] if jobs else None), (meta[0] if meta else None)
 
     return asyncio.run(go())
+
+
+def _accept(body_dict):
+    """As above, for the cases that are expected to be accepted."""
+    resp, job, meta = _submit(body_dict)
+    assert resp.status_code == 200, resp.body
+    return job, meta
 
 
 def test_request_is_mirrored_verbatim_including_unknown_fields():
@@ -96,21 +103,37 @@ def test_resolved_reports_the_caller_as_the_source_when_it_asked():
     assert meta["voice"] == {"speaker_id": "abc-123"}
 
 
-def test_missing_voice_id_is_reported_as_a_substitution():
-    job, meta = _accept({"prompt": "x", "sex": "female"})
-    resolved = meta["request"]["resolved"]
+def test_missing_voice_id_is_rejected_rather_than_defaulted():
+    """SeedVC converts into a named target, so "no voice" is a broken request.
 
-    assert resolved["voice_id"] is None
-    assert resolved["voice_id_source"].startswith("not sent")
-    assert meta["voice"] is None
+    It used to fall through to whatever clip sorted first in ref/ -- a take in a
+    stranger's voice that is indistinguishable from a correct one.
+    """
+    resp, job, meta = _submit({"prompt": "x", "sex": "female"})
+
+    assert resp.status_code == 400
+    assert b"voice_id is required" in resp.body
+    # Nothing queued, and no dashboard row for work that will never run.
+    assert job is None
+    assert meta is None
 
 
-def test_configured_default_voice_is_named_as_such(monkeypatch):
+def test_blank_voice_id_is_rejected_too():
+    resp, job, meta = _submit({"prompt": "x", "voice_id": "   "})
+
+    assert resp.status_code == 400
+    assert job is None
+
+
+def test_configured_default_voice_accepts_the_request_and_is_named_as_such(monkeypatch):
+    """WEBHOOK_DEFAULT_VOICE is the way to opt back into a house voice -- and the
+    dashboard still has to say the caller never asked for it."""
     monkeypatch.setattr(wh.settings, "webhook_default_voice", "house_voice", raising=False)
     job, meta = _accept({"prompt": "x"})
     resolved = meta["request"]["resolved"]
 
     assert job.voice_id == "house_voice"
+    assert meta["voice"] == {"speaker_id": "house_voice"}
     assert "WEBHOOK_DEFAULT_VOICE" in resolved["voice_id_source"]
 
 

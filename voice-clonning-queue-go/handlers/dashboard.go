@@ -669,6 +669,19 @@ const dashboardHTML = `<!doctype html>
       color: var(--text-muted); word-break: break-all; margin-top: 2px;
     }
     .resolved-src { font-size: 10px; color: var(--text-dim); margin-top: 3px; }
+    .btn-json {
+      background: rgba(139, 92, 246, 0.14);
+      color: #a78bfa;
+      border: 1px solid rgba(139, 92, 246, 0.35);
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .btn-json.on { background: rgba(139, 92, 246, 0.3); color: #ddd6fe; }
+    .json-toggle {
+      background: none; border: none; cursor: pointer; padding: 0 0 6px;
+      color: var(--text-dim); font-size: 11px; font-weight: 700;
+      letter-spacing: .04em; font-family: inherit;
+    }
+    .json-toggle:hover { color: var(--accent-purple); }
     .req-json {
       background: #0d1320; border: 1px solid var(--border-subtle); border-radius: 8px;
       padding: 10px 13px; margin: 0; max-height: 260px; overflow: auto;
@@ -906,6 +919,17 @@ const dashboardHTML = `<!doctype html>
       renderRequests(currentJobsData);
     }
 
+    // Raw JSON is off by default and remembered per card: it is the thing you open
+    // when a take came out wrong, not something to scroll past on every other card.
+    // Opening it opens the card too, or the button would appear to do nothing.
+    var openJson = {};
+
+    function toggleJson(gid) {
+      openJson[gid] = !openJson[gid];
+      if (openJson[gid]) openGroups[gid] = true;
+      renderRequests(currentJobsData);
+    }
+
     // Worst-first, so a request shows the state that needs attention: something
     // still on the GPU outranks something waiting, and a failure outranks a
     // sibling that happened to finish before the OOM hit.
@@ -1066,6 +1090,10 @@ const dashboardHTML = `<!doctype html>
         if (activeJob) {
           actions += '<button class="btn btn-cancel" onclick="event.stopPropagation();cancelJob(\'' + activeJob.job_id + '\')">✕ Cancel request</button>';
         }
+        if (reqPayload) {
+          actions += '<button class="btn btn-json' + (openJson[g.id] ? ' on' : '') + '" title="the JSON this request arrived with, and what the pipeline resolved it to"' +
+            ' onclick="event.stopPropagation();toggleJson(\'' + g.id + '\')">{ } JSON</button>';
+        }
         actions += '<button class="btn btn-detail" onclick="event.stopPropagation();openDetailModal(\'' + (head.job_id || g.id) + '\')">ℹ Details</button>';
 
         html += '<div class="req-card' + (isOpen ? ' open' : '') + (oomJob ? ' oom' : '') + '">' +
@@ -1095,7 +1123,7 @@ const dashboardHTML = `<!doctype html>
               '<div class="raw-prompt-container" style="padding:10px 13px;border-radius:8px;">' +
                 '<div style="white-space:pre-wrap;line-height:1.6;">' + escapeHtml(rawPrompt) + '</div>' +
               '</div>' : '') +
-            renderRequestPayload(reqPayload) +
+            renderRequestPayload(reqPayload, !!openJson[g.id], g.id) +
             '<div class="req-section">Chunks sent to the GPU (' + chunkRows.length + ')</div>' +
             renderChunkRows(chunkRows) +
             (g.children.length > 1 ? '<div class="req-section">Render jobs in this request (' + g.children.length + ')</div>' + renderSubJobs(g.children) : '') +
@@ -1120,7 +1148,7 @@ const dashboardHTML = `<!doctype html>
     // The upstream request exactly as it arrived, above the pipeline's reading of
     // it. Shown as JSON rather than as fields: the point is to see what the caller
     // really sent -- including keys the studio ignores and values it overrode.
-    function renderRequestPayload(req) {
+    function renderRequestPayload(req, showJson, gid) {
       if (!req) return '';
       var received = req.received || req;
       var resolved = req.resolved || null;
@@ -1148,7 +1176,13 @@ const dashboardHTML = `<!doctype html>
       var text;
       try { text = JSON.stringify(received, null, 2); }
       catch (e) { text = String(received); }
-      out += '<pre class="req-json">' + escapeHtml(text) + '</pre>';
+
+      // In the modal there is no card to toggle, so the JSON is simply shown.
+      if (gid === undefined) return out + '<pre class="req-json">' + escapeHtml(text) + '</pre>';
+
+      out += '<button class="json-toggle" onclick="event.stopPropagation();toggleJson(\'' + gid + '\')">' +
+        (showJson ? '&#9660; hide raw JSON' : '&#9654; show raw JSON') + '</button>';
+      if (showJson) out += '<pre class="req-json">' + escapeHtml(text) + '</pre>';
       return out;
     }
 

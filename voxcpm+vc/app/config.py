@@ -74,8 +74,11 @@ class Settings(BaseSettings):
     webhook_keep_work: bool = False
     # Finished jobs kept in memory for /webhook/jobs. Bounds a long-lived process.
     webhook_max_history: int = 500
-    # Target voice (SeedVC) when a request names none. Empty -> the shared auto
-    # seed voice, matching an unpinned /synthesize call.
+    # Target voice (SeedVC) for a webhook request that names none. Empty -> such a
+    # request is rejected outright: SeedVC always converts *into* someone, so a
+    # missing voice_id used to be served by whatever clip sorted first in ref/ --
+    # a take in the wrong voice that sounds exactly like a correct one. Set this to
+    # a voice_id to nominate a house voice instead of refusing.
     webhook_default_voice: str = ""
     http_timeout: float = 120.0
 
