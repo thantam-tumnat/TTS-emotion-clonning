@@ -632,6 +632,35 @@ const dashboardHTML = `<!doctype html>
       background: rgba(100, 116, 139, 0.25); color: #cbd5e1; padding: 2px 7px;
       border-radius: 5px; font-size: 10px; font-weight: 700; white-space: nowrap;
     }
+    /* Actions live in the header, not the body: a collapsed card still has to
+       offer Play and Cancel, or every playback costs an extra click. */
+    .req-actions { display: flex; gap: 6px; flex-shrink: 0; margin-left: 4px; }
+    /* Why a request failed, visible without expanding it -- the whole point of
+       the status pill is lost if the reason is one click away. */
+    .req-error-strip {
+      display: flex; gap: 9px; align-items: baseline;
+      padding: 9px 15px 11px;
+      border-top: 1px dashed rgba(239, 68, 68, 0.25);
+      color: #fca5a5; font-size: 11.5px; line-height: 1.5;
+    }
+    .req-error-strip.muted {
+      color: var(--text-muted); border-top-color: rgba(100, 116, 139, 0.25);
+    }
+    .req-error-strip .lbl {
+      font-weight: 800; font-size: 10px; letter-spacing: .05em;
+      text-transform: uppercase; flex-shrink: 0;
+    }
+    .req-error-strip .txt { word-break: break-word; }
+    .fail-box {
+      background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.3);
+      border-radius: 8px; padding: 10px 14px; margin-top: 12px;
+      color: #fca5a5; font-size: 12px; line-height: 1.6; word-break: break-word;
+      font-family: 'JetBrains Mono', monospace;
+    }
+    .fail-box.muted {
+      background: rgba(100, 116, 139, 0.10); border-color: rgba(100, 116, 139, 0.3);
+      color: var(--text-muted);
+    }
   </style>
 </head>
 <body>
@@ -916,13 +945,20 @@ const dashboardHTML = `<!doctype html>
           }
         }
 
-        var audioJob = null, activeJob = null, ran = null, waited = null;
+        var audioJob = null, activeJob = null, ran = null, waited = null, failedJob = null;
         for (var a = 0; a < members.length; a++) {
           if (!audioJob && members[a].has_audio) audioJob = members[a];
           if (!activeJob && (members[a].status === 'queued' || members[a].status === 'running')) activeJob = members[a];
+          // First member that actually says why it stopped. Prefer a real failure
+          // over a cancellation, so an OOM is never masked by the sibling it took
+          // down with it.
+          if (members[a].error && (!failedJob || (failedJob.status !== 'failed' && members[a].status === 'failed'))) {
+            failedJob = members[a];
+          }
           if (members[a].ran_s !== undefined && members[a].ran_s !== null) ran = (ran || 0) + members[a].ran_s;
           if (waited === null && members[a].waited_s !== undefined && members[a].waited_s !== null) waited = members[a].waited_s;
         }
+        if (oomJob) failedJob = oomJob;
 
         var isOpen = !!openGroups[g.id];
         var created = new Date(g.newest * 1000).toLocaleTimeString();
@@ -954,7 +990,9 @@ const dashboardHTML = `<!doctype html>
               '<span>gpu ' + fmtSecs(ran) + '</span>' +
               '<span>' + created + '</span>' +
             '</span>' +
+            '<div class="req-actions">' + actions + '</div>' +
           '</div>' +
+          renderErrorStrip(failedJob, status) +
           '<div class="req-body">' +
             (rawPrompt ?
               '<div class="req-section">Raw prompt</div>' +
@@ -964,8 +1002,7 @@ const dashboardHTML = `<!doctype html>
             '<div class="req-section">Chunks sent to the GPU (' + chunkRows.length + ')</div>' +
             renderChunkRows(chunkRows) +
             (g.children.length > 1 ? '<div class="req-section">Render jobs in this request (' + g.children.length + ')</div>' + renderSubJobs(g.children) : '') +
-            renderOomBanner(oomJob, upstreamCancelled) +
-            '<div class="btn-group" style="margin-top:13px;justify-content:flex-end;">' + actions + '</div>' +
+            renderFailureBanner(oomJob, failedJob, upstreamCancelled) +
           '</div>' +
         '</div>';
       }
@@ -1009,19 +1046,46 @@ const dashboardHTML = `<!doctype html>
       return out;
     }
 
-    function renderOomBanner(oomJob, upstream) {
-      if (!oomJob) return '';
-      var extra = '';
-      if (upstream.length > 0) {
-        var ids = upstream.map(function (u) { return u.job_id; }).join(', ');
-        extra = '<div style="margin-top:6px;color:var(--text-muted);font-size:11.5px;">' +
-          'The rest of this request was cancelled so it would not keep asking the same GPU for memory: ' +
-          escapeHtml(ids) + '</div>';
-      }
-      return '<div class="oom-banner">' +
-        '<span class="badge-oom">VRAM OOM</span>' +
-        '<div><div class="msg">' + escapeHtml(oomJob.error || 'CUDA out of memory') + '</div>' + extra + '</div>' +
+    // One line of "why", on the collapsed card. Every failure gets one, not just
+    // OOM: an unknown voice or an unreachable GPU service is exactly as worth
+    // seeing, and burying it behind a click is how a broken pipeline reads as an
+    // idle one.
+    function renderErrorStrip(failedJob, status) {
+      if (!failedJob || !failedJob.error) return '';
+      if (status !== 'failed' && status !== 'cancelled') return '';
+
+      var msg = String(failedJob.error);
+      var short = msg.length > 190 ? msg.slice(0, 190) + '…' : msg;
+      var oom = failedJob.error_kind === 'oom';
+      var muted = (failedJob.status === 'cancelled' && !oom);
+      var label = oom ? 'VRAM OOM' : (failedJob.status === 'cancelled' ? 'Cancelled' : 'Failed');
+
+      return '<div class="req-error-strip' + (muted ? ' muted' : '') + '" title="' + escapeHtml(msg) + '">' +
+        '<span class="lbl">' + label + '</span>' +
+        '<span class="txt">' + escapeHtml(short) + '</span>' +
         '</div>';
+    }
+
+    function renderFailureBanner(oomJob, failedJob, upstream) {
+      if (oomJob) {
+        var extra = '';
+        if (upstream.length > 0) {
+          var ids = upstream.map(function (u) { return u.job_id; }).join(', ');
+          extra = '<div style="margin-top:6px;color:var(--text-muted);font-size:11.5px;">' +
+            'The rest of this request was cancelled so it would not keep asking the same GPU for memory: ' +
+            escapeHtml(ids) + '</div>';
+        }
+        return '<div class="oom-banner">' +
+          '<span class="badge-oom">VRAM OOM</span>' +
+          '<div><div class="msg">' + escapeHtml(oomJob.error || 'CUDA out of memory') + '</div>' + extra + '</div>' +
+          '</div>';
+      }
+      if (!failedJob || !failedJob.error) return '';
+      var muted = failedJob.status === 'cancelled';
+      return '<div class="req-section" style="color:' + (muted ? 'var(--text-dim)' : 'var(--accent-red)') + ';">' +
+          (muted ? 'Cancelled' : 'Failure') + ' — ' + escapeHtml(failedJob.job_id) +
+        '</div>' +
+        '<div class="fail-box' + (muted ? ' muted' : '') + '">' + escapeHtml(failedJob.error) + '</div>';
     }
 
     // Audio Playback
