@@ -633,6 +633,7 @@ class VoxCPMVCService:
         lora_mode: Optional[str] = "on",
         raw_prompt: Optional[str] = None,
         client: Optional[str] = None,
+        request_id: Optional[str] = None,
         pre_vc_out: Optional[List[Tuple[Any, int]]] = None,
         debug_out: Optional[List[dict]] = None,
     ) -> Tuple[List[Any], int]:
@@ -642,7 +643,18 @@ class VoxCPMVCService:
         generation jobs on the queue gateway; callers that already show their own row
         on the dashboard (the webhook meta job) pass a ``*-internal`` name so the raw
         per-emotion jobs are collapsed out of the admin view.
+
+        ``request_id`` ties every generation job this take submits to one row on
+        that dashboard. One take becomes one job per emotion, so without it the
+        operator sees three unrelated jobs and no way to tell which chunks belong
+        together -- and the gateway cannot abandon the siblings when one of them
+        hits CUDA OOM. A caller that already owns a dashboard row (the webhook)
+        passes its own id so the generations attach to it; everyone else gets a
+        generated one, which is still one card per request.
         """
+        import uuid as _uuid
+
+        request_id = request_id or f"req_{int(time.time() * 1000)}_{_uuid.uuid4().hex[:6]}"
         import numpy as np
         import soundfile as sf
 
@@ -689,7 +701,7 @@ class VoxCPMVCService:
             # engine it got.
             def batch(pieces, *, prompt_cache=None, cfg_value=2.5,
                       inference_timesteps=10, lora_mode="on", raw_prompt=None,
-                      client=None):
+                      client=None, parent_id=None):
                 rate = int(getattr(synth, "sample_rate", 48000) or 48000)
                 return [
                     synth.synth(
@@ -760,6 +772,7 @@ class VoxCPMVCService:
                     lora_mode=lora_mode,
                     raw_prompt=raw_prompt or (" ".join(texts) if texts else None),
                     client=client,
+                    parent_id=request_id,
                 )
                 if len(audios) != len(indices):
                     raise RuntimeError(
@@ -880,6 +893,7 @@ class VoxCPMVCService:
         lora_mode: Optional[str] = "on",
         raw_prompt: Optional[str] = None,
         client: Optional[str] = None,
+        request_id: Optional[str] = None,
         pre_vc_out: Optional[List[Tuple[Any, int]]] = None,
         debug_out: Optional[List[dict]] = None,
     ) -> bytes:
@@ -902,6 +916,7 @@ class VoxCPMVCService:
             lora_mode=lora_mode,
             raw_prompt=raw_prompt,
             client=client,
+            request_id=request_id,
             pre_vc_out=pre_vc_out,
             debug_out=debug_out,
         )

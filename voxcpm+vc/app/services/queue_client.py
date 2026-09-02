@@ -269,12 +269,18 @@ class QueueSynthesizer:
         lane: str = "interactive",
         raw_prompt: Optional[str] = None,
         client: Optional[str] = None,
+        parent_id: Optional[str] = None,
     ) -> Tuple[List[Any], int]:
         """Generate every chunk in one job against one voice.
 
         One job, not one request per chunk: the chunks have to share a prompt cache
         or the speaker drifts between them, and the service can only guarantee that
         if it sees them together.
+
+        ``parent_id`` names the upstream request this job is one piece of. A take
+        is split into one job per emotion, so without it the queue dashboard shows
+        N unrelated rows for what the user asked once -- and an OOM on one piece
+        leaves the others queued for a take that can no longer be assembled.
         """
         import numpy as np
 
@@ -301,6 +307,8 @@ class QueueSynthesizer:
             "lane": lane,
             "client": client or "voxcpm-vc",
         }
+        if parent_id:
+            payload["parent_id"] = parent_id
 
         with self._client() as c:
             res = c.post(f"/v2/jobs/render?wait={self.timeout - 5}", json=payload)

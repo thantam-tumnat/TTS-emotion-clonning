@@ -20,7 +20,13 @@ type OutputSpec struct {
 
 // RenderRequest is the incoming payload for /v2/jobs/render.
 type RenderRequest struct {
-	JobID      *string     `json:"job_id,omitempty"`
+	JobID *string `json:"job_id,omitempty"`
+	// ParentID ties this job to the upstream request it is one piece of. The
+	// :8013 studio splits one take into one render job per emotion, so without
+	// it the dashboard shows N unrelated rows for what the user asked once --
+	// and an OOM on one piece leaves its siblings queued for a take that can no
+	// longer be assembled.
+	ParentID   *string     `json:"parent_id,omitempty"`
 	RawPrompt  string      `json:"raw_prompt,omitempty"`
 	Prompt     string      `json:"prompt,omitempty"`
 	Chunks     []string    `json:"chunks"`
@@ -44,9 +50,22 @@ const (
 	StatusCancelled JobStatus = "cancelled"
 )
 
+// ErrorKind classifies a failure so the dashboard can say *why* without parsing
+// a traceback, and so the queue knows which failures are worth cascading.
+const (
+	// ErrKindOOM is a CUDA out-of-memory failure. It is not the job's fault and
+	// not retryable on the same GPU state, so the whole request is torn down.
+	ErrKindOOM = "oom"
+	// ErrKindUpstreamOOM marks a sibling cancelled because another piece of the
+	// same request hit OOM -- the take can no longer be assembled, so finishing
+	// this piece would burn GPU time for nothing.
+	ErrKindUpstreamOOM = "upstream_oom"
+)
+
 // RenderJob represents an active or completed job in the queue.
 type RenderJob struct {
 	JobID       string                 `json:"job_id"`
+	ParentID    string                 `json:"parent_id,omitempty"`
 	RawPrompt   string                 `json:"raw_prompt,omitempty"`
 	Chunks      []string               `json:"chunks"`
 	Voice       *VoiceSpec             `json:"voice,omitempty"`
@@ -59,6 +78,7 @@ type RenderJob struct {
 	Status      JobStatus              `json:"status"`
 	Position    *int                   `json:"position,omitempty"`
 	Error       *string                `json:"error,omitempty"`
+	ErrorKind   string                 `json:"error_kind,omitempty"`
 	Result      map[string]interface{} `json:"result,omitempty"`
 	Payload     []byte                 `json:"-"`
 	AudioWAV    []byte                 `json:"-"`
@@ -82,6 +102,7 @@ type JobUpdate struct {
 	TotalChunks *int                    `json:"total_chunks,omitempty"`
 	Chunks      *[]string               `json:"chunks,omitempty"`
 	Error       *string                 `json:"error,omitempty"`
+	ErrorKind   *string                 `json:"error_kind,omitempty"`
 	Result      *map[string]interface{} `json:"result,omitempty"`
 }
 
@@ -112,8 +133,14 @@ func NewRenderJob(req RenderRequest, jobID string) *RenderJob {
 		rawPrompt = req.Prompt
 	}
 
+	parentID := ""
+	if req.ParentID != nil {
+		parentID = *req.ParentID
+	}
+
 	return &RenderJob{
 		JobID:       jobID,
+		ParentID:    parentID,
 		RawPrompt:   rawPrompt,
 		Chunks:      req.Chunks,
 		Voice:       req.Voice,
@@ -158,6 +185,7 @@ func (j *RenderJob) AsDict(position *int) map[string]interface{} {
 
 	res := map[string]interface{}{
 		"job_id":       j.JobID,
+		"parent_id":    j.ParentID,
 		"raw_prompt":   j.RawPrompt,
 		"status":       j.Status,
 		"chunks":       j.Chunks,
@@ -184,6 +212,9 @@ func (j *RenderJob) AsDict(position *int) map[string]interface{} {
 	}
 	if j.Error != nil {
 		res["error"] = *j.Error
+	}
+	if j.ErrorKind != "" {
+		res["error_kind"] = j.ErrorKind
 	}
 	if j.Result != nil {
 		res["result"] = j.Result

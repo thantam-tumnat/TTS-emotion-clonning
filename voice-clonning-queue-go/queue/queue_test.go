@@ -87,7 +87,7 @@ func TestPriorityQueue_CancelJob(t *testing.T) {
 	job := models.NewRenderJob(models.RenderRequest{Chunks: []string{"test"}, Lane: "batch"}, "job_to_cancel")
 	q.Submit(job)
 
-	ok := q.Cancel("job_to_cancel")
+	ok, _ := q.Cancel("job_to_cancel")
 	if !ok {
 		t.Errorf("expected cancel to return true")
 	}
@@ -95,6 +95,99 @@ func TestPriorityQueue_CancelJob(t *testing.T) {
 	retrieved, _ := q.GetJob("job_to_cancel")
 	if retrieved.Status != models.StatusCancelled {
 		t.Errorf("expected status cancelled, got %s", retrieved.Status)
+	}
+}
+
+// submitGroup queues `n` sibling render jobs that all belong to one request.
+func submitGroup(q *PriorityQueue, parent string, ids ...string) {
+	for _, id := range ids {
+		q.Submit(models.NewRenderJob(models.RenderRequest{
+			Chunks:   []string{"test"},
+			Lane:     "batch",
+			ParentID: &parent,
+		}, id))
+	}
+}
+
+// An OOM on one emotion of a take must abandon the whole take: the remaining
+// pieces cannot be assembled into anything, and running them would spend the very
+// GPU memory that just ran out.
+func TestMarkFailedOOM_CancelsSiblings(t *testing.T) {
+	q := NewPriorityQueue()
+	defer q.Close()
+
+	submitGroup(q, "req_1", "g_angry", "g_happy", "g_sad")
+	q.Submit(models.NewRenderJob(models.RenderRequest{Chunks: []string{"x"}, Lane: "batch"}, "g_unrelated"))
+
+	collateral := q.MarkFailed("g_angry", "CUDA out of memory", models.ErrKindOOM)
+	if len(collateral) != 2 {
+		t.Fatalf("expected 2 siblings cancelled, got %d (%v)", len(collateral), collateral)
+	}
+
+	for _, id := range []string{"g_happy", "g_sad"} {
+		j, _ := q.GetJob(id)
+		if j.Status != models.StatusCancelled {
+			t.Errorf("%s: expected cancelled, got %s", id, j.Status)
+		}
+		if j.ErrorKind != models.ErrKindUpstreamOOM {
+			t.Errorf("%s: expected error_kind %q, got %q", id, models.ErrKindUpstreamOOM, j.ErrorKind)
+		}
+	}
+
+	failed, _ := q.GetJob("g_angry")
+	if failed.Status != models.StatusFailed || failed.ErrorKind != models.ErrKindOOM {
+		t.Errorf("origin job: expected failed/oom, got %s/%s", failed.Status, failed.ErrorKind)
+	}
+
+	other, _ := q.GetJob("g_unrelated")
+	if other.Status != models.StatusQueued {
+		t.Errorf("a job outside the request group must be untouched, got %s", other.Status)
+	}
+}
+
+// A non-OOM failure is this job's problem alone -- an empty chunk list or a bad
+// voice handle says nothing about whether its siblings can run.
+func TestMarkFailedOther_LeavesSiblings(t *testing.T) {
+	q := NewPriorityQueue()
+	defer q.Close()
+
+	submitGroup(q, "req_2", "g_a", "g_b")
+	if collateral := q.MarkFailed("g_a", "unknown voice: nope", ""); len(collateral) != 0 {
+		t.Fatalf("expected no cascade for a plain failure, got %v", collateral)
+	}
+	if j, _ := q.GetJob("g_b"); j.Status != models.StatusQueued {
+		t.Errorf("expected sibling still queued, got %s", j.Status)
+	}
+}
+
+// Cancelling one piece from the dashboard abandons the request it belongs to.
+func TestCancel_CascadesToRequestGroup(t *testing.T) {
+	q := NewPriorityQueue()
+	defer q.Close()
+
+	submitGroup(q, "req_3", "g_x", "g_y", "g_z")
+	ok, also := q.Cancel("g_x")
+	if !ok || len(also) != 2 {
+		t.Fatalf("expected cancel of the whole group, got ok=%v also=%v", ok, also)
+	}
+	if len(q.waiting) != 0 {
+		t.Errorf("expected the waiting line drained, %d left", len(q.waiting))
+	}
+}
+
+// pruneOldJobs used to delete one job per call, so a burst left the map over cap.
+func TestPruneOldJobs_DrainsToCap(t *testing.T) {
+	q := NewPriorityQueue()
+	defer q.Close()
+
+	for i := 0; i < MaxHistory+25; i++ {
+		id := "j" + string(rune('a'+i%26)) + string(rune(i))
+		job := models.NewRenderJob(models.RenderRequest{Chunks: []string{"x"}, Lane: "batch"}, id)
+		q.Submit(job)
+		q.MarkCompleted(id, map[string]interface{}{"mode": "npz"}, nil, []byte{1, 2, 3})
+	}
+	if len(q.jobs) > MaxHistory {
+		t.Errorf("expected history drained to %d, got %d", MaxHistory, len(q.jobs))
 	}
 }
 

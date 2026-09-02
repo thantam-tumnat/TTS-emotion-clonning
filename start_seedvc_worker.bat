@@ -30,6 +30,15 @@ if not exist "%SEEDVC_PYTHON%" (
 
 cd /d "%~dp0voxcpm+vc"
 set "PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True"
+
+rem --- VRAM (this process shares the card with the VoxCPM2 service on :8021) ---
+rem SEEDVC_MEM_FRACTION caps this process's share of the card; pair it with
+rem SIANGTTS_MEM_FRACTION in start_gpu_service.bat so the two add up to ~0.95.
+rem   set "SEEDVC_MEM_FRACTION=0.35"
+rem SEEDVC_RECLAIM_BELOW is the free-VRAM fraction under which empty_cache() runs
+rem after a convert (default 0.15). SEEDVC_EMPTY_CACHE=always reclaims every time.
+rem   set "SEEDVC_RECLAIM_BELOW=0.15"
+
 echo ================================================================
 echo  Starting SeedVC worker on http://127.0.0.1:8022
 echo  repo:   %SEEDVC_REPO%

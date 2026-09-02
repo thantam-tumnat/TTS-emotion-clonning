@@ -560,6 +560,78 @@ const dashboardHTML = `<!doctype html>
       padding: 4px 8px;
     }
     .btn-close-audio:hover { color: #fff; }
+
+    /* --- Request cards -------------------------------------------------
+       One card per upstream request. A take is split into one GPU job per
+       emotion, so a flat job table showed three unrelated rows for what the
+       user asked once -- and no way to see which chunks belonged together. */
+    .req-list { display: flex; flex-direction: column; gap: 10px; }
+    .req-card {
+      background: var(--bg-card);
+      border: 1px solid var(--border-subtle);
+      border-radius: 12px;
+      overflow: hidden;
+    }
+    .req-card.oom { border-color: rgba(239, 68, 68, 0.55); }
+    .req-head {
+      display: flex; align-items: center; gap: 12px; flex-wrap: wrap;
+      padding: 11px 15px; cursor: pointer; transition: background .15s ease;
+    }
+    .req-head:hover { background: var(--bg-card-hover); }
+    .req-caret { color: var(--text-dim); font-size: 10px; width: 10px; flex-shrink: 0; }
+    .req-id { font-family: 'JetBrains Mono', monospace; font-size: 12.5px; font-weight: 700; }
+    .req-prompt-peek {
+      color: var(--text-muted); font-size: 12px; max-width: 460px;
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+    }
+    .req-meta {
+      display: flex; gap: 13px; flex-wrap: wrap; align-items: center;
+      font-size: 11.5px; color: var(--text-dim); margin-left: auto;
+    }
+    .req-meta b { color: var(--text-muted); font-weight: 600; }
+    .req-count {
+      background: rgba(168, 85, 247, 0.14); color: #c084fc;
+      border: 1px solid rgba(168, 85, 247, 0.3);
+      padding: 2px 9px; border-radius: 99px; font-size: 11px; font-weight: 700;
+      white-space: nowrap;
+    }
+    .req-body { display: none; padding: 0 15px 14px; }
+    .req-card.open .req-body { display: block; }
+    .req-section {
+      font-size: 10.5px; text-transform: uppercase; letter-spacing: .07em;
+      color: var(--text-dim); font-weight: 700; margin: 12px 0 7px;
+    }
+    .chunk-row {
+      display: flex; gap: 10px; align-items: flex-start;
+      padding: 7px 11px; border-radius: 7px; background: #0d1320;
+      border: 1px solid var(--border-subtle); margin-bottom: 5px;
+      font-size: 12.5px; line-height: 1.55;
+    }
+    .chunk-row .n {
+      font-family: 'JetBrains Mono', monospace; font-size: 11px;
+      color: var(--accent-purple); font-weight: 700; white-space: nowrap; padding-top: 1px;
+    }
+    .chunk-row .tx { flex: 1; word-break: break-word; }
+    .chunk-row .st { margin-left: auto; flex-shrink: 0; }
+    .subjob-row {
+      display: flex; gap: 10px; align-items: center; flex-wrap: wrap;
+      padding: 6px 11px; border-radius: 7px; border: 1px dashed var(--border-subtle);
+      margin-bottom: 5px; font-size: 11.5px; color: var(--text-muted);
+    }
+    .oom-banner {
+      display: flex; gap: 11px; align-items: flex-start;
+      background: rgba(239, 68, 68, 0.10); border: 1px solid rgba(239, 68, 68, 0.35);
+      border-radius: 8px; padding: 11px 14px; margin-top: 12px; font-size: 12.5px;
+    }
+    .oom-banner .msg { color: #fca5a5; line-height: 1.6; word-break: break-word; }
+    .badge-oom {
+      background: #ef4444; color: #fff; padding: 3px 8px; border-radius: 5px;
+      font-size: 10px; font-weight: 800; letter-spacing: .05em; white-space: nowrap;
+    }
+    .badge-upstream {
+      background: rgba(100, 116, 139, 0.25); color: #cbd5e1; padding: 2px 7px;
+      border-radius: 5px; font-size: 10px; font-weight: 700; white-space: nowrap;
+    }
   </style>
 </head>
 <body>
@@ -601,6 +673,11 @@ const dashboardHTML = `<!doctype html>
       <div class="card-val" id="val-failed" style="color: var(--accent-red);">0</div>
       <div class="card-sub">Errors or Cancelled</div>
     </div>
+    <div class="card">
+      <div class="card-title">🧠 VRAM OOM</div>
+      <div class="card-val" id="val-oom" style="color: var(--accent-red);">0</div>
+      <div class="card-sub">CUDA out of memory</div>
+    </div>
   </div>
 
   <!-- Running Banner -->
@@ -619,32 +696,19 @@ const dashboardHTML = `<!doctype html>
     </div>
   </div>
 
-  <!-- Table -->
+  <!-- Requests -->
   <div class="table-container">
     <div class="table-header">
-      <div class="table-title">Recent Jobs History</div>
+      <div class="table-title">Requests
+        <span style="color: var(--text-dim); font-weight: 500; font-size: 12px;">— one card per upstream request, click to expand its chunks</span>
+      </div>
       <div style="font-size: 12px; color: var(--text-dim);" id="last-sync">Syncing...</div>
     </div>
-    <table>
-      <thead>
-        <tr>
-          <th>Status</th>
-          <th>Job ID</th>
-          <th>Lane</th>
-          <th>Client</th>
-          <th>Raw Prompt & Chunks</th>
-          <th>Waited</th>
-          <th>Ran Time</th>
-          <th>Created</th>
-          <th>Action</th>
-        </tr>
-      </thead>
-      <tbody id="jobs-tbody">
-        <tr>
-          <td colspan="9" style="text-align: center; color: var(--text-dim); padding: 24px;">No jobs in queue history yet.</td>
-        </tr>
-      </tbody>
-    </table>
+    <div style="padding: 14px 15px;">
+      <div class="req-list" id="req-list">
+        <div style="text-align: center; color: var(--text-dim); padding: 24px;">No requests in history yet.</div>
+      </div>
+    </div>
   </div>
 
   <!-- Details Modal -->
@@ -695,7 +759,9 @@ const dashboardHTML = `<!doctype html>
 
     async function updateDashboard() {
       try {
-        const res = await fetch('/v2/jobs?hide_internal=1');
+        // No hide_internal: the per-emotion render jobs ARE the request, and the
+        // card view groups them by parent_id instead of hiding them.
+        const res = await fetch('/v2/jobs?limit=300');
         if (!res.ok) return;
         const data = await res.json();
 
@@ -736,95 +802,226 @@ const dashboardHTML = `<!doctype html>
           runBanner.style.display = 'none';
         }
 
-        // Update Table
-        var tbody = document.getElementById('jobs-tbody');
-        if (!currentJobsData || currentJobsData.length === 0) {
-          tbody.innerHTML = '<tr><td colspan="9" style="text-align:center; color: var(--text-dim); padding: 24px;">No jobs in queue history yet.</td></tr>';
-        } else {
-          var rowsHtml = '';
-          for (var i = 0; i < currentJobsData.length; i++) {
-            var j = currentJobsData[i];
-            var statusClass = 'pill-' + j.status;
-            var laneClass = 'lane-' + j.lane;
-            var waited = (j.waited_s !== undefined && j.waited_s !== null) ? j.waited_s.toFixed(2) + 's' : '-';
-            var ran = (j.ran_s !== undefined && j.ran_s !== null) ? j.ran_s.toFixed(2) + 's' : '-';
-            var created = new Date(j.created * 1000).toLocaleTimeString();
-            var clientName = j.client || '-';
-
-            // Build Prompt text column (Raw Prompt + Chunks)
-            var promptHtml = '<span style="color:var(--text-dim);">-</span>';
-            var hasRaw = (j.raw_prompt && j.raw_prompt.trim().length > 0);
-            var hasChunks = (j.chunks && j.chunks.length > 0);
-
-            if (hasRaw || hasChunks) {
-              promptHtml = '<div class="prompt-cell">';
-              if (hasRaw) {
-                promptHtml += '<div class="raw-prompt-container">' +
-                  '<div class="raw-prompt-title">' +
-                    '<span class="badge-raw-prompt">RAW PROMPT</span>' +
-                  '</div>' +
-                  '<div style="font-weight:500;">' + escapeHtml(j.raw_prompt) + '</div>' +
-                '</div>';
-              }
-              if (hasChunks) {
-                var chunkClass = hasRaw ? 'chunks-subgroup' : '';
-                promptHtml += '<div class="' + chunkClass + '">';
-                if (hasRaw && (j.chunks.length > 1 || j.chunks[0] !== j.raw_prompt)) {
-                  promptHtml += '<div class="badge-chunk-header">Processed Chunks (' + j.chunks.length + '):</div>';
-                }
-                for (var c = 0; c < j.chunks.length; c++) {
-                  promptHtml += '<div class="chunk-line"><span class="chunk-pill">[' + (c+1) + '/' + j.chunks.length + ']</span> <span class="chunk-text">' + escapeHtml(j.chunks[c]) + '</span></div>';
-                }
-                promptHtml += '</div>';
-              }
-              promptHtml += '</div>';
-            }
-
-            // Build Actions
-            var actionBtns = '';
-            
-            // 1. Play Audio (for completed jobs)
-            if (j.status === 'completed') {
-              var isPlaying = (activeAudioJobId === j.job_id);
-              var playClass = isPlaying ? 'btn btn-play playing' : 'btn btn-play';
-              var playText = isPlaying ? '⏸ Pause' : '▶ Play';
-              actionBtns += '<button class="' + playClass + '" id="play-btn-' + j.job_id + '" onclick="togglePlayAudio(\'' + j.job_id + '\')">' + playText + '</button>';
-            }
-
-            // 2. Cancel Job (for any active queue: queued or running)
-            if (j.status === 'queued' || j.status === 'running') {
-              actionBtns += '<button class="btn btn-cancel" onclick="cancelJob(\'' + j.job_id + '\')">✕ Cancel</button>';
-            }
-
-            // 3. View Details
-            actionBtns += '<button class="btn btn-detail" onclick="openDetailModal(\'' + j.job_id + '\')">ℹ Details</button>';
-
-            var statusTitle = (j.status === 'failed' && j.error) ? ' title="' + escapeHtml(j.error) + '"' : '';
-            var errorSnippet = '';
-            if (j.status === 'failed' && j.error) {
-              var shortErr = j.error.length > 80 ? j.error.slice(0, 80) + '…' : j.error;
-              errorSnippet = '<div style="color:var(--accent-red); font-size:11px; margin-top:3px; max-width:220px; white-space:normal;">' + escapeHtml(shortErr) + '</div>';
-            }
-
-            rowsHtml += '<tr>' +
-              '<td><span class="pill ' + statusClass + '"' + statusTitle + '>' + j.status + '</span>' + errorSnippet + '</td>' +
-              '<td class="mono"><strong>' + j.job_id + '</strong></td>' +
-              '<td><span class="lane-tag ' + laneClass + '">' + j.lane + '</span></td>' +
-              '<td>' + clientName + '</td>' +
-              '<td>' + promptHtml + '</td>' +
-              '<td class="mono">' + waited + '</td>' +
-              '<td class="mono">' + ran + '</td>' +
-              '<td style="color: var(--text-dim); white-space: nowrap;">' + created + '</td>' +
-              '<td><div class="btn-group">' + actionBtns + '</div></td>' +
-              '</tr>';
-          }
-          tbody.innerHTML = rowsHtml;
-        }
+        renderRequests(currentJobsData);
 
         document.getElementById('last-sync').innerText = 'Live Auto-Sync: ' + new Date().toLocaleTimeString();
       } catch (err) {
         console.error('Failed to sync queue dashboard:', err);
       }
+    }
+
+    // ------------------------------------------------------------------ //
+    // Request cards
+    // ------------------------------------------------------------------ //
+
+    // Which cards the operator has expanded. Kept outside the render so a 1s
+    // refresh does not slam an open card shut mid-read.
+    var openGroups = {};
+
+    function toggleGroup(gid) {
+      openGroups[gid] = !openGroups[gid];
+      renderRequests(currentJobsData);
+    }
+
+    // Worst-first, so a request shows the state that needs attention: something
+    // still on the GPU outranks something waiting, and a failure outranks a
+    // sibling that happened to finish before the OOM hit.
+    var STATUS_RANK = { running: 0, queued: 1, failed: 2, cancelled: 3, completed: 4 };
+
+    function groupStatus(members) {
+      var best = null;
+      for (var i = 0; i < members.length; i++) {
+        var s = members[i].status;
+        if (STATUS_RANK[s] === undefined) continue;
+        if (best === null || STATUS_RANK[s] < STATUS_RANK[best]) best = s;
+      }
+      return best || 'queued';
+    }
+
+    // A request is its parent job plus every job that named it as parent. A job
+    // with no parent is a request of one, so every job lands in exactly one card.
+    function buildGroups(jobs) {
+      var byGroup = {};
+      var order = [];
+      for (var i = 0; i < jobs.length; i++) {
+        var j = jobs[i];
+        var gid = j.parent_id || j.job_id;
+        if (!byGroup[gid]) {
+          byGroup[gid] = { id: gid, parent: null, children: [], newest: j.created };
+          order.push(gid);
+        }
+        var g = byGroup[gid];
+        if (j.job_id === gid) { g.parent = j; } else { g.children.push(j); }
+        if (j.created > g.newest) g.newest = j.created;
+      }
+      order.sort(function (a, b) { return byGroup[b].newest - byGroup[a].newest; });
+      return order.map(function (id) { return byGroup[id]; });
+    }
+
+    function fmtSecs(v) {
+      return (v !== undefined && v !== null) ? v.toFixed(2) + 's' : '-';
+    }
+
+    function renderRequests(jobs) {
+      var host = document.getElementById('req-list');
+      if (!jobs || jobs.length === 0) {
+        host.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:24px;">No requests in history yet.</div>';
+        document.getElementById('val-oom').innerText = 0;
+        return;
+      }
+
+      var groups = buildGroups(jobs);
+      var oomCount = 0;
+      var html = '';
+
+      for (var gi = 0; gi < groups.length; gi++) {
+        var g = groups[gi];
+        // Oldest-first so chunk numbering follows generation order.
+        g.children.sort(function (a, b) { return a.created - b.created; });
+        var members = (g.parent ? [g.parent] : []).concat(g.children);
+
+        var oomJob = null, upstreamCancelled = [];
+        for (var m = 0; m < members.length; m++) {
+          if (members[m].error_kind === 'oom') oomJob = members[m];
+          if (members[m].error_kind === 'upstream_oom') upstreamCancelled.push(members[m]);
+        }
+        if (oomJob) oomCount++;
+
+        var status = oomJob ? 'failed' : groupStatus(members);
+        var head = g.parent || g.children[0] || {};
+        var client = head.client || '-';
+        var lane = head.lane || 'batch';
+
+        var rawPrompt = '';
+        for (var r = 0; r < members.length; r++) {
+          if (members[r].raw_prompt && members[r].raw_prompt.trim().length > 0) {
+            rawPrompt = members[r].raw_prompt; break;
+          }
+        }
+
+        // Chunk rows. Prefer the pieces the GPU jobs actually carried; fall back
+        // to the parent's planned chunks when no render job exists yet.
+        var chunkRows = [];
+        if (g.children.length > 0) {
+          for (var ci = 0; ci < g.children.length; ci++) {
+            var ch = g.children[ci];
+            var cl = ch.chunks || [];
+            for (var k = 0; k < cl.length; k++) {
+              chunkRows.push({ text: cl[k], status: ch.status, jobId: ch.job_id, kind: ch.error_kind });
+            }
+          }
+        } else if (g.parent && g.parent.chunks) {
+          for (var pk = 0; pk < g.parent.chunks.length; pk++) {
+            chunkRows.push({ text: g.parent.chunks[pk], status: g.parent.status, jobId: g.parent.job_id, kind: g.parent.error_kind });
+          }
+        }
+
+        var audioJob = null, activeJob = null, ran = null, waited = null;
+        for (var a = 0; a < members.length; a++) {
+          if (!audioJob && members[a].has_audio) audioJob = members[a];
+          if (!activeJob && (members[a].status === 'queued' || members[a].status === 'running')) activeJob = members[a];
+          if (members[a].ran_s !== undefined && members[a].ran_s !== null) ran = (ran || 0) + members[a].ran_s;
+          if (waited === null && members[a].waited_s !== undefined && members[a].waited_s !== null) waited = members[a].waited_s;
+        }
+
+        var isOpen = !!openGroups[g.id];
+        var created = new Date(g.newest * 1000).toLocaleTimeString();
+
+        var actions = '';
+        if (audioJob) {
+          var playing = (activeAudioJobId === audioJob.job_id);
+          actions += '<button class="btn btn-play' + (playing ? ' playing' : '') + '" id="play-btn-' + audioJob.job_id +
+            '" onclick="event.stopPropagation();togglePlayAudio(\'' + audioJob.job_id + '\')">' + (playing ? '⏸ Pause' : '▶ Play') + '</button>';
+        }
+        if (activeJob) {
+          actions += '<button class="btn btn-cancel" onclick="event.stopPropagation();cancelJob(\'' + activeJob.job_id + '\')">✕ Cancel request</button>';
+        }
+        actions += '<button class="btn btn-detail" onclick="event.stopPropagation();openDetailModal(\'' + (head.job_id || g.id) + '\')">ℹ Details</button>';
+
+        html += '<div class="req-card' + (isOpen ? ' open' : '') + (oomJob ? ' oom' : '') + '">' +
+          '<div class="req-head" onclick="toggleGroup(\'' + g.id + '\')">' +
+            '<span class="req-caret">' + (isOpen ? '&#9660;' : '&#9654;') + '</span>' +
+            '<span class="pill pill-' + status + '">' + status + '</span>' +
+            (oomJob ? '<span class="badge-oom">VRAM OOM</span>' : '') +
+            '<span class="req-id">' + escapeHtml(g.id) + '</span>' +
+            '<span class="req-count">' + chunkRows.length + ' chunk' + (chunkRows.length === 1 ? '' : 's') + '</span>' +
+            (g.children.length > 1 ? '<span class="req-count" style="background:rgba(6,182,212,.14);color:#38bdf8;border-color:rgba(6,182,212,.3);">' + g.children.length + ' jobs</span>' : '') +
+            (rawPrompt ? '<span class="req-prompt-peek">' + escapeHtml(rawPrompt) + '</span>' : '') +
+            '<span class="req-meta">' +
+              '<span class="lane-tag lane-' + lane + '">' + lane + '</span>' +
+              '<span><b>' + escapeHtml(client) + '</b></span>' +
+              '<span>wait ' + fmtSecs(waited) + '</span>' +
+              '<span>gpu ' + fmtSecs(ran) + '</span>' +
+              '<span>' + created + '</span>' +
+            '</span>' +
+          '</div>' +
+          '<div class="req-body">' +
+            (rawPrompt ?
+              '<div class="req-section">Raw prompt</div>' +
+              '<div class="raw-prompt-container" style="padding:10px 13px;border-radius:8px;">' +
+                '<div style="white-space:pre-wrap;line-height:1.6;">' + escapeHtml(rawPrompt) + '</div>' +
+              '</div>' : '') +
+            '<div class="req-section">Chunks sent to the GPU (' + chunkRows.length + ')</div>' +
+            renderChunkRows(chunkRows) +
+            (g.children.length > 1 ? '<div class="req-section">Render jobs in this request (' + g.children.length + ')</div>' + renderSubJobs(g.children) : '') +
+            renderOomBanner(oomJob, upstreamCancelled) +
+            '<div class="btn-group" style="margin-top:13px;justify-content:flex-end;">' + actions + '</div>' +
+          '</div>' +
+        '</div>';
+      }
+
+      host.innerHTML = html;
+      document.getElementById('val-oom').innerText = oomCount;
+      updatePlayButtons();
+    }
+
+    function renderChunkRows(rows) {
+      if (rows.length === 0) {
+        return '<div style="color:var(--text-dim);font-size:12px;padding:4px 2px;">No chunks recorded for this request.</div>';
+      }
+      var out = '';
+      for (var i = 0; i < rows.length; i++) {
+        var r = rows[i];
+        out += '<div class="chunk-row">' +
+          '<span class="n">[' + (i + 1) + '/' + rows.length + ']</span>' +
+          '<span class="tx">' + escapeHtml(r.text) + '</span>' +
+          '<span class="st"><span class="pill pill-' + r.status + '">' + r.status + '</span></span>' +
+          '</div>';
+      }
+      return out;
+    }
+
+    function renderSubJobs(children) {
+      var out = '';
+      for (var i = 0; i < children.length; i++) {
+        var ch = children[i];
+        var kindBadge = '';
+        if (ch.error_kind === 'oom') kindBadge = '<span class="badge-oom">VRAM OOM</span>';
+        else if (ch.error_kind === 'upstream_oom') kindBadge = '<span class="badge-upstream">cancelled by upstream OOM</span>';
+        out += '<div class="subjob-row">' +
+          '<span class="pill pill-' + ch.status + '">' + ch.status + '</span>' +
+          kindBadge +
+          '<span class="mono">' + escapeHtml(ch.job_id) + '</span>' +
+          '<span>' + ((ch.chunks || []).length) + ' chunk(s)</span>' +
+          '<span style="margin-left:auto;">gpu ' + fmtSecs(ch.ran_s) + '</span>' +
+          '</div>';
+      }
+      return out;
+    }
+
+    function renderOomBanner(oomJob, upstream) {
+      if (!oomJob) return '';
+      var extra = '';
+      if (upstream.length > 0) {
+        var ids = upstream.map(function (u) { return u.job_id; }).join(', ');
+        extra = '<div style="margin-top:6px;color:var(--text-muted);font-size:11.5px;">' +
+          'The rest of this request was cancelled so it would not keep asking the same GPU for memory: ' +
+          escapeHtml(ids) + '</div>';
+      }
+      return '<div class="oom-banner">' +
+        '<span class="badge-oom">VRAM OOM</span>' +
+        '<div><div class="msg">' + escapeHtml(oomJob.error || 'CUDA out of memory') + '</div>' + extra + '</div>' +
+        '</div>';
     }
 
     // Audio Playback
@@ -894,13 +1091,19 @@ const dashboardHTML = `<!doctype html>
 
     // Cancel Job
     async function cancelJob(jobId) {
-      if (!confirm('ยืนยันยกเลิก Task: ' + jobId + ' ?')) return;
+      // Cancelling one piece abandons the whole request server-side, so say so
+      // rather than letting the operator think they stopped one chunk.
+      if (!confirm('ยกเลิกทั้ง request นี้ (ทุก chunk / ทุก job ที่เหลือ)?\n\n' + jobId)) return;
       try {
         const res = await fetch('/v2/jobs/' + encodeURIComponent(jobId), {
           method: 'DELETE'
         });
         const data = await res.json();
         if (res.ok && data.cancelled) {
+          var also = data.also_cancelled || [];
+          if (also.length > 0) {
+            console.log('[dashboard] cancelled ' + (also.length + 1) + ' job(s) of this request:', jobId, also);
+          }
           updateDashboard();
         } else {
           alert(data.error || 'ไม่สามารถยกเลิก Task ได้');

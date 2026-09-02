@@ -276,11 +276,15 @@ func (h *JobsHandler) Cancel(c *fiber.Ctx) error {
 		return c.Status(fiber.StatusNotFound).JSON(fiber.Map{"error": "unknown job"})
 	}
 
-	ok := h.q.Cancel(jobID)
+	ok, alsoCancelled := h.q.Cancel(jobID)
 	return c.JSON(fiber.Map{
 		"job_id":    jobID,
 		"cancelled": ok,
 		"status":    job.Status,
+		// Cancelling one piece abandons the whole request, so say what else went
+		// with it — otherwise the dashboard reports one cancellation while three
+		// rows change state.
+		"also_cancelled": alsoCancelled,
 	})
 }
 

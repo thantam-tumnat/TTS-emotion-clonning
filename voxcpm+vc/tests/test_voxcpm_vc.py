@@ -103,6 +103,7 @@ class _RecordingEngine:
     def __init__(self):
         self.voices = []          # (path, transcript) per build_voice
         self.jobs = []            # (handle, [texts]) per render_batch
+        self.parent_ids = []      # parent_id per render_batch
 
     def build_voice(self, ref_audio_path, prompt_text=None):
         self.voices.append((ref_audio_path, prompt_text))
@@ -113,6 +114,7 @@ class _RecordingEngine:
         import numpy as np
 
         self.jobs.append((prompt_cache, list(texts)))
+        self.parent_ids.append(kwargs.get("parent_id"))
         return [np.zeros(self.sample_rate, dtype="float32") for _ in texts], self.sample_rate
 
 
@@ -155,6 +157,40 @@ def test_donor_is_cloned_with_its_transcript(engine, tmp_path):
     path, transcript = engine.voices[0]
     assert donor_wav.name in path
     assert transcript == donor_txt
+
+
+def test_every_generation_of_a_take_shares_one_request_id(engine, tmp_path):
+    """One take, one row on the queue dashboard.
+
+    The take is split into one generation job per emotion. Without a shared
+    parent the gateway sees three unrelated jobs -- the operator cannot tell which
+    chunks belong together, and an OOM on one of them leaves the others queued for
+    a take that can no longer be assembled.
+    """
+    vc.voxcpm_vc_service.render_chunks(
+        ["(angry) โกรธมาก", "(happy) ดีใจจัง", "(sad) เสียใจ"],
+        ref_audio_bytes=_target_clip(tmp_path).read_bytes(),
+        ref_filename="target.wav",
+        tones=["angry", "happy", "sad"],
+    )
+
+    assert len(engine.parent_ids) == 3, "expected one generation job per emotion"
+    assert len(set(engine.parent_ids)) == 1, engine.parent_ids
+    assert engine.parent_ids[0], "every generation must carry a request id"
+
+
+def test_caller_supplied_request_id_is_used_verbatim(engine, tmp_path):
+    """The webhook already owns a dashboard row, so its generations attach to it
+    rather than opening a second card for the same request."""
+    vc.voxcpm_vc_service.render_chunks(
+        ["(angry) โกรธมาก"],
+        ref_audio_bytes=_target_clip(tmp_path).read_bytes(),
+        ref_filename="target.wav",
+        tones=["angry"],
+        request_id="wh_queue_id_42",
+    )
+
+    assert engine.parent_ids == ["wh_queue_id_42"]
 
 
 def test_one_job_per_emotion_not_per_chunk(engine, tmp_path):

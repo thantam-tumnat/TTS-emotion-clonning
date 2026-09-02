@@ -44,7 +44,7 @@ from fastapi.responses import HTMLResponse, JSONResponse, Response, FileResponse
 from pydantic import BaseModel, Field
 
 from . import lora as lora_mod
-from .engine import INTERACTIVE_BURST, LANES, Engine, RenderJob
+from .engine import INTERACTIVE_BURST, LANES, Engine, RenderJob, reclaim_vram
 from .env_file import load_env_file
 from .voices import UnknownVoice, VoiceStore
 
@@ -87,6 +87,12 @@ DEFAULT_LORA = os.environ.get("SIANGTTS_DEFAULT_LORA", lora_mod.DEFAULT_MODE)
 LEGACY_REF_DIR = Path("C:/temp/tts_jobs/voices")
 
 MAX_WAIT_S = float(os.environ.get("SIANGTTS_MAX_WAIT", "600"))
+
+# Hard ceiling on this process's share of the card, as a fraction. The SeedVC
+# worker on :8022 is on the same GPU; without a cap the two race for whatever is
+# free and whoever allocates second dies, so the OOM lands on an arbitrary victim
+# instead of on the process that is actually over budget. "" disables it.
+MEM_FRACTION = os.environ.get("SIANGTTS_MEM_FRACTION", "").strip()
 
 _state: dict = {}
 
@@ -133,9 +139,47 @@ def _build_synth() -> Any:
     return Synthesizer(base_model=BASE_MODEL, adapter_path=adapter, device=DEVICE)
 
 
+def _vram_stats() -> Optional[dict]:
+    """What this process is holding on the card, for /health.
+
+    Reported because the two model processes on this box can only be sized
+    against each other if both say what they are actually using -- `reserved` is
+    the number that matters, since the caching allocator does not give it back.
+    """
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return None
+        free, total = torch.cuda.mem_get_info()
+        return {
+            "free_gb": round(free / 1024**3, 2),
+            "total_gb": round(total / 1024**3, 2),
+            "reserved_gb": round(torch.cuda.memory_reserved() / 1024**3, 2),
+            "allocated_gb": round(torch.cuda.memory_allocated() / 1024**3, 2),
+            "peak_allocated_gb": round(torch.cuda.max_memory_allocated() / 1024**3, 2),
+        }
+    except Exception:                                              # noqa: BLE001
+        return None
+
+
+def _apply_memory_fraction() -> None:
+    if not MEM_FRACTION:
+        return
+    try:
+        import torch
+
+        if torch.cuda.is_available():
+            torch.cuda.set_per_process_memory_fraction(float(MEM_FRACTION))
+            print(f"[gpu] VRAM capped at {float(MEM_FRACTION):.0%} of the card")
+    except Exception as e:                                         # noqa: BLE001
+        print(f"[gpu] could not cap VRAM ({e}); running uncapped")
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     synth = _build_synth()
+    _apply_memory_fraction()
     voices = VoiceStore(synth, CACHE_DIR, _ref_dirs(), seed_text=SEED_TEXT)
     engine = Engine(synth, voices, WORK_DIR, default_lora=DEFAULT_LORA)
     engine.start()
@@ -248,7 +292,11 @@ async def direct_render(req: RenderRequest) -> Response:
 
     await engine._execute(job)
     if job.status == "failed":
-        return JSONResponse(job.as_dict(), status_code=500)
+        # 503 for an OOM: the request was never wrong, the card was full. The Go
+        # gateway keys on `error_kind` to abandon the whole request instead of
+        # handing the same full card this take's remaining chunks.
+        code = 503 if job.error_kind == "oom" else 500
+        return JSONResponse(job.as_dict(), status_code=code)
     if job.payload is not None:
         return _payload_response(job)
     return JSONResponse(job.as_dict(), status_code=200)
@@ -361,11 +409,16 @@ class ResolveRequest(BaseModel):
 @app.post("/v2/voices/resolve")
 async def resolve_voice(req: ResolveRequest) -> JSONResponse:
     """Handle for a named reference clip, encoding it on first use."""
-    voices: VoiceStore = _engine().voices
+    engine = _engine()
+    voices: VoiceStore = engine.voices
     try:
-        handle = await asyncio.to_thread(
-            voices.resolve_speaker, req.speaker_id, req.ref_text, req.allow_sidecar
-        )
+        # Encoding a reference clip is GPU work, and this endpoint is proxied
+        # straight through by the queue gateway -- so without the lock it runs on
+        # top of whatever generation is already in flight.
+        async with engine.gpu_lock:
+            handle = await asyncio.to_thread(
+                voices.resolve_speaker, req.speaker_id, req.ref_text, req.allow_sidecar
+            )
     except UnknownVoice as e:
         return JSONResponse({"error": str(e)}, status_code=404)
     return JSONResponse({"voice_handle": handle, "speaker_id": req.speaker_id})
@@ -384,7 +437,8 @@ async def register_voice(
     "synthesize with this file" path. With `save_as_speaker` the clip is filed in the
     reference directory and becomes a named voice both pipelines can use.
     """
-    voices: VoiceStore = _engine().voices
+    engine = _engine()
+    voices: VoiceStore = engine.voices
     data = await clip.read()
     suffix = Path(clip.filename or "ref.wav").suffix or ".wav"
 
@@ -402,9 +456,10 @@ async def register_voice(
         src = Path(tmp)
 
     try:
-        handle = await asyncio.to_thread(
-            voices.register_clip, src, speaker_id, ref_text, bool(speaker_id)
-        )
+        async with engine.gpu_lock:                # encoding is GPU work
+            handle = await asyncio.to_thread(
+                voices.register_clip, src, speaker_id, ref_text, bool(speaker_id)
+            )
     finally:
         if not (save_as_speaker and speaker_id) and tmp and os.path.exists(tmp):
             os.remove(tmp)
@@ -419,10 +474,13 @@ async def register_voice(
 @app.post("/v2/voices/seed")
 async def seed_voice() -> JSONResponse:
     engine = _engine()
-    handle = await asyncio.to_thread(
-        engine.voices.seed,
-        lambda text: engine.synth.synth(text, cfg_value=2.0, inference_timesteps=10),
-    )
+    # Minting the seed voice is a full generation, not just an encode -- it was
+    # the one GPU workload that could run with no lane, no queue and no lock.
+    async with engine.gpu_lock:
+        handle = await asyncio.to_thread(
+            engine.voices.seed,
+            lambda text: engine.synth.synth(text, cfg_value=2.0, inference_timesteps=10),
+        )
     if handle is None:
         return JSONResponse({"error": "seed voice unavailable"}, status_code=503)
     return JSONResponse({"voice_handle": handle})
@@ -495,10 +553,27 @@ def health() -> JSONResponse:
         "running": engine.running,
         "completed": sum(1 for j in jobs if j.status == "completed"),
         "failed": sum(1 for j in jobs if j.status == "failed"),
+        "oom": sum(1 for j in jobs if j.error_kind == "oom"),
         "total": len(jobs),
         "voices": engine.voices.stats(),
         "work_dir": str(engine.work_root.resolve()),
+        "gpu_busy": engine.gpu_lock.locked(),
+        "vram": _vram_stats(),
+        "mem_fraction": MEM_FRACTION or None,
     })
+
+
+@app.post("/v2/gpu/reclaim")
+def gpu_reclaim() -> JSONResponse:
+    """Drop this process's cached-but-unused VRAM so the SeedVC worker can have it.
+
+    Manual, because the automatic policy only fires when the card is already
+    tight; an operator about to start a big SeedVC run should not have to wait for
+    that threshold to be crossed the hard way.
+    """
+    before = _vram_stats()
+    freed = reclaim_vram(force=True)
+    return JSONResponse({"reclaimed": freed, "before": before, "after": _vram_stats()})
 
 
 _PAGE = """<!doctype html><html><head><meta charset="utf-8">

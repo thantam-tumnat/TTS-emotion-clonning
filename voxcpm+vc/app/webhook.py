@@ -84,6 +84,17 @@ async def _meta_register(job: "Job") -> None:
         print(f"[{job.queue_id}] meta register failed (dashboard only): {exc}")
 
 
+# Substrings that identify a CUDA out-of-memory failure in an error string. The
+# GPU service and the SeedVC worker both label their own OOMs, but a failure can
+# also arrive here as the text of a 5xx body, which is what this covers.
+_OOM_MARKERS = ("out of memory", "outofmemoryerror", "alloc_failed", '"oom"', "'oom'")
+
+
+def _looks_like_oom(message: str) -> bool:
+    low = (message or "").lower()
+    return any(m in low for m in _OOM_MARKERS)
+
+
 async def _meta_patch(job: "Job", **fields: object) -> None:
     """Advance this request's dashboard row (status/chunks/result). No-op when the row
     was never registered; best-effort so a dashboard hiccup can't fail synthesis."""
@@ -247,6 +258,11 @@ async def _run_job(job: Job) -> None:
             gender=job.gender,
             raw_prompt=job.prompt,
             client=INTERNAL_CLIENT,
+            # Attach every generation job to this request's existing dashboard
+            # row, so the operator sees one card with its chunks under it instead
+            # of one loose row per emotion -- and so an OOM on one of them takes
+            # the rest of this take down with it rather than grinding on.
+            request_id=job.queue_id,
             debug_out=debug,
         )
         # Keep the pinned/random pick; if none was resolvable up front, record what
@@ -271,7 +287,11 @@ async def _run_job(job: Job) -> None:
         job.status = "failed"
         job.error = str(exc)
         traceback.print_exc()
-        await _meta_patch(job, status="failed", error=job.error)
+        # Name a VRAM failure on the dashboard. SeedVC conversion happens in this
+        # process, not on the queue gateway, so an OOM there would otherwise reach
+        # the operator as an unlabelled traceback.
+        kind = "oom" if _looks_like_oom(job.error) else None
+        await _meta_patch(job, status="failed", error=job.error, **({"error_kind": kind} if kind else {}))
         try:
             await _post_callback(job.callback_url, job, error=job.error)
         except Exception as cb_exc:                                  # noqa: BLE001

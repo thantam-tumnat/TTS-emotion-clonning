@@ -114,6 +114,9 @@ func (q *PriorityQueue) UpdateJob(jobID string, upd models.JobUpdate) bool {
 	if upd.Error != nil {
 		job.Error = upd.Error
 	}
+	if upd.ErrorKind != nil {
+		job.ErrorKind = *upd.ErrorKind
+	}
 
 	if upd.Status != nil {
 		st := models.JobStatus(*upd.Status)
@@ -201,47 +204,115 @@ func (q *PriorityQueue) MarkCompleted(jobID string, result map[string]interface{
 	close(job.DoneChan)
 }
 
-// MarkFailed updates a job state upon failure.
-func (q *PriorityQueue) MarkFailed(jobID string, errMsg string) {
+// MarkFailed updates a job state upon failure. `kind` classifies it (see
+// models.ErrKind*); pass "" when the failure has no special meaning.
+//
+// A kind of OOM tears down the whole request, not just this piece: the studio
+// splits one take into one job per emotion, and a take missing an emotion cannot
+// be assembled. Leaving the siblings queued would spend GPU time -- on the very
+// GPU that just ran out of memory -- producing audio nobody can use. Returns the
+// ids that were cancelled as collateral, for the caller to log.
+func (q *PriorityQueue) MarkFailed(jobID string, errMsg string, kind string) []string {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	job, exists := q.jobs[jobID]
 	if !exists {
-		return
+		return nil
 	}
 
 	if job.Status == models.StatusCancelled {
 		if q.running != nil && q.running.JobID == jobID {
 			q.running = nil
 		}
-		return
+		return nil
 	}
 
 	now := float64(time.Now().UnixNano()) / 1e9
 	job.Status = models.StatusFailed
 	job.Finished = &now
 	job.Error = &errMsg
+	job.ErrorKind = kind
 
 	if q.running != nil && q.running.JobID == jobID {
 		q.running = nil
 	}
 
 	close(job.DoneChan)
+
+	if kind == models.ErrKindOOM {
+		return q.cancelGroupLocked(job, models.ErrKindUpstreamOOM,
+			"cancelled: another chunk of this request hit CUDA OOM")
+	}
+	return nil
 }
 
-// Cancel marks a queued or running job as cancelled and removes it from the waiting line.
-func (q *PriorityQueue) Cancel(jobID string) bool {
+// GroupID is the request a job belongs to: its parent when it is one piece of a
+// larger take, otherwise itself. Every job therefore has a group, so the
+// dashboard can render one card per request without special-casing.
+func GroupID(j *models.RenderJob) string {
+	if j.ParentID != "" {
+		return j.ParentID
+	}
+	return j.JobID
+}
+
+// cancelGroupLocked cancels the active members of `origin`'s group, skipping
+// `origin` itself (it already has its own terminal state). Caller holds q.mu.
+func (q *PriorityQueue) cancelGroupLocked(origin *models.RenderJob, kind string, reason string) []string {
+	group := GroupID(origin)
+	now := float64(time.Now().UnixNano()) / 1e9
+	cancelled := make([]string, 0, 4)
+
+	for _, sib := range q.jobs {
+		if sib.JobID == origin.JobID || GroupID(sib) != group {
+			continue
+		}
+		if sib.Status != models.StatusQueued && sib.Status != models.StatusRunning {
+			continue
+		}
+		sib.Status = models.StatusCancelled
+		sib.Finished = &now
+		msg := reason
+		sib.Error = &msg
+		sib.ErrorKind = kind
+		if q.running != nil && q.running.JobID == sib.JobID {
+			q.running = nil
+		}
+		q.removeFromWaitingLocked(sib.JobID)
+		select {
+		case <-sib.DoneChan:
+		default:
+			close(sib.DoneChan)
+		}
+		cancelled = append(cancelled, sib.JobID)
+	}
+	return cancelled
+}
+
+func (q *PriorityQueue) removeFromWaitingLocked(jobID string) {
+	for i, j := range q.waiting {
+		if j.JobID == jobID {
+			q.waiting = append(q.waiting[:i], q.waiting[i+1:]...)
+			return
+		}
+	}
+}
+
+// Cancel marks a queued or running job as cancelled and removes it from the waiting
+// line, along with the rest of its request group. Returns whether the named job was
+// cancelled and the ids of the siblings that went with it.
+func (q *PriorityQueue) Cancel(jobID string) (bool, []string) {
 	q.mu.Lock()
 	defer q.mu.Unlock()
 
 	job, exists := q.jobs[jobID]
 	if !exists {
-		return false
+		return false, nil
 	}
 
 	if job.Status != models.StatusQueued && job.Status != models.StatusRunning {
-		return false
+		return false, nil
 	}
 
 	job.Status = models.StatusCancelled
@@ -254,15 +325,14 @@ func (q *PriorityQueue) Cancel(jobID string) bool {
 		q.running = nil
 	}
 
-	for i, j := range q.waiting {
-		if j.JobID == jobID {
-			q.waiting = append(q.waiting[:i], q.waiting[i+1:]...)
-			break
-		}
-	}
+	q.removeFromWaitingLocked(jobID)
 
 	close(job.DoneChan)
-	return true
+
+	// One click, one take: cancelling any piece abandons the request it belongs
+	// to. A half-cancelled take is not a useful state -- the caller cannot
+	// assemble it, and the remaining pieces would still occupy the GPU.
+	return true, q.cancelGroupLocked(job, "", "cancelled with the rest of this request")
 }
 
 // GetJob retrieves a job and its queue position.
@@ -367,18 +437,26 @@ func (q *PriorityQueue) calculatePosition(target *models.RenderJob) int {
 	return len(q.waiting)
 }
 
+// pruneOldJobs drops finished jobs until the map is back under MaxHistory.
+//
+// It loops: one call used to delete a single job, so a burst that pushed the map
+// several jobs over the cap left it over the cap, and the retained audio (which
+// is the bulk of a job's memory) stayed with it.
 func (q *PriorityQueue) pruneOldJobs() {
-	var oldestID string
-	var oldestTime float64 = 1e18
+	for len(q.jobs) > MaxHistory {
+		var oldestID string
+		var oldestTime float64 = 1e18
 
-	for id, j := range q.jobs {
-		if (j.Status == models.StatusCompleted || j.Status == models.StatusFailed || j.Status == models.StatusCancelled) && j.Created < oldestTime {
-			oldestTime = j.Created
-			oldestID = id
+		for id, j := range q.jobs {
+			if (j.Status == models.StatusCompleted || j.Status == models.StatusFailed || j.Status == models.StatusCancelled) && j.Created < oldestTime {
+				oldestTime = j.Created
+				oldestID = id
+			}
 		}
-	}
 
-	if oldestID != "" {
+		if oldestID == "" {
+			return // nothing terminal left to drop; the rest are queued or running
+		}
 		delete(q.jobs, oldestID)
 	}
 }

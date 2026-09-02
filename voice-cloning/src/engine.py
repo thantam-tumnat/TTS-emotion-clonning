@@ -43,6 +43,79 @@ INTERACTIVE_BURST = int(os.environ.get("SIANGTTS_INTERACTIVE_BURST", "3"))
 # stopping a long-lived process from growing without bound.
 MAX_HISTORY = int(os.environ.get("SIANGTTS_GPU_MAX_HISTORY", "500"))
 
+# --------------------------------------------------------------------------- #
+# VRAM housekeeping
+#
+# This process shares one card with the SeedVC worker on :8022. PyTorch's caching
+# allocator never returns a freed block to the driver by itself, so whatever peak
+# this process reaches is memory the other one can never have -- which is why the
+# reclaim policy below is a threshold rather than "always" or "never".
+# --------------------------------------------------------------------------- #
+
+# Reclaim when free VRAM drops below this fraction of the card. `empty_cache()`
+# forces a full device sync, so paying for it after every job was pure latency on
+# a healthy host; never paying for it strands this process's high-water mark.
+RECLAIM_BELOW = float(os.environ.get("VOXCPM_RECLAIM_BELOW", "0.15"))
+
+
+def _free_fraction():
+    """Free VRAM as a fraction of the card's total, or None when off-GPU."""
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return None
+        free, total = torch.cuda.mem_get_info()
+        return (free / total) if total else None
+    except Exception:                                                # noqa: BLE001
+        return None
+
+
+def reclaim_vram(force: bool = False) -> bool:
+    """Hand cached-but-unused VRAM back to the driver. See RECLAIM_BELOW."""
+    try:
+        import torch
+
+        if not torch.cuda.is_available():
+            return False
+        if os.environ.get("VOXCPM_EMPTY_CACHE") == "always":
+            force = True
+        if not force:
+            frac = _free_fraction()
+            if frac is None or frac > RECLAIM_BELOW:
+                return False
+        torch.cuda.empty_cache()
+        return True
+    except Exception:                                                # noqa: BLE001
+        return False
+
+
+def is_oom(exc: BaseException) -> bool:
+    """True for a CUDA out-of-memory failure, however it surfaced.
+
+    Matched on the message as well as the type, because an OOM raised inside a
+    fused kernel or a cuBLAS workspace allocation arrives as a plain RuntimeError.
+    Getting this wrong in the permissive direction is cheap (one extra reclaim);
+    getting it wrong in the strict direction means the queue keeps feeding a card
+    that has no memory left.
+    """
+    try:
+        import torch
+
+        oom_types = tuple(
+            t for t in (
+                getattr(torch.cuda, "OutOfMemoryError", None),
+                getattr(torch, "OutOfMemoryError", None),
+            )
+            if isinstance(t, type)
+        )
+        if oom_types and isinstance(exc, oom_types):
+            return True
+    except Exception:                                                # noqa: BLE001
+        pass
+    text = f"{type(exc).__name__}: {exc}".lower()
+    return any(m in text for m in ("out of memory", "outofmemoryerror", "alloc_failed"))
+
 
 @dataclass
 class RenderJob:
@@ -59,6 +132,10 @@ class RenderJob:
     status: str = "queued"              # queued | running | completed | failed | cancelled
     done: int = 0
     error: Optional[str] = None
+    # "oom" when the failure was CUDA out-of-memory. The queue gateway keys on it
+    # to cancel the rest of the request rather than feeding the same full card
+    # with the sibling chunks of a take that can no longer be assembled.
+    error_kind: Optional[str] = None
     result: Optional[dict] = None       # metadata; bytes live in `payload`
     payload: Optional[bytes] = None
     voice_handle: Optional[str] = None
@@ -94,6 +171,7 @@ class RenderJob:
             "elapsed_s": round(ran, 1) if ran is not None else None,
             "result": self.result,
             "error": self.error,
+            "error_kind": self.error_kind,
         }
 
 
@@ -115,6 +193,14 @@ class Engine:
         self.default_lora = default_lora
 
         self.jobs: dict[str, RenderJob] = {}
+        # Every path that touches the GPU takes this, so "one GPU, one job at a
+        # time" is enforced by the model owner rather than by whoever happens to
+        # be calling. The queue worker was never the only caller:
+        # `/v2/direct_render` executes jobs straight off the event loop, and the
+        # voice endpoints encode (and `/v2/voices/seed` generates) outside the
+        # queue entirely -- so a voice registration could run a second workload on
+        # a card that was already mid-generation.
+        self.gpu_lock = asyncio.Lock()
         self.queues: dict[str, asyncio.Queue] = {lane: asyncio.Queue() for lane in LANES}
         self.running: Optional[str] = None
         self._worker: Optional[asyncio.Task] = None
@@ -295,6 +381,10 @@ class Engine:
         )
 
     async def _execute(self, job: RenderJob) -> None:
+        async with self.gpu_lock:
+            await self._execute_locked(job)
+
+    async def _execute_locked(self, job: RenderJob) -> None:
         job.status = "running"
         job.started = time.time()
         self.running = job.job_id
@@ -315,7 +405,7 @@ class Engine:
             # in-process version used to give the webhook for free.
             sink = self._open_sink(job)
             for i, text in enumerate(job.chunks):
-                wav = await asyncio.to_thread(self._generate, text, cache, job)
+                wav = await self._generate_with_oom_retry(text, cache, job, i)
                 await asyncio.to_thread(sink.write, i, wav)
                 job.done = i + 1
 
@@ -328,25 +418,47 @@ class Engine:
         except Exception as exc:                                     # noqa: BLE001
             job.status = "failed"
             job.error = f"{type(exc).__name__}: {exc}"
+            if is_oom(exc):
+                job.error_kind = "oom"
+                # The whole job dies here, not just this chunk: a take missing a
+                # chunk cannot be assembled, and the chunks after it would be
+                # asking the same card for the memory it just refused.
+                print(
+                    f"[gpu] job {job.job_id} failed with CUDA OOM at chunk "
+                    f"{job.done + 1}/{len(job.chunks)} — abandoning the whole job",
+                    flush=True,
+                )
             traceback.print_exc()
         finally:
             job.finished = time.time()
             self.running = None
             job._event.set()
-            # `torch.cuda.empty_cache()` forces a full device sync. Running it
-            # after *every* job serialised that stall into the hot path even
-            # though the allocator would have reused the freed blocks on the
-            # next generation anyway. Only reclaim when it actually earns its
-            # cost: after a failed job (fragmentation is likely) or when a
-            # deployer opts back into the old always-on behaviour for a tight
-            # VRAM host via VOXCPM_EMPTY_CACHE=always.
-            if job.status == "failed" or os.getenv("VOXCPM_EMPTY_CACHE") == "always":
-                try:
-                    import torch
-                    if torch.cuda.is_available():
-                        torch.cuda.empty_cache()
-                except Exception:
-                    pass
+            # Reclaim after a failure (a partial run leaves the allocator
+            # fragmented) and whenever the card is genuinely tight; skip it on the
+            # healthy path, where the sync costs more than the memory is worth.
+            reclaim_vram(force=job.status == "failed")
+
+    async def _generate_with_oom_retry(self, text: str, cache: Any, job: RenderJob, index: int):
+        """One generation, with a single retry if it OOMs.
+
+        A partial generation leaves the allocator fragmented, so the same chunk
+        frequently fits once the cache is dropped -- and a retry here is far
+        cheaper than failing a take that is otherwise done. Only OOM is retried:
+        anything else would fail identically the second time.
+        """
+        try:
+            return await asyncio.to_thread(self._generate, text, cache, job)
+        except Exception as exc:                                     # noqa: BLE001
+            if not is_oom(exc):
+                raise
+            print(
+                f"[gpu] job {job.job_id} chunk {index + 1}: CUDA OOM — "
+                f"reclaiming and retrying once",
+                flush=True,
+            )
+            await asyncio.to_thread(reclaim_vram, True)
+            await asyncio.sleep(0.5)
+            return await asyncio.to_thread(self._generate, text, cache, job)
 
     # -- delivery -------------------------------------------------------- #
 
@@ -455,4 +567,12 @@ class _NpzSink(_Sink):
         }, data
 
 
-__all__ = ["Engine", "RenderJob", "LANES", "INTERACTIVE_BURST", "MAX_HISTORY"]
+__all__ = [
+    "Engine",
+    "RenderJob",
+    "LANES",
+    "INTERACTIVE_BURST",
+    "MAX_HISTORY",
+    "is_oom",
+    "reclaim_vram",
+]

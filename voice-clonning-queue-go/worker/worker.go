@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"strings"
 	"time"
 
 	"voice-cloning-queue/audio"
@@ -16,6 +17,35 @@ import (
 // retryDelay is how long to pause before the single retry of a dispatch that failed
 // at the transport level — long enough for a uvicorn reload to rebind the port.
 const retryDelay = 2 * time.Second
+
+// oomMarkers are the substrings that identify a CUDA out-of-memory failure in an
+// error string from the GPU service. The service also sends an explicit
+// `error_kind`, which is checked first; these are the fallback for an older
+// service, or for an OOM that surfaced wrapped in some other exception's message.
+var oomMarkers = []string{
+	"outofmemoryerror",
+	"out of memory",
+	"cuda oom",
+	"cublas_status_alloc_failed",
+	"cudnn_status_alloc_failed",
+}
+
+// classifyFailure returns the models.ErrKind* for a GPU-service failure, or "".
+// An OOM is not the job's fault and cannot be retried against the same GPU state,
+// so naming it is what lets the queue tear the whole request down instead of
+// grinding through the siblings of a take that can no longer be assembled.
+func classifyFailure(errObj map[string]interface{}, errMsg string) string {
+	if k, ok := errObj["error_kind"].(string); ok && k != "" {
+		return k
+	}
+	low := strings.ToLower(errMsg)
+	for _, m := range oomMarkers {
+		if strings.Contains(low, m) {
+			return models.ErrKindOOM
+		}
+	}
+	return ""
+}
 
 // Worker continuously processes jobs from the PriorityQueue and dispatches to Python GPU Service.
 type Worker struct {
@@ -92,9 +122,13 @@ func (w *Worker) processJob(job *models.RenderJob) {
 		reqBody["voice"] = job.Voice
 	}
 
+	if job.ParentID != "" {
+		reqBody["parent_id"] = job.ParentID
+	}
+
 	jsonBytes, err := json.Marshal(reqBody)
 	if err != nil {
-		w.q.MarkFailed(job.JobID, fmt.Sprintf("failed to marshal request: %v", err))
+		w.q.MarkFailed(job.JobID, fmt.Sprintf("failed to marshal request: %v", err), "")
 		return
 	}
 
@@ -102,7 +136,7 @@ func (w *Worker) processJob(job *models.RenderJob) {
 	targetURL := fmt.Sprintf("%s/v2/direct_render", w.pythonGPUURL)
 	httpReq, err := http.NewRequest("POST", targetURL, bytes.NewBuffer(jsonBytes))
 	if err != nil {
-		w.q.MarkFailed(job.JobID, fmt.Sprintf("failed to create request: %v", err))
+		w.q.MarkFailed(job.JobID, fmt.Sprintf("failed to create request: %v", err), "")
 		return
 	}
 	httpReq.Header.Set("Content-Type", "application/json")
@@ -124,14 +158,14 @@ func (w *Worker) processJob(job *models.RenderJob) {
 	if err != nil {
 		errMsg := fmt.Sprintf("GPU service unreachable: %v", err)
 		fmt.Printf("[worker] <<< Job Failed %s: %s\n", job.JobID, errMsg)
-		w.q.MarkFailed(job.JobID, errMsg)
+		w.q.MarkFailed(job.JobID, errMsg, "")
 		return
 	}
 	defer resp.Body.Close()
 
 	bodyBytes, err := io.ReadAll(resp.Body)
 	if err != nil {
-		w.q.MarkFailed(job.JobID, fmt.Sprintf("failed to read response: %v", err))
+		w.q.MarkFailed(job.JobID, fmt.Sprintf("failed to read response: %v", err), "")
 		return
 	}
 
@@ -145,8 +179,13 @@ func (w *Worker) processJob(job *models.RenderJob) {
 				errMsg = d
 			}
 		}
-		fmt.Printf("[worker] <<< Job Failed %s (status %d): %s\n", job.JobID, resp.StatusCode, errMsg)
-		w.q.MarkFailed(job.JobID, errMsg)
+		kind := classifyFailure(errObj, errMsg)
+		fmt.Printf("[worker] <<< Job Failed %s (status %d, kind=%q): %s\n", job.JobID, resp.StatusCode, kind, errMsg)
+		collateral := w.q.MarkFailed(job.JobID, errMsg, kind)
+		if len(collateral) > 0 {
+			fmt.Printf("[worker]     VRAM OOM — cancelled %d sibling job(s) of the same request: %s\n",
+				len(collateral), strings.Join(collateral, ", "))
+		}
 		return
 	}
 
@@ -170,7 +209,7 @@ func (w *Worker) processJob(job *models.RenderJob) {
 	} else {
 		// JSON response
 		if err := json.Unmarshal(bodyBytes, &result); err != nil {
-			w.q.MarkFailed(job.JobID, fmt.Sprintf("invalid JSON from GPU: %v", err))
+			w.q.MarkFailed(job.JobID, fmt.Sprintf("invalid JSON from GPU: %v", err), "")
 			return
 		}
 		// Check if result object contains result wrapper
