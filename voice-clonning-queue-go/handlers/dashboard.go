@@ -947,7 +947,12 @@ const dashboardHTML = `<!doctype html>
 
         var audioJob = null, activeJob = null, ran = null, waited = null, failedJob = null;
         for (var a = 0; a < members.length; a++) {
-          if (!audioJob && members[a].has_audio) audioJob = members[a];
+          // The parent's audio is the finished take -- converted, assembled, the
+          // thing that was actually delivered. A child's is one raw pre-VC chunk,
+          // so it is only ever the fallback for a request that has no parent row.
+          if (members[a].has_audio && (!audioJob || members[a].job_id === g.id)) {
+            audioJob = members[a];
+          }
           if (!activeJob && (members[a].status === 'queued' || members[a].status === 'running')) activeJob = members[a];
           // First member that actually says why it stopped. Prefer a real failure
           // over a cancellation, so an OOM is never masked by the sibling it took
