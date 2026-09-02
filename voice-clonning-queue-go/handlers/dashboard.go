@@ -333,6 +333,16 @@ const dashboardHTML = `<!doctype html>
     }
     .lane-interactive { background: rgba(168, 85, 247, 0.15); color: #c084fc; }
     .lane-batch { background: rgba(148, 163, 184, 0.1); color: #94a3b8; }
+    .voice-tag {
+      font-size: 11px;
+      font-weight: 600;
+      padding: 2px 6px;
+      border-radius: 4px;
+      white-space: nowrap;
+      background: rgba(236, 72, 153, 0.14);
+      color: #f472b6;
+      border: 1px solid rgba(236, 72, 153, 0.3);
+    }
 
     /* Action Buttons */
     .btn-group {
@@ -776,6 +786,17 @@ const dashboardHTML = `<!doctype html>
     var currentRunningJob = null;
     var activeAudioJobId = null;
 
+    function voiceIdOf(job) {
+
+      var vs = job && job.voice;
+
+      if (!vs) return 'auto';
+
+      return vs.speaker_id || vs.handle || 'auto';
+
+    }
+
+
     function escapeHtml(str) {
       if (!str) return '';
       return String(str)
@@ -825,7 +846,7 @@ const dashboardHTML = `<!doctype html>
               runningChunksHtml += '<div class="chunk-line"><span class="chunk-pill">[' + (rc+1) + '/' + data.running.chunks.length + ']</span> <span class="chunk-text">' + escapeHtml(data.running.chunks[rc]) + '</span></div>';
             }
           }
-          document.getElementById('running-details').innerHTML = '<div style="margin-bottom:6px; font-weight:600; color:var(--text-muted);">Lane: ' + data.running.lane + ' | Client: ' + (data.running.client || 'tone-studio') + ' (' + (data.running.chunks ? data.running.chunks.length : 0) + ' chunks)</div>' + runningRawHtml + runningChunksHtml;
+          document.getElementById('running-details').innerHTML = '<div style="margin-bottom:6px; font-weight:600; color:var(--text-muted);">Lane: ' + data.running.lane + ' | Voice: ' + escapeHtml(voiceIdOf(data.running)) + ' | Client: ' + (data.running.client || 'tone-studio') + ' (' + (data.running.chunks ? data.running.chunks.length : 0) + ' chunks)</div>' + runningRawHtml + runningChunksHtml;
           document.getElementById('running-time').innerText = (data.running.ran_s ? data.running.ran_s.toFixed(1) : '0.0') + 's';
         } else {
           runBanner.style.display = 'none';
@@ -921,6 +942,18 @@ const dashboardHTML = `<!doctype html>
         var client = head.client || '-';
         var lane = head.lane || 'batch';
 
+        // The caller's voice_id lands in the render spec as speaker_id (handle for
+        // an uploaded clip). Take it from whichever member actually carries a voice
+        // -- an external parent row often has none while its render children do.
+        var voiceId = '';
+        for (var v = 0; v < members.length; v++) {
+          var vs = members[v].voice;
+          if (!vs) continue;
+          if (vs.speaker_id) { voiceId = vs.speaker_id; break; }
+          if (vs.handle && !voiceId) voiceId = vs.handle;
+        }
+        if (!voiceId) voiceId = 'auto';
+
         var rawPrompt = '';
         for (var r = 0; r < members.length; r++) {
           if (members[r].raw_prompt && members[r].raw_prompt.trim().length > 0) {
@@ -990,6 +1023,7 @@ const dashboardHTML = `<!doctype html>
             (rawPrompt ? '<span class="req-prompt-peek">' + escapeHtml(rawPrompt) + '</span>' : '') +
             '<span class="req-meta">' +
               '<span class="lane-tag lane-' + lane + '">' + lane + '</span>' +
+              '<span class="voice-tag" title="voice_id">&#127908; ' + escapeHtml(voiceId) + '</span>' +
               '<span><b>' + escapeHtml(client) + '</b></span>' +
               '<span>wait ' + fmtSecs(waited) + '</span>' +
               '<span>gpu ' + fmtSecs(ran) + '</span>' +
