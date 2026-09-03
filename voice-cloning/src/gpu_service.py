@@ -70,6 +70,12 @@ STUB = os.environ.get("SIANGTTS_GPU_STUB", "") == "1"
 BASE_MODEL = os.environ.get("SIANGTTS_BASE_MODEL", "openbmb/VoxCPM2")
 ADAPTER = os.environ.get("SIANGTTS_ADAPTER", "checkpoints/siangtts-v1")
 DEVICE = os.environ.get("SIANGTTS_DEVICE") or None
+# torch.compile is off by default here. This service unloads the model when the
+# queue drains and reloads it on the next take, and compiling costs minutes of
+# reload plus host memory that outlives the model. Set SIANGTTS_VOXCPM_OPTIMIZE=1
+# to compile anyway -- only worth it paired with SIANGTTS_IDLE_MODE=hot, where
+# the model is built once and the cost is paid once.
+OPTIMIZE = os.environ.get("SIANGTTS_VOXCPM_OPTIMIZE", "") == "1"
 
 # One entry, or several separated by the platform's path separator (`;` on Windows).
 # Several, because the two pipelines arrived with their own reference folders and the
@@ -164,7 +170,9 @@ def _build_synth() -> Any:
     # box enough room to matter.
     t0 = time.time()
     before = _vram_stats(allow_init=True)
-    synth = Synthesizer(base_model=BASE_MODEL, adapter_path=adapter, device=DEVICE)
+    synth = Synthesizer(
+        base_model=BASE_MODEL, adapter_path=adapter, device=DEVICE, optimize=OPTIMIZE
+    )
     after = _vram_stats(allow_init=True)
     took = time.time() - t0
     if before and after:

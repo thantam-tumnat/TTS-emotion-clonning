@@ -302,6 +302,7 @@ class ModelHolder:
         # collect and the weights stay on the card, which is the whole exercise.
         gc.collect()
         freed = _release_cuda()
+        _trim_host_memory()
         self.releases += 1
         print(
             f"[gpu] model released ({reason}) after {idle_for:.0f}s idle — "
@@ -331,6 +332,40 @@ def _release_cuda() -> bool:
         return True
     except Exception:                                                # noqa: BLE001
         return False
+
+
+def _trim_host_memory() -> None:
+    """Hand this process's resident pages back to the OS after a release.
+
+    A caveat worth stating plainly: this trims the *working set* (physical RAM),
+    not the commit. PyTorch's CUDA host allocator holds on to gigabytes of
+    page-locked staging memory for the life of the process -- `empty_cache()`
+    returns VRAM but not that, and neither does `del`+`gc` -- so the committed
+    (pagefile-backed) figure stays high until the process exits. What this call
+    fixes is the symptom that actually hurts on a 32 GB box: an *idle* TTS worker
+    squatting on ~12 GB of physical RAM that the studio, the SeedVC worker, and
+    everything else need. After a release those pages are cold -- the next take
+    reloads the model from scratch anyway -- so paging them out costs nothing and
+    the machine stops thrashing at 100% RAM. Windows only; glibc trims large
+    frees itself, so this is a no-op elsewhere.
+    """
+    if sys.platform != "win32":
+        return
+    try:
+        import ctypes
+        from ctypes import wintypes
+
+        # EmptyWorkingSet(GetCurrentProcess()) -- the pseudo-handle is fine here.
+        # argtypes/restype are set because the defaults truncate the 64-bit handle
+        # on Win64, which is why the SetProcessWorkingSetSize form silently no-ops.
+        kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+        psapi = ctypes.WinDLL("psapi", use_last_error=True)
+        kernel32.GetCurrentProcess.restype = wintypes.HANDLE
+        psapi.EmptyWorkingSet.argtypes = [wintypes.HANDLE]
+        psapi.EmptyWorkingSet.restype = wintypes.BOOL
+        psapi.EmptyWorkingSet(kernel32.GetCurrentProcess())
+    except Exception:                                                # noqa: BLE001
+        pass
 
 
 @dataclass

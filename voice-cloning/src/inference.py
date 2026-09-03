@@ -43,7 +43,15 @@ class Synthesizer:
         adapter_path: str | None = None,
         device: str | None = None,
         denoise_prompts: bool = False,
+        optimize: bool = True,
     ) -> None:
+        # optimize=True runs torch.compile(mode="reduce-overhead", fullgraph=True)
+        # over four submodules plus a warm-up generate at load. On a box that
+        # unloads and reloads the model between takes that compile is paid *every*
+        # cold load -- minutes of wall time and gigabytes of Inductor/CUDA-graph
+        # host memory that never come back -- for a per-step speed-up short Thai
+        # chunks barely feel. The GPU service passes optimize=False for exactly
+        # that reason; eval loops that keep one model resident can leave it on.
         import torch._dynamo
         torch._dynamo.config.suppress_errors = True
 
@@ -63,6 +71,7 @@ class Synthesizer:
             load_denoiser=denoise_prompts,
             lora_config=lora_config,
             lora_weights_path=adapter_path,
+            optimize=optimize,
         )
         self.sample_rate = self.model.tts_model.sample_rate
 
