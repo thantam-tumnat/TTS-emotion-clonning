@@ -35,9 +35,14 @@ rem service that is down or busy just keeps its weights until its timer fires.
 rem SEEDVC_URL is used ONLY for that call, never to dispatch work.
 set SEEDVC_URL=http://127.0.0.1:8022
 rem Seconds to wait after the queue drains before asking, re-checked against the
-rem queue afterwards -- it keeps a release from racing a job submitted in the gap
-rem between two takes. 0 releases the instant the line empties (default 2).
-rem   set "GPU_RELEASE_DELAY=0"
+rem queue afterwards. The default 2 exists to skip a release when the next take
+rem is a heartbeat away -- but with the card wanted back for another service the
+rem moment a render is done, 0 is the right call: release instantly when the line
+rem empties. The cost is a ~30 s reload if a job lands within that gap; that is
+rem the deliberate price of the card being free in between. Raise it back toward
+rem 1-2 if reloads between closely-spaced takes turn out to hurt more than the
+rem freed VRAM helps.
+set "GPU_RELEASE_DELAY=0"
 
 rem --- Name whoever already holds :8020, instead of Go's cryptic bind error ---
 for /f "tokens=5" %%p in ('netstat -ano -p tcp ^| findstr /r /c:"LISTENING" ^| findstr /c:"127.0.0.1:8020"') do (
