@@ -366,4 +366,111 @@ func TestPriorityQueue_ExternalJobLifecycle(t *testing.T) {
 	}
 }
 
+// The reason the idle hook exists: an external meta job reaches "completed" by
+// PATCH with nothing running in the worker loop, so the loop's own post-job Idle()
+// check never sees the drain. The hook is the only thing that can then fire the
+// fast VRAM release — and it must fire only on the transition that actually drains.
+func TestIdleHook_FiresWhenExternalJobCompletes(t *testing.T) {
+	q := NewPriorityQueue()
+	defer q.Close()
+
+	fired := make(chan struct{}, 8)
+	q.SetIdleHook(func() { fired <- struct{}{} })
+
+	drained := func() bool {
+		select {
+		case <-fired:
+			return true
+		case <-time.After(200 * time.Millisecond):
+			return false
+		}
+	}
+
+	q.SubmitExternal(models.NewRenderJob(models.RenderRequest{RawPrompt: "x", Client: "voxcpm-vc"}, "meta_1"))
+	running := "running"
+	q.UpdateJob("meta_1", models.JobUpdate{Status: &running})
+	if drained() {
+		t.Fatalf("hook must not fire while the external job is still running")
+	}
+
+	completed := "completed"
+	q.UpdateJob("meta_1", models.JobUpdate{Status: &completed})
+	if !drained() {
+		t.Fatalf("hook must fire when the terminal PATCH drains the queue")
+	}
+}
+
+// A cancel that empties the line is a drain the worker loop does not see either.
+func TestIdleHook_FiresOnCancelDrain(t *testing.T) {
+	q := NewPriorityQueue()
+	defer q.Close()
+
+	fired := make(chan struct{}, 8)
+	q.SetIdleHook(func() { fired <- struct{}{} })
+
+	submitGroup(q, "req_1", "g_a", "g_b")
+	q.Cancel("g_a") // cascades to the whole group, leaving nothing waiting
+
+	select {
+	case <-fired:
+	case <-time.After(200 * time.Millisecond):
+		t.Fatalf("hook must fire when a cancel drains the queue")
+	}
+}
+
+// The backstop for a lost terminal PATCH: a non-terminal external job older than the
+// TTL is failed, which stops its runaway timer and lets the queue reach idle again.
+func TestExpireStaleExternal(t *testing.T) {
+	q := NewPriorityQueue()
+	defer q.Close()
+
+	fired := make(chan struct{}, 8)
+	q.SetIdleHook(func() { fired <- struct{}{} })
+
+	// One stale external job (registered well in the past), one fresh one.
+	stale := models.NewRenderJob(models.RenderRequest{RawPrompt: "old", Client: "voxcpm-vc"}, "meta_stale")
+	stale.Created = float64(time.Now().Add(-time.Hour).UnixNano()) / 1e9
+	q.SubmitExternal(stale)
+	q.SubmitExternal(models.NewRenderJob(models.RenderRequest{RawPrompt: "new", Client: "voxcpm-vc"}, "meta_fresh"))
+
+	expired := q.ExpireStaleExternal(30 * time.Minute)
+	if len(expired) != 1 || expired[0] != "meta_stale" {
+		t.Fatalf("expected only meta_stale expired, got %v", expired)
+	}
+
+	got, _ := q.GetJob("meta_stale")
+	if got.Status != models.StatusFailed || got.Finished == nil || got.Error == nil {
+		t.Errorf("stale job should be failed with Finished+Error stamped, got %s", got.Status)
+	}
+	if fresh, _ := q.GetJob("meta_fresh"); fresh.Status != models.StatusQueued {
+		t.Errorf("fresh job must be left alone, got %s", fresh.Status)
+	}
+
+	// meta_fresh is still non-terminal, so the queue is not idle yet and the hook
+	// must not have fired.
+	select {
+	case <-fired:
+		t.Fatalf("hook must not fire while meta_fresh is still in flight")
+	default:
+	}
+}
+
+// A real GPU job (not external) is owned by the worker, which drives it terminal
+// itself — the sweep must never touch one, however old.
+func TestExpireStaleExternal_IgnoresRealJobs(t *testing.T) {
+	q := NewPriorityQueue()
+	defer q.Close()
+
+	job := models.NewRenderJob(models.RenderRequest{Chunks: []string{"x"}, Lane: "batch"}, "real_1")
+	job.Created = float64(time.Now().Add(-time.Hour).UnixNano()) / 1e9
+	q.Submit(job)
+
+	if expired := q.ExpireStaleExternal(time.Minute); len(expired) != 0 {
+		t.Fatalf("sweep must ignore non-external jobs, expired %v", expired)
+	}
+	if got, _ := q.GetJob("real_1"); got.Status != models.StatusQueued {
+		t.Errorf("real job must be untouched, got %s", got.Status)
+	}
+}
+
 func strPtr(s string) *string { return &s }

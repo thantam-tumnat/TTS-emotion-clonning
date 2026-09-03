@@ -105,16 +105,41 @@ def _looks_like_oom(message: str) -> bool:
     return any(m in low for m in _OOM_MARKERS)
 
 
+# Terminal statuses get more than one shot at landing. A progress PATCH that is
+# lost only skips one dashboard frame the next one corrects; a lost *terminal* PATCH
+# strands the row in "running" forever — its timer never stops, and on the gateway it
+# pins the queue non-idle, which blocks the fast VRAM release for later takes too. So
+# the completion/failure update retries a few times with a longer timeout before it
+# gives up, while ordinary progress stays a cheap single best-effort call.
+_TERMINAL_STATUSES = {"completed", "failed", "cancelled"}
+
+
 async def _meta_patch(job: "Job", **fields: object) -> None:
     """Advance this request's dashboard row (status/chunks/result). No-op when the row
     was never registered; best-effort so a dashboard hiccup can't fail synthesis."""
     if not job.meta_registered:
         return
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            await client.patch(f"{QUEUE_BASE_URL}/v2/jobs/{job.queue_id}", json=fields)
-    except Exception as exc:                                          # noqa: BLE001
-        print(f"[{job.queue_id}] meta patch failed (dashboard only): {exc}")
+
+    terminal = fields.get("status") in _TERMINAL_STATUSES
+    attempts = 4 if terminal else 1
+    timeout = 10.0 if terminal else 5.0
+
+    for i in range(attempts):
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                resp = await client.patch(
+                    f"{QUEUE_BASE_URL}/v2/jobs/{job.queue_id}", json=fields
+                )
+            if resp.status_code < 400:
+                return
+            last = f"HTTP {resp.status_code}"
+        except Exception as exc:                                      # noqa: BLE001
+            last = str(exc)
+        if i < attempts - 1:
+            await asyncio.sleep(0.5 * (i + 1))
+
+    print(f"[{job.queue_id}] meta patch failed after {attempts} attempt(s) "
+          f"(dashboard only): {last}")
 
 
 # ---------------------------------------------------------------------------

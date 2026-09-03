@@ -29,6 +29,16 @@ type PriorityQueue struct {
 	waiting []*models.RenderJob
 	running *models.RenderJob
 	closed  bool
+
+	// Fired once the queue transitions to idle on a path the worker loop does not
+	// see: an external job PATCHed to a terminal state, a cancel, or a stale-job
+	// sweep. The worker loop already re-checks Idle() after every job it runs, but
+	// an external meta job (driven entirely by PATCH) reaches "completed" with no
+	// job running here at all -- so without this hook the fast VRAM release never
+	// fires for it and the card waits out the GPU service's own idle timer. The
+	// worker registers releaser.Trigger; nil in tests. Always invoked with q.mu
+	// released, because Trigger re-enters the queue.
+	idleHook func()
 }
 
 // NewPriorityQueue creates an initialized PriorityQueue.
@@ -39,6 +49,16 @@ func NewPriorityQueue() *PriorityQueue {
 	}
 	q.cond = sync.NewCond(&q.mu)
 	return q
+}
+
+// SetIdleHook registers a callback fired whenever the queue goes idle on a path the
+// worker loop does not observe (a terminal PATCH, a cancel, or the stale-job sweep).
+// The callback runs with q.mu released and must be safe to call spuriously. Set once
+// at startup, before the queue takes traffic.
+func (q *PriorityQueue) SetIdleHook(fn func()) {
+	q.mu.Lock()
+	q.idleHook = fn
+	q.mu.Unlock()
 }
 
 // GenerateJobID creates a unique timestamped job identifier.
@@ -89,6 +109,16 @@ func (q *PriorityQueue) SubmitExternal(job *models.RenderJob) {
 // unknown job.
 func (q *PriorityQueue) UpdateJob(jobID string, upd models.JobUpdate) bool {
 	q.mu.Lock()
+	// Fire the idle hook after the lock is released (defers run LIFO, so this
+	// closure runs after the Unlock below). An external job reaching a terminal
+	// state here is the case the worker loop cannot see, so this is where the
+	// fast VRAM release gets its chance.
+	fireIdle := false
+	defer func() {
+		if fireIdle && q.idleHook != nil {
+			q.idleHook()
+		}
+	}()
 	defer q.mu.Unlock()
 
 	job, exists := q.jobs[jobID]
@@ -141,6 +171,9 @@ func (q *PriorityQueue) UpdateJob(jobID string, upd models.JobUpdate) bool {
 			default:
 				close(job.DoneChan)
 			}
+			// This transition may be the one that drains the queue — hand the card
+			// back if so (checked now, under the lock; fired after it, see above).
+			fireIdle = q.idleLocked()
 		default:
 			job.Status = st
 		}
@@ -307,6 +340,12 @@ func (q *PriorityQueue) removeFromWaitingLocked(jobID string) {
 // cancelled and the ids of the siblings that went with it.
 func (q *PriorityQueue) Cancel(jobID string) (bool, []string) {
 	q.mu.Lock()
+	fireIdle := false
+	defer func() {
+		if fireIdle && q.idleHook != nil {
+			q.idleHook()
+		}
+	}()
 	defer q.mu.Unlock()
 
 	job, exists := q.jobs[jobID]
@@ -335,7 +374,9 @@ func (q *PriorityQueue) Cancel(jobID string) (bool, []string) {
 	// One click, one take: cancelling any piece abandons the request it belongs
 	// to. A half-cancelled take is not a useful state -- the caller cannot
 	// assemble it, and the remaining pieces would still occupy the GPU.
-	return true, q.cancelGroupLocked(job, "", "cancelled with the rest of this request")
+	collateral := q.cancelGroupLocked(job, "", "cancelled with the rest of this request")
+	fireIdle = q.idleLocked()
+	return true, collateral
 }
 
 // GetJob retrieves a job and its queue position.
@@ -416,7 +457,13 @@ func (q *PriorityQueue) GetStats() (map[string]int, map[string]int, *models.Rend
 func (q *PriorityQueue) Idle() bool {
 	q.mu.RLock()
 	defer q.mu.RUnlock()
+	return q.idleLocked()
+}
 
+// idleLocked is the body of Idle for callers that already hold q.mu (in either
+// mode). RWMutex is not reentrant, so a locked path that re-took the read lock to
+// call Idle() would deadlock — this is what those paths call instead.
+func (q *PriorityQueue) idleLocked() bool {
 	if q.running != nil || len(q.waiting) > 0 {
 		return false
 	}
@@ -426,6 +473,67 @@ func (q *PriorityQueue) Idle() bool {
 		}
 	}
 	return true
+}
+
+// ExpireStaleExternal fails any external (visibility-only) job that has sat in a
+// non-terminal state longer than maxAge, and returns the ids it expired.
+//
+// An external job advances only by PATCH from its owner (the :8013 studio). That
+// PATCH is best-effort, so a lost terminal update leaves the row stuck "running"
+// forever: its dashboard timer never stops, and — worse — it pins Idle() to false,
+// which blocks the fast VRAM release for *every later take too*, since a stuck row
+// is never terminal and so never pruned. This is the backstop. maxAge must be well
+// clear of the longest legitimate take (generate + SeedVC + upload), or it would
+// fail takes that are simply slow. Only external jobs are touched; a real GPU job
+// is owned by the worker, which always drives it terminal itself.
+func (q *PriorityQueue) ExpireStaleExternal(maxAge time.Duration) []string {
+	q.mu.Lock()
+	fireIdle := false
+	defer func() {
+		if fireIdle && q.idleHook != nil {
+			q.idleHook()
+		}
+	}()
+	defer q.mu.Unlock()
+
+	now := float64(time.Now().UnixNano()) / 1e9
+	cutoff := maxAge.Seconds()
+	expired := make([]string, 0)
+
+	for _, j := range q.jobs {
+		if !j.External {
+			continue
+		}
+		if j.Status != models.StatusQueued && j.Status != models.StatusRunning {
+			continue
+		}
+		// Age from when the work actually started if we saw it start, else from
+		// when the row was registered.
+		ref := j.Created
+		if j.Started != nil {
+			ref = *j.Started
+		}
+		if now-ref < cutoff {
+			continue
+		}
+
+		j.Status = models.StatusFailed
+		fin := now
+		j.Finished = &fin
+		msg := fmt.Sprintf("expired: no terminal update received within %.0fs", cutoff)
+		j.Error = &msg
+		select {
+		case <-j.DoneChan:
+		default:
+			close(j.DoneChan)
+		}
+		expired = append(expired, j.JobID)
+	}
+
+	if len(expired) > 0 {
+		fireIdle = q.idleLocked()
+	}
+	return expired
 }
 
 // Wait blocks until a job finishes or timeout expires.

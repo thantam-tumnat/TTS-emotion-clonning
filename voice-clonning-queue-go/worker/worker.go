@@ -73,7 +73,35 @@ func NewWorker(q *queue.PriorityQueue, pythonGPUURL, seedvcURL string) *Worker {
 
 // Start launches the background worker loop.
 func (w *Worker) Start() {
+	// An external meta job reaches its terminal state by PATCH, with nothing
+	// running in this worker's loop — so the loop's own post-job Idle() check
+	// never sees that drain. This hook is how that path still gets a fast release.
+	w.q.SetIdleHook(w.releaser.Trigger)
 	go w.run()
+	go w.expireStaleLoop()
+}
+
+// expireStaleLoop periodically fails external jobs whose owner never sent a terminal
+// update (see queue.ExpireStaleExternal): it stops their runaway dashboard timer and,
+// by letting the queue reach idle again, unblocks the fast VRAM release for later takes.
+func (w *Worker) expireStaleLoop() {
+	ttl := externalTTLFromEnv()
+	if ttl <= 0 {
+		return // sweep disabled
+	}
+	ticker := time.NewTicker(externalSweepInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-w.stopChan:
+			return
+		case <-ticker.C:
+			if expired := w.q.ExpireStaleExternal(ttl); len(expired) > 0 {
+				fmt.Printf("[worker] expired %d stale external job(s) — no terminal update within %s: %s\n",
+					len(expired), ttl, strings.Join(expired, ", "))
+			}
+		}
+	}
 }
 
 // Stop stops the worker gracefully.

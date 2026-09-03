@@ -42,6 +42,17 @@ const (
 	// pretend to cover an operator who re-renders half a minute later -- that
 	// reload is the deliberate price of the card being free in between.
 	defaultReleaseDelay = 2 * time.Second
+
+	// How stale a non-terminal external (visibility-only) job may get before the
+	// sweep fails it (see queue.ExpireStaleExternal). Deliberately generous: it is
+	// a backstop for a lost terminal PATCH, not a job timeout, so it must clear the
+	// longest legitimate take — generation, SeedVC conversion, upload and callback
+	// — by a wide margin. 0 (via EXTERNAL_JOB_TTL) turns the sweep off.
+	defaultExternalTTL = 30 * time.Minute
+
+	// How often the sweep runs. Coarse on purpose — a stuck row costs a slow
+	// release, not a correctness bug, so there is nothing to gain from checking often.
+	externalSweepInterval = 60 * time.Second
 )
 
 // gpuReleaser asks the two GPU services to unload. Fire-and-forget by design: a
@@ -89,6 +100,21 @@ func releaseDelayFromEnv() time.Duration {
 	if err != nil || secs < 0 {
 		fmt.Printf("[worker] ignoring GPU_RELEASE_DELAY=%q; using %s\n", raw, defaultReleaseDelay)
 		return defaultReleaseDelay
+	}
+	return time.Duration(secs * float64(time.Second))
+}
+
+// externalTTLFromEnv reads EXTERNAL_JOB_TTL, in seconds. "0" disables the stale-job
+// sweep; a negative or unparseable value falls back to the default.
+func externalTTLFromEnv() time.Duration {
+	raw := os.Getenv("EXTERNAL_JOB_TTL")
+	if raw == "" {
+		return defaultExternalTTL
+	}
+	secs, err := strconv.ParseFloat(raw, 64)
+	if err != nil || secs < 0 {
+		fmt.Printf("[worker] ignoring EXTERNAL_JOB_TTL=%q; using %s\n", raw, defaultExternalTTL)
+		return defaultExternalTTL
 	}
 	return time.Duration(secs * float64(time.Second))
 }
