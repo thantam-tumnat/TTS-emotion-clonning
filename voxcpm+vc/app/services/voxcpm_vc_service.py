@@ -43,6 +43,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
 from app.config import settings
+from app.services.queue_client import RemoteSynthesisError
 from app.services.siangtts_service import (
     AUDIO_EXTS,
     _LEADING_STYLE_RE,
@@ -283,17 +284,23 @@ class VoxCPMVCService:
         """The queue-gateway synthesizer, connected."""
         return siangtts_service.get_synthesizer()
 
-    def _donor_handle(self, synth: Any, donor_set: str, emotion: str) -> Any:
+    def _donor_handle(self, synth: Any, donor_set: str, emotion: str, force: bool = False) -> Any:
         """Encode a donor clip *with* its transcript and cache the handle.
 
         The transcript is the whole point: passing one selects VoxCPM2's continuation
         mode, where the prompt clip's delivery is reproduced. Passing only the clip
         would give timbre-only cloning and a flat, neutral read.
+
+        ``force`` re-uploads even on a cache hit. The cached handle names a GPU-side
+        upload the service can drop between requests (TTL eviction, a lazy-mode VRAM
+        unload, or a restart); when a render comes back ``unknown voice`` the caller
+        rebuilds with ``force=True`` to mint a live one.
         """
         key = (donor_set, emotion)
-        cached = self._donor_handles.get(key)
-        if cached:
-            return cached
+        if not force:
+            cached = self._donor_handles.get(key)
+            if cached:
+                return cached
 
         wav, transcript = self.donor_clip(donor_set, emotion)
         handle = synth.build_voice(str(wav.resolve()), prompt_text=transcript)
@@ -301,17 +308,21 @@ class VoxCPMVCService:
             self._donor_handles[key] = handle
         return handle
 
-    def _target_handle(self, synth: Any, target_wav: Path) -> Any:
+    def _target_handle(self, synth: Any, target_wav: Path, force: bool = False) -> Any:
         """Zero-shot voice handle for the target ref itself (no transcript).
 
         Used only by the skip-VC neutral path: VoxCPM2 clones the target's timbre
         directly with no donor and no continuation mode, so there is nothing for
         SeedVC to convert afterwards. Cached by resolved path like donor handles.
+
+        ``force`` re-uploads even on a cache hit, for the same stale-handle recovery
+        as :meth:`_donor_handle`.
         """
         key = str(target_wav.resolve())
-        cached = self._target_handles.get(key)
-        if cached:
-            return cached
+        if not force:
+            cached = self._target_handles.get(key)
+            if cached:
+                return cached
         handle = synth.build_voice(key)
         if isinstance(handle, str) and handle:
             self._target_handles[key] = handle
@@ -773,29 +784,25 @@ class VoxCPMVCService:
         generated: List[Optional[Any]] = [None] * len(planned)
         gen_rate = int(getattr(synth, "sample_rate", 48000) or 48000)
 
-        try:
-            for emotion, indices in groups.items():
-                skip_vc = emotion == "neutral" and settings.voxcpm_vc_skip_neutral
+        def _voice_handle(emotion: str, *, force: bool = False) -> Any:
+            if emotion == "neutral" and settings.voxcpm_vc_skip_neutral:
+                return self._target_handle(synth, Path(target_wav), force=force)
+            return self._donor_handle(synth, chosen_set, emotion, force=force)
 
-                if skip_vc:
-                    handle = self._target_handle(synth, Path(target_wav))
-                    print(
-                        f"[VoxCPM+VC] neutral: {len(indices)} piece(s) cloning target "
-                        f"ref directly (VC skipped)",
-                        file=sys.stderr,
-                    )
-                else:
-                    handle = self._donor_handle(synth, chosen_set, emotion)
-                    donor_wav, donor_txt = self.donor_clip(chosen_set, emotion)
-                    print(
-                        f"[VoxCPM+VC] {emotion}: {len(indices)} piece(s) cloning "
-                        f"{chosen_set}/{donor_wav.name}",
-                        file=sys.stderr,
-                    )
+        def _render_group(emotion: str, indices: List[int]) -> Tuple[List[Any], int]:
+            """Render one emotion's pieces, healing a stale voice handle once.
 
-                audios, gen_rate = batch(
-                    [planned[i][1] for i in indices],
-                    prompt_cache=handle,
+            The handle names a GPU-side upload the service can drop between requests
+            (TTL eviction, a lazy-mode VRAM unload, or a restart), so a cached handle
+            that worked last take can come back ``unknown voice`` this take. Re-upload
+            the donor/target clip and retry once rather than failing the whole take.
+            """
+            pieces = [planned[i][1] for i in indices]
+
+            def _once(force: bool) -> Tuple[List[Any], int]:
+                return batch(
+                    pieces,
+                    prompt_cache=_voice_handle(emotion, force=force),
                     cfg_value=cfg_value,
                     inference_timesteps=inference_timesteps,
                     lora_mode=lora_mode,
@@ -803,6 +810,38 @@ class VoxCPMVCService:
                     client=client,
                     parent_id=request_id,
                 )
+
+            try:
+                return _once(force=False)
+            except RemoteSynthesisError as exc:
+                if "unknown voice" not in str(exc).lower():
+                    raise
+                print(
+                    f"[VoxCPM+VC] {emotion}: stale voice handle dropped by the GPU "
+                    f"service — re-uploading and retrying once",
+                    file=sys.stderr,
+                )
+                return _once(force=True)
+
+        try:
+            for emotion, indices in groups.items():
+                skip_vc = emotion == "neutral" and settings.voxcpm_vc_skip_neutral
+
+                if skip_vc:
+                    print(
+                        f"[VoxCPM+VC] neutral: {len(indices)} piece(s) cloning target "
+                        f"ref directly (VC skipped)",
+                        file=sys.stderr,
+                    )
+                else:
+                    donor_wav, donor_txt = self.donor_clip(chosen_set, emotion)
+                    print(
+                        f"[VoxCPM+VC] {emotion}: {len(indices)} piece(s) cloning "
+                        f"{chosen_set}/{donor_wav.name}",
+                        file=sys.stderr,
+                    )
+
+                audios, gen_rate = _render_group(emotion, indices)
                 if len(audios) != len(indices):
                     raise RuntimeError(
                         f"engine returned {len(audios)} pieces for {len(indices)} sent "
@@ -1130,35 +1169,51 @@ class VoxCPMVCService:
         """
         import numpy as np
 
-        handle = self._donor_handle(synth, donor_set, emotion)
         batch = getattr(synth, "render_batch", None)
-        if batch is None:
-            rate = int(getattr(synth, "sample_rate", 48000) or 48000)
-            audio = synth.synth(
-                text=body,
+
+        def _once(force: bool) -> Tuple[Any, int]:
+            handle = self._donor_handle(synth, donor_set, emotion, force=force)
+            if batch is None:
+                rate = int(getattr(synth, "sample_rate", 48000) or 48000)
+                audio = synth.synth(
+                    text=body,
+                    prompt_cache=handle,
+                    cfg_value=cfg_value,
+                    inference_timesteps=inference_timesteps,
+                    lora_mode=lora_mode,
+                    raw_prompt=raw_prompt or body,
+                )
+                return audio, rate
+
+            audios, rate = batch(
+                [body],
                 prompt_cache=handle,
                 cfg_value=cfg_value,
                 inference_timesteps=inference_timesteps,
                 lora_mode=lora_mode,
                 raw_prompt=raw_prompt or body,
             )
-            paced = self._match_to_donor_pace(
-                self._depeak(audio), rate, body, donor_set, emotion
-            )
-            return paced, rate
+            if not audios:
+                raise RuntimeError("engine returned no audio")
+            return audios[0], int(rate)
 
-        audios, rate = batch(
-            [body],
-            prompt_cache=handle,
-            cfg_value=cfg_value,
-            inference_timesteps=inference_timesteps,
-            lora_mode=lora_mode,
-            raw_prompt=raw_prompt or body,
-        )
-        if not audios:
-            raise RuntimeError("engine returned no audio")
+        # A cached donor handle can be dropped GPU-side between requests (TTL
+        # eviction, a lazy-mode VRAM unload, or a restart); re-upload the clip and
+        # retry once rather than failing on a stale handle. See _donor_handle.
+        try:
+            audio, rate = _once(force=False)
+        except RemoteSynthesisError as exc:
+            if "unknown voice" not in str(exc).lower():
+                raise
+            print(
+                f"[VoxCPM+VC] {emotion}: stale voice handle dropped by the GPU "
+                f"service — re-uploading and retrying once",
+                file=sys.stderr,
+            )
+            audio, rate = _once(force=True)
+
         paced = self._match_to_donor_pace(
-            self._depeak(audios[0]), int(rate), body, donor_set, emotion
+            self._depeak(audio), int(rate), body, donor_set, emotion
         )
         return paced, int(rate)
 

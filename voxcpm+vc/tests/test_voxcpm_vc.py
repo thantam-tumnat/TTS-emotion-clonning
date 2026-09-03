@@ -179,6 +179,80 @@ def test_every_generation_of_a_take_shares_one_request_id(engine, tmp_path):
     assert engine.parent_ids[0], "every generation must carry a request id"
 
 
+def test_stale_voice_handle_is_rebuilt_and_the_take_still_renders(tmp_path, monkeypatch):
+    """A donor handle the GPU dropped between requests must not fail the take.
+
+    The studio caches GPU-side voice handles across requests, but the service can
+    drop those memory-only uploads (TTL eviction, a lazy-mode VRAM unload, or a
+    restart). A cached handle that worked last take then comes back `unknown voice`;
+    the studio re-uploads the donor clip and retries once rather than failing the
+    whole take. This is the exact shape of the observed production failure, where the
+    second emotion group of a take died on a stale `up_...` handle.
+    """
+    class _FlakyEngine(_RecordingEngine):
+        def __init__(self):
+            super().__init__()
+            self.render_calls = 0
+
+        def render_batch(self, texts, *, prompt_cache=None, **kwargs):
+            self.render_calls += 1
+            if self.render_calls == 1:
+                raise vc.RemoteSynthesisError(
+                    "render failed (500): unknown voice: 'up_deadbeef'"
+                )
+            return super().render_batch(texts, prompt_cache=prompt_cache, **kwargs)
+
+    eng = _FlakyEngine()
+    monkeypatch.setattr(vc.VoxCPMVCService, "_synth", lambda self: eng)
+    vc.voxcpm_vc_service._donor_handles.clear()
+    vc.voxcpm_vc_service._target_handles.clear()
+
+    chunks, _rate = vc.voxcpm_vc_service.render_chunks(
+        ["(angry) ทดสอบเสียงโกรธ"],
+        ref_audio_bytes=_target_clip(tmp_path).read_bytes(),
+        ref_filename="target.wav",
+        tones=["angry"],
+    )
+
+    assert chunks, "the take must still render after healing the stale handle"
+    assert eng.render_calls == 2, "render should be retried once after unknown voice"
+    assert len(eng.voices) == 2, "the donor clip must be re-uploaded for the retry"
+    # The rebuilt handle -- not the stale one -- is what the successful render used.
+    assert eng.jobs[-1][0] == "handle_2"
+
+
+def test_a_non_voice_render_error_is_not_retried(tmp_path, monkeypatch):
+    """Only `unknown voice` is a stale-handle signal; other 500s must surface.
+
+    Re-uploading and retrying a genuine synthesis failure (a bad tensor shape, an
+    engine crash) would just fail identically the second time while doubling the GPU
+    cost and hiding the real error behind a re-upload.
+    """
+    class _BrokenEngine(_RecordingEngine):
+        def __init__(self):
+            super().__init__()
+            self.render_calls = 0
+
+        def render_batch(self, texts, *, prompt_cache=None, **kwargs):
+            self.render_calls += 1
+            raise vc.RemoteSynthesisError("render failed (500): RuntimeError: boom")
+
+    eng = _BrokenEngine()
+    monkeypatch.setattr(vc.VoxCPMVCService, "_synth", lambda self: eng)
+    vc.voxcpm_vc_service._donor_handles.clear()
+    vc.voxcpm_vc_service._target_handles.clear()
+
+    with pytest.raises(vc.RemoteSynthesisError, match="boom"):
+        vc.voxcpm_vc_service.render_chunks(
+            ["(angry) ทดสอบเสียงโกรธ"],
+            ref_audio_bytes=_target_clip(tmp_path).read_bytes(),
+            ref_filename="target.wav",
+            tones=["angry"],
+        )
+
+    assert eng.render_calls == 1, "a non-voice error must not be retried"
+
+
 def test_caller_supplied_request_id_is_used_verbatim(engine, tmp_path):
     """The webhook already owns a dashboard row, so its generations attach to it
     rather than opening a second card for the same request."""
