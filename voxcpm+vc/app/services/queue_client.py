@@ -321,7 +321,17 @@ class QueueSynthesizer:
                 f"(job {res.json().get('job_id')} is still running on the GPU service)"
             )
         if res.status_code != 200:
-            raise RemoteSynthesisError(f"render failed ({res.status_code}): {res.text[:400]}")
+            # The 500 body is the failed job dict, which leads with the echoed
+            # request (cfg_value, chunks, ...) and buries the real cause in
+            # `error`/`detail` far past a naive 400-char slice. Surface those
+            # fields directly so the failure is legible; fall back to the raw
+            # (truncated) body only if it is not the JSON we expect.
+            try:
+                body = res.json()
+                detail = body.get("error") or body.get("detail") or res.text[:400]
+            except Exception:
+                detail = res.text[:400]
+            raise RemoteSynthesisError(f"render failed ({res.status_code}): {detail}")
 
         with np.load(io.BytesIO(res.content)) as bundle:
             self.sample_rate = int(bundle["sample_rate"])
