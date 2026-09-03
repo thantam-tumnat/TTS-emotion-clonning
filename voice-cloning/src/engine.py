@@ -234,6 +234,37 @@ class ModelHolder:
             self.last_used = time.time()
             return self._model
 
+    # -- prompt-cache I/O, which is not model work ------------------------- #
+    #
+    # `Synthesizer` hosts these two, but neither touches the model: a prompt
+    # cache is not model state, it is a file, and `load_voice` reads it with
+    # map_location="cpu" precisely so it never becomes one (inference.py, and
+    # tests/test_inference_device.py pins the invariant). Letting them fall
+    # through to `__getattr__` would load six gigabytes of weights to read a
+    # file -- which is exactly what happened: the voice cache hits on nearly
+    # every resolve, so every resolve woke a model that had just been released.
+    # Seventeen loads, zero renders.
+
+    # The shortcut is only taken for the real model. `StubSynthesizer` keeps its
+    # own cache format (src/stub_synth.py), so borrowing `Synthesizer`'s
+    # implementation there would read a file written by something else -- and a
+    # stub costs nothing to build anyway, so there is nothing to save.
+
+    def _cache_io(self, name: str):
+        if self._model is None and not self._is_stub:
+            from .inference import Synthesizer
+
+            # The real implementation rather than a copy of it, called with this
+            # holder standing in for an instance it never reads.
+            return getattr(Synthesizer, name).__get__(self, ModelHolder)
+        return getattr(self.get(), name)
+
+    def load_voice(self, path):
+        return self._cache_io("load_voice")(path)
+
+    def save_voice(self, prompt_cache, path):
+        return self._cache_io("save_voice")(prompt_cache, path)
+
     def __getattr__(self, name: str) -> Any:
         """Anything not defined above is the model's own API, so a load is what
         the caller is asking for. Private names are excluded: they arrive from
