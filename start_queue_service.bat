@@ -25,6 +25,20 @@ cd /d "%~dp0voice-clonning-queue-go"
 set PORT=8020
 set PYTHON_GPU_URL=http://127.0.0.1:8021
 
+rem --- Handing the GPU back when the queue drains ---
+rem This gateway is the only process that can tell "the batch is finished" from
+rem "the next take is two seconds away" -- the Python service is dispatched via
+rem /v2/direct_render, which bypasses its own queue, so it cannot. When the line
+rem empties, the worker asks both GPU services to unload, which returns ~7.8 GB
+rem within seconds instead of waiting out their idle timers. Fire-and-forget: a
+rem service that is down or busy just keeps its weights until its timer fires.
+rem SEEDVC_URL is used ONLY for that call, never to dispatch work.
+set SEEDVC_URL=http://127.0.0.1:8022
+rem Seconds to wait after the queue drains before asking, re-checked against the
+rem queue afterwards -- it keeps a release from racing a job submitted in the gap
+rem between two takes. 0 releases the instant the line empties (default 2).
+rem   set "GPU_RELEASE_DELAY=0"
+
 rem --- Name whoever already holds :8020, instead of Go's cryptic bind error ---
 for /f "tokens=5" %%p in ('netstat -ano -p tcp ^| findstr /r /c:"LISTENING" ^| findstr /c:"127.0.0.1:8020"') do (
     echo ERROR: port 8020 is already held by PID %%p -- most likely an older

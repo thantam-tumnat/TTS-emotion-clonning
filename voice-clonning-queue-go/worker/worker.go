@@ -53,10 +53,13 @@ type Worker struct {
 	pythonGPUURL string
 	client       *http.Client
 	stopChan     chan struct{}
+	releaser     *gpuReleaser
 }
 
-// NewWorker initializes a new Worker.
-func NewWorker(q *queue.PriorityQueue, pythonGPUURL string) *Worker {
+// NewWorker initializes a new Worker. seedvcURL may be empty, in which case the
+// SeedVC worker is assumed to be at its default address; it is used only to hand
+// the card back once the queue drains (see release.go), never to dispatch work.
+func NewWorker(q *queue.PriorityQueue, pythonGPUURL, seedvcURL string) *Worker {
 	return &Worker{
 		q:            q,
 		pythonGPUURL: pythonGPUURL,
@@ -64,6 +67,7 @@ func NewWorker(q *queue.PriorityQueue, pythonGPUURL string) *Worker {
 			Timeout: 10 * time.Minute,
 		},
 		stopChan: make(chan struct{}),
+		releaser: newGPUReleaser(pythonGPUURL, seedvcURL, q),
 	}
 }
 
@@ -93,6 +97,13 @@ func (w *Worker) run() {
 		}
 
 		w.processJob(job)
+
+		// Ask only once the line is actually empty. Mid-batch this is a single
+		// comparison and nothing else happens; on the last job of a batch it is
+		// what hands the card back in seconds instead of three minutes.
+		if w.q.Idle() {
+			w.releaser.Trigger()
+		}
 	}
 }
 

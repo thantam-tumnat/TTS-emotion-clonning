@@ -238,6 +238,67 @@ func TestPriorityQueue_RawPrompt(t *testing.T) {
 	}
 }
 
+func TestPriorityQueue_Idle(t *testing.T) {
+	q := NewPriorityQueue()
+	defer q.Close()
+
+	if !q.Idle() {
+		t.Fatalf("a fresh queue is idle")
+	}
+
+	q.Submit(models.NewRenderJob(models.RenderRequest{Chunks: []string{"a"}, Lane: "batch"}, "job_1"))
+	q.Submit(models.NewRenderJob(models.RenderRequest{Chunks: []string{"b"}, Lane: "batch"}, "job_2"))
+	if q.Idle() {
+		t.Errorf("queue with work waiting is not idle")
+	}
+
+	// Mid-batch: job_1 done but job_2 still in line. This is the case that must
+	// not report idle -- releasing here buys a reload for every job in a batch.
+	q.NextJob()
+	q.MarkCompleted("job_1", nil, nil, nil)
+	if q.Idle() {
+		t.Errorf("queue is not idle while job_2 is still waiting")
+	}
+
+	// Running counts too: taken off the line, not yet finished.
+	q.NextJob()
+	if q.Idle() {
+		t.Errorf("queue is not idle while a job is running")
+	}
+
+	q.MarkCompleted("job_2", nil, nil, nil)
+	if !q.Idle() {
+		t.Errorf("queue is idle once the last job finishes")
+	}
+
+	// A failure ends a job as surely as a completion does.
+	q.Submit(models.NewRenderJob(models.RenderRequest{Chunks: []string{"c"}, Lane: "batch"}, "job_3"))
+	q.NextJob()
+	q.MarkFailed("job_3", "boom", "")
+	if !q.Idle() {
+		t.Errorf("queue is idle after the last job fails")
+	}
+
+	// External jobs never reach the waiting line, but they are the only sign of
+	// GPU work driven by someone else -- so an unfinished one holds off a release.
+	q.SubmitExternal(models.NewRenderJob(models.RenderRequest{RawPrompt: "x", Client: "voxcpm-vc"}, "meta_1"))
+	if q.Idle() {
+		t.Errorf("queued external job must hold off a release")
+	}
+
+	running := "running"
+	q.UpdateJob("meta_1", models.JobUpdate{Status: &running})
+	if q.Idle() {
+		t.Errorf("running external job must hold off a release")
+	}
+
+	completed := "completed"
+	q.UpdateJob("meta_1", models.JobUpdate{Status: &completed})
+	if !q.Idle() {
+		t.Errorf("queue is idle once the external job is done")
+	}
+}
+
 func TestPriorityQueue_ExternalJobLifecycle(t *testing.T) {
 	q := NewPriorityQueue()
 	defer q.Close()

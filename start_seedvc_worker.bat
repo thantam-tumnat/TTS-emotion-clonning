@@ -43,7 +43,11 @@ rem --- Idle policy (see the matching block in start_gpu_service.bat) ---
 rem The wrapper is built by the first convert, not at startup, and dropped again
 rem once the worker has been quiet -- ~2 GB back to the card between takes.
 rem   set "SEEDVC_IDLE_MODE=hot"
-rem   set "SEEDVC_IDLE_TTL=180"
+rem As on :8021 this is only the backstop -- the Go gateway calls /release when
+rem its queue drains. This holds less of the card than VoxCPM2 (~2.3 GB against
+rem ~5.6 GB), so the timer is the same 90 s rather than something tighter: the
+rem asymmetry is not worth two numbers to keep in step.
+set "SEEDVC_IDLE_TTL=90"
 rem To take the card back right now:
 rem   curl -X POST http://127.0.0.1:8022/release
 

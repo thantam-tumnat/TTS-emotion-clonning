@@ -405,6 +405,29 @@ func (q *PriorityQueue) GetStats() (map[string]int, map[string]int, *models.Rend
 	return counts, waiting, q.running
 }
 
+// Idle reports that the GPU has nothing left to do for this gateway: nothing
+// running, nothing waiting, and no external job still in flight.
+//
+// The worker asks after every job, to decide whether the GPU services may hand
+// their VRAM back. External jobs are included even though the worker never runs
+// them: they are this gateway's only visibility into GPU work driven by someone
+// else (a studio render straight to :8021), and telling the services to unload
+// underneath one would buy a reload for memory nobody gained.
+func (q *PriorityQueue) Idle() bool {
+	q.mu.RLock()
+	defer q.mu.RUnlock()
+
+	if q.running != nil || len(q.waiting) > 0 {
+		return false
+	}
+	for _, j := range q.jobs {
+		if j.External && (j.Status == models.StatusQueued || j.Status == models.StatusRunning) {
+			return false
+		}
+	}
+	return true
+}
+
 // Wait blocks until a job finishes or timeout expires.
 func (q *PriorityQueue) Wait(jobID string, timeout time.Duration) *models.RenderJob {
 	q.mu.RLock()

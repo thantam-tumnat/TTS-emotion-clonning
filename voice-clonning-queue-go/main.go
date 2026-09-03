@@ -27,15 +27,19 @@ func getEnv(key, defaultVal string) string {
 func main() {
 	port := getEnv("PORT", "8020")
 	pythonGPUURL := getEnv("PYTHON_GPU_URL", "http://127.0.0.1:8021")
+	// Not a dispatch target: the worker calls this only to release VRAM once the
+	// queue drains, so an unreachable SeedVC worker costs a log line, not a job.
+	seedvcURL := getEnv("SEEDVC_URL", "http://127.0.0.1:8022")
 
 	fmt.Println("================================================================")
 	fmt.Println("🚀 SiangTTS High-Performance Go Fiber Queue Gateway (:8020)")
 	fmt.Printf("👉 Python GPU Backend: %s\n", pythonGPUURL)
+	fmt.Printf("👉 SeedVC worker (VRAM release only): %s\n", seedvcURL)
 	fmt.Println("================================================================")
 
 	// 1. Initialize Priority Queue & Worker
 	pq := queue.NewPriorityQueue()
-	w := worker.NewWorker(pq, pythonGPUURL)
+	w := worker.NewWorker(pq, pythonGPUURL, seedvcURL)
 	w.Start()
 	defer w.Stop()
 	defer pq.Close()

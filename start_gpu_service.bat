@@ -20,9 +20,15 @@ rem handing ~6 GB back to the driver for the SeedVC worker, AI Live Studio, or
 rem whatever else wants the card. "hot" restores the old always-resident
 rem behaviour; use it if a reload turns out to cost more than the memory is worth.
 rem   set "SIANGTTS_IDLE_MODE=hot"
-rem Seconds of quiet before the weights are dropped (default 180). Keep it longer
-rem than one generate-then-convert round trip, or every take pays for a reload.
-rem   set "SIANGTTS_IDLE_TTL=180"
+rem
+rem The normal release is no longer this timer: the Go gateway (:8020) calls
+rem /v2/gpu/release the moment its queue drains, which hands the card back in
+rem seconds. This is the BACKSTOP, for the work the gateway cannot see -- studio
+rem renders straight to :8021, /v2/direct_render calls from anywhere else, voice
+rem registration. Lower than a reload costs (~30 s) and a burst of those pays for
+rem a reload between every take; the 90 s below is the compromise. Raise it back
+rem to 180 if the studio path turns out to reload more than it saves.
+set "SIANGTTS_IDLE_TTL=90"
 rem To take the card back right now, without waiting out the timer:
 rem   curl -X POST http://127.0.0.1:8021/v2/gpu/release
 
