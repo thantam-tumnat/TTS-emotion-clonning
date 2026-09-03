@@ -536,7 +536,15 @@ async def _accept(body: WebhookBody, received: Optional[dict] = None) -> JSONRes
     planned and synthesized in the worker, and any problem is reported via callback.
     Only a trivially-empty prompt is rejected inline (no LLM, no GPU touched here)."""
     queue_id = body.queue_id or str(uuid.uuid4())
-    callback_url = body.callback_url or settings.siangtts_default_callback
+    # Where the finished take gets announced. The caller's value wins;
+    # SIANGTTS_DEFAULT_CALLBACK stands in when it sends none -- and from here a take
+    # announced to the wrong endpoint looks exactly like a delivered one, so which of
+    # the two was used is recorded in `resolved` below and shown on the dashboard.
+    # Stripped like voice_id: a whitespace-only value is a caller that sent nothing,
+    # not a caller nominating " " as its URL.
+    asked_callback = body.callback_url.strip()
+    callback_url = asked_callback or settings.siangtts_default_callback
+    callback_source = "request" if asked_callback else "not sent — SIANGTTS_DEFAULT_CALLBACK"
 
     if not body.prompt.strip():
         return JSONResponse(
@@ -594,6 +602,8 @@ async def _accept(body: WebhookBody, received: Optional[dict] = None) -> JSONRes
             "sex_source": sources["sex_source"],
             "donor_set": donor_set,
             "donor_set_source": sources["donor_set_source"],
+            "callback_url": callback_url or None,
+            "callback_url_source": callback_source,
         },
     )
 

@@ -660,6 +660,10 @@ const dashboardHTML = `<!doctype html>
     .resolved-item.fallback {
       border-color: rgba(245, 158, 11, 0.4); background: rgba(245, 158, 11, 0.07);
     }
+    /* A callback URL is an order of magnitude longer than a voice handle. Capped so
+       it wraps inside its own tile instead of stretching the row and pushing every
+       other resolved field onto a line of its own. */
+    .resolved-item.wide { max-width: 340px; }
     .resolved-key {
       font-size: 10px; text-transform: uppercase; letter-spacing: .06em;
       color: var(--text-dim); font-weight: 700;
@@ -1184,11 +1188,22 @@ const dashboardHTML = `<!doctype html>
           ['sex', resolved.sex || '(none)', resolved.sex_source],
           ['donor_set', resolved.donor_set || '(auto)', resolved.donor_set_source]
         ];
+        // Where the finished take was announced. Worth its own tile rather than
+        // leaving it in the raw JSON: the caller's callback_url is optional, so a
+        // request that omits it is delivered to whatever the studio's .env names --
+        // and an upload that succeeded while the callback went to a dead endpoint
+        // reads as a completed job from every other field on this card.
+        // Only rendered when the studio reported it: rows from before it did would
+        // otherwise all claim '(none)'.
+        if (resolved.callback_url || resolved.callback_url_source) {
+          rows.push(['callback_url', resolved.callback_url || '(none)', resolved.callback_url_source]);
+        }
         out += '<div class="resolved-grid">';
         for (var i = 0; i < rows.length; i++) {
           var src = rows[i][2] || '';
           var isFallback = isSubstituted(src);
-          out += '<div class="resolved-item' + (isFallback ? ' fallback' : '') + '">' +
+          var wide = rows[i][0] === 'callback_url' ? ' wide' : '';
+          out += '<div class="resolved-item' + (isFallback ? ' fallback' : '') + wide + '">' +
             '<div class="resolved-key">' + rows[i][0] + '</div>' +
             '<div class="resolved-val">' + escapeHtml(String(rows[i][1])) + '</div>' +
             (src ? '<div class="resolved-src">from ' + escapeHtml(src) + '</div>' : '') +
