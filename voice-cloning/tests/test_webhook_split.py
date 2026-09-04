@@ -228,6 +228,131 @@ def test_voice_text_is_accepted_as_an_alias_for_ref_text(webhook):
 
 
 # --------------------------------------------------------------------------- #
+# The plain route — timbre without the reference clip's delivery
+# --------------------------------------------------------------------------- #
+
+def post_plain(client, **body):
+    body.setdefault("prompt", "สนใจสินค้าตัวไหน กดที่ตะกร้าได้เลยนะคะ")
+    body.setdefault("voice_id", "demo_female")
+    return client.post("/webhook/live-ai-create-plain", json=body)
+
+
+def test_both_plain_paths_answer_like_the_default_route(webhook):
+    assert post_plain(webhook, queue_id="p0").json() == {
+        "status": "success", "job_id": "p0", "chunks": 1,
+    }
+    assert webhook.post("/live-ai-create-plain",
+                        json={"queue_id": "p1", "prompt": "ทดสอบ"}).json()["status"] == "success"
+
+
+def test_no_transcript_reaches_the_model_and_the_sidecar_is_refused(webhook):
+    """The whole route in one assertion. A transcript — the caller's or a `<clip>.txt`
+    the GPU service would pick up on its own — puts VoxCPM2 in continuation mode,
+    where the clip's emotion rides along with its timbre. Both have to be off."""
+    post_plain(webhook, queue_id="p2")
+    drain(webhook, "p2")
+    voice = webhook.gpu.submissions[-1]["voice"]
+    assert voice["ref_text"] == ""
+    assert voice["allow_sidecar"] is False
+
+
+def test_a_transcript_sent_to_the_plain_route_is_ignored_not_honoured(webhook):
+    """Honouring it would make this the default route under a different path."""
+    post_plain(webhook, queue_id="p3", ref_text="ข้อความอ้างอิงของผู้เรียก",
+               voice_text="สคริปต์อ้างอิง")
+    job = drain(webhook, "p3")
+    assert webhook.gpu.submissions[-1]["voice"]["ref_text"] == ""
+    # ...and the operator can see it was received and dropped on purpose.
+    resolved = webhook.gpu.submissions[-1]["request"]["resolved"]
+    assert resolved["ref_text"] is None
+    assert "ignored" in resolved["ref_text_source"]
+    assert job["mode"] == "plain"
+
+
+def test_style_tags_do_not_switch_the_plain_route_into_tones_mode(webhook):
+    post_plain(webhook, queue_id="p4", prompt="[ตื่นเต้น] สนใจสินค้าตัวไหนคะ")
+    drain(webhook, "p4")
+    assert webhook.gpu.submissions[-1]["lora"] == "shipped"
+
+
+def test_plain_takes_are_labelled_apart_on_the_shared_dashboard(webhook):
+    post_plain(webhook, queue_id="p5")
+    drain(webhook, "p5")
+    assert webhook.gpu.submissions[-1]["client"] == "webhook-plain"
+    assert webhook.gpu.submissions[-1]["lane"] == "batch"
+
+
+def test_the_default_route_is_untouched_by_the_new_one(webhook):
+    """Same fixture, both routes: the plain one must not leak into the default's
+    transcript rule, its LoRA mode, or its dashboard label."""
+    from src import webhook as webhook_mod
+
+    post_plain(webhook, queue_id="p6")
+    drain(webhook, "p6")
+    post(webhook, queue_id="p7")
+    job = drain(webhook, "p7")
+    sub = webhook.gpu.submissions[-1]
+    assert sub["voice"]["ref_text"] == webhook_mod.DEFAULT_REF_TEXT
+    assert sub["voice"]["allow_sidecar"] is True
+    assert sub["client"] == "webhook"
+    assert job["mode"] == "default"
+
+
+def test_plain_delivery_uses_its_own_endpoints(webhook, monkeypatch):
+    from src import webhook as webhook_mod
+
+    monkeypatch.setattr(webhook_mod, "PLAIN_UPLOAD_URL", "https://plain.test/upload")
+    monkeypatch.setattr(webhook_mod, "PLAIN_UPLOAD_TOKEN", "plain-token")
+    monkeypatch.setattr(webhook_mod, "PLAIN_CALLBACK", "https://plain.test/callback")
+
+    seen = {}
+
+    async def spy_upload(path, **kw):
+        seen.update(kw)
+        return f"https://cdn.test/{path.name}"
+
+    monkeypatch.setattr(pipeline, "upload", spy_upload)
+
+    post_plain(webhook, queue_id="p8")
+    drain(webhook, "p8")
+    assert seen == {"url": "https://plain.test/upload", "token": "plain-token"}
+    assert webhook.callbacks[-1]["url"] == "https://plain.test/callback"
+
+
+def test_a_caller_supplied_callback_still_wins_on_the_plain_route(webhook, monkeypatch):
+    from src import webhook as webhook_mod
+
+    monkeypatch.setattr(webhook_mod, "PLAIN_CALLBACK", "https://plain.test/callback")
+    post_plain(webhook, queue_id="p9", callback_url="https://caller.test/hook")
+    drain(webhook, "p9")
+    assert webhook.callbacks[-1]["url"] == "https://caller.test/hook"
+
+
+def test_unset_plain_env_falls_back_to_the_default_routes_delivery(webhook, monkeypatch):
+    """Blank means "same as the default route", not "nowhere" — so a half-configured
+    deployment still delivers instead of silently dropping every plain take."""
+    from src import webhook as webhook_mod
+
+    monkeypatch.setattr(webhook_mod, "PLAIN_UPLOAD_URL", "")
+    monkeypatch.setattr(webhook_mod, "PLAIN_UPLOAD_TOKEN", "")
+    monkeypatch.setattr(webhook_mod, "PLAIN_CALLBACK", "")
+
+    seen = {}
+
+    async def spy_upload(path, **kw):
+        seen.update(kw)
+        return f"https://cdn.test/{path.name}"
+
+    monkeypatch.setattr(pipeline, "upload", spy_upload)
+
+    post_plain(webhook, queue_id="pa")
+    drain(webhook, "pa")
+    # None lets pipeline.upload fall through to SIANGTTS_UPLOAD_URL / _TOKEN.
+    assert seen == {"url": None, "token": None}
+    assert webhook.callbacks[-1]["url"] == webhook_mod.DEFAULT_CALLBACK
+
+
+# --------------------------------------------------------------------------- #
 # When the engine misbehaves
 # --------------------------------------------------------------------------- #
 

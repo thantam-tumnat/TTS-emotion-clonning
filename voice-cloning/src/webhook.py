@@ -36,8 +36,30 @@ Config (env):
     SIANGTTS_DEFAULT_CALLBACK
     SIANGTTS_KEEP_WORK      "1" keeps job scratch dirs for debugging
 
+    Delivery for the plain route only (see below). Each falls back to the matching
+    setting above when unset, so leaving all three blank sends plain takes exactly
+    where the default route sends its own:
+    SIANGTTS_PLAIN_UPLOAD_URL
+    SIANGTTS_PLAIN_UPLOAD_TOKEN
+    SIANGTTS_PLAIN_CALLBACK
+
     Model settings (SIANGTTS_BASE_MODEL / _ADAPTER / _DEVICE / _CACHE_DIR) moved to
     the GPU service. Setting them here does nothing.
+
+Routes:
+    POST /webhook/live-ai-create-new     the n8n contract, unchanged
+    POST /live-ai-create-new             bare alias
+    POST /webhook/live-ai-create-plain   timbre-only clone, no emotion, no ref_text
+    POST /live-ai-create-plain           bare alias
+
+The plain route exists because a transcript is not a neutral input to VoxCPM2: give
+it one and the model runs in *continuation* mode, which reproduces the reference
+clip's delivery — its emotion — along with its timbre. Withhold it and the clip is
+read as a pure timbre reference, leaving prosody free. The default route always has
+a transcript (the caller's, or DEFAULT_REF_TEXT standing in), so it always clones
+delivery too. The plain route sends none and ignores any the caller supplies, which
+is the same knob as "no emotion" — one decision, not two. Body shape, response,
+queue, merge and callback are identical, so a caller switches by changing the URL.
 """
 
 from __future__ import annotations
@@ -90,6 +112,15 @@ GUIDANCE = float(os.environ.get("SIANGTTS_GUIDANCE", "2"))         # n8n: guidan
 # stopping a long-lived process from growing without bound.
 MAX_HISTORY = int(os.environ.get("SIANGTTS_MAX_HISTORY", "500"))
 
+# Delivery for the plain route. Separate from the default route's on purpose: the
+# two feed different consumers, and a take announced to the wrong endpoint looks
+# exactly like a delivered one. Blank means "same as the default route" rather than
+# "nowhere" -- resolved per job (see _accept) so the fallback is visible on the
+# dashboard instead of being an invisible module-load-time decision.
+PLAIN_UPLOAD_URL = os.environ.get("SIANGTTS_PLAIN_UPLOAD_URL", "").strip()
+PLAIN_UPLOAD_TOKEN = os.environ.get("SIANGTTS_PLAIN_UPLOAD_TOKEN", "").strip()
+PLAIN_CALLBACK = os.environ.get("SIANGTTS_PLAIN_CALLBACK", "").strip()
+
 
 # ---------------------------------------------------------------------------
 # Request / job model
@@ -126,6 +157,13 @@ class Job:
     # shape the :8013 studio sends so both services' cards read the same.
     request: dict = field(default_factory=dict)
     resolved: dict = field(default_factory=dict)
+    # Timbre-only take: no transcript reaches the model, so VoxCPM2 stays in
+    # reference mode and clones the voice without the reference clip's delivery.
+    plain: bool = False
+    # Where this job's audio goes, resolved at accept time. None = the module
+    # defaults, which is what every job on the default route uses.
+    upload_url: str | None = None
+    upload_token: str | None = None
     status: str = "queued"              # queued | running | completed | failed
     error: str | None = None
     file_url: str | None = None
@@ -151,6 +189,7 @@ class Job:
             "voice_id": self.voice_id,
             "prompt": self.prompt,
             "speed": self.speed,
+            "mode": "plain" if self.plain else "default",
             "callback_url": self.callback_url,
             "progress": f"{self.done}/{len(self.chunks)}",
             "chunks_total": len(self.chunks),
@@ -239,8 +278,20 @@ async def _run_job(job: Job) -> None:
         work.mkdir(parents=True, exist_ok=True)
 
         has_style_tags = any(re.match(r"^\s*[\[(]", ch.text) for ch in job.chunks)
-        use_ref_text = "" if has_style_tags else job.ref_text
-        use_sidecar = (job.ref_text == DEFAULT_REF_TEXT) and not has_style_tags
+        if job.plain:
+            # Nothing may reach the model as a transcript — not the caller's ref_text,
+            # not a `<clip>.txt` sidecar the GPU service would otherwise pick up. Either
+            # one puts VoxCPM2 back in continuation mode and the clip's delivery comes
+            # with the timbre, which is the single thing this route exists to avoid. So
+            # the sidecar is refused explicitly rather than left to the default rule.
+            use_ref_text = ""
+            use_sidecar = False
+            lora_mode = "shipped"
+        else:
+            use_ref_text = "" if has_style_tags else job.ref_text
+            use_sidecar = (job.ref_text == DEFAULT_REF_TEXT) and not has_style_tags
+            # Use 'tones' mode when emotion tags are present, otherwise shipped strength.
+            lora_mode = "tones" if has_style_tags else "shipped"
 
         # The GPU service writes the chunk WAVs straight into this job's scratch dir,
         # under the same `<queue_id>_NNN.wav` names the in-process version produced —
@@ -264,15 +315,18 @@ async def _run_job(job: Job) -> None:
             },
             "cfg_value": GUIDANCE,
             "timesteps": NUM_STEP,
-            # Use 'tones' mode when emotion tags are present, otherwise shipped strength.
-            "lora": "tones" if has_style_tags else "shipped",
+            "lora": lora_mode,
             "output": {
                 "mode": "files",
                 "job_dir": job.queue_id,
                 "names": [ch.filename for ch in job.chunks],
             },
             "lane": "batch",
-            "client": "webhook",
+            # Distinct client so the shared dashboard can tell a plain take from a
+            # default one without opening the request panel — they differ only in
+            # whether a transcript was sent, which is invisible in the audio's
+            # metadata and audible only to someone who knows the reference clip.
+            "client": "webhook-plain" if job.plain else "webhook",
         })
         job.gpu_job_id = submitted["job_id"]
         job.gpu_position = submitted.get("position")
@@ -306,7 +360,9 @@ async def _run_job(job: Job) -> None:
         )
         print(f"[{job.queue_id}] merged -> {merged.resolve()} ({size_kb} KB)  [{disp_action}]")
 
-        job.file_url = await pipeline.upload(merged)
+        job.file_url = await pipeline.upload(
+            merged, url=job.upload_url, token=job.upload_token
+        )
         job.status = "completed"
         await pipeline.post_callback(
             job.callback_url,
@@ -349,9 +405,17 @@ async def _run_job(job: Job) -> None:
 # Endpoints
 # ---------------------------------------------------------------------------
 
-async def _accept(body: WebhookBody, received: dict | None = None) -> JSONResponse:
+async def _accept(
+    body: WebhookBody, received: dict | None = None, *, plain: bool = False
+) -> JSONResponse:
     """Validate + enqueue. Text prep runs here, not in the worker, so a bad
-    script is rejected in the HTTP response instead of only via callback."""
+    script is rejected in the HTTP response instead of only via callback.
+
+    ``plain`` selects the timbre-only route: no transcript reaches the model, and
+    delivery goes to the SIANGTTS_PLAIN_* endpoints. Everything else — chunking,
+    the queue, the merge, the callback shape — is identical, which is the point:
+    the two routes differ in what they send VoxCPM2, not in how a caller uses them.
+    """
     queue_id = body.queue_id or str(uuid.uuid4())
 
     # Each of these can be a default the caller never sent, and the resulting take
@@ -363,12 +427,38 @@ async def _accept(body: WebhookBody, received: dict | None = None) -> JSONRespon
     voice_source = "request" if asked_voice else f"not sent — default {DEFAULT_VOICE}"
 
     asked_callback = body.callback_url.strip()
-    callback_url = asked_callback or DEFAULT_CALLBACK
-    callback_source = "request" if asked_callback else "not sent — SIANGTTS_DEFAULT_CALLBACK"
+    if plain:
+        fallback_callback = PLAIN_CALLBACK or DEFAULT_CALLBACK
+        callback_env = (
+            "SIANGTTS_PLAIN_CALLBACK" if PLAIN_CALLBACK
+            else "SIANGTTS_PLAIN_CALLBACK unset — SIANGTTS_DEFAULT_CALLBACK"
+        )
+    else:
+        fallback_callback = DEFAULT_CALLBACK
+        callback_env = "SIANGTTS_DEFAULT_CALLBACK"
+    callback_url = asked_callback or fallback_callback
+    callback_source = "request" if asked_callback else f"not sent — {callback_env}"
 
     asked_ref = (body.ref_text or body.voice_text).strip()
-    ref_text = asked_ref or DEFAULT_REF_TEXT
-    ref_source = "request" if asked_ref else "not sent — default reference script"
+    if plain:
+        # Not "no default" but "no transcript at all": a ref_text the caller did send
+        # is dropped here rather than honoured, because honouring it would turn this
+        # into the default route under a different path — same audio, same emotion
+        # cloned off the clip, and nothing to show why. Say so in `resolved` so an
+        # operator can see the field was received and deliberately ignored.
+        ref_text = ""
+        ref_source = (
+            "ignored — plain route sends no transcript (reference mode)" if asked_ref
+            else "not sent — plain route sends no transcript (reference mode)"
+        )
+    else:
+        ref_text = asked_ref or DEFAULT_REF_TEXT
+        ref_source = "request" if asked_ref else "not sent — default reference script"
+
+    # Blank env falls through to the module defaults inside pipeline.upload, so None
+    # here means "wherever the default route uploads".
+    upload_url = (PLAIN_UPLOAD_URL or None) if plain else None
+    upload_token = (PLAIN_UPLOAD_TOKEN or None) if plain else None
 
     prompt = await asyncio.to_thread(prepare_prompt, body.prompt, body.country_code)
     if not prompt:
@@ -388,6 +478,9 @@ async def _accept(body: WebhookBody, received: dict | None = None) -> JSONRespon
         callback_url=callback_url,
         chunks=chunks,
         prompt=body.prompt,
+        plain=plain,
+        upload_url=upload_url,
+        upload_token=upload_token,
         # The body exactly as posted (raw when available, so a field n8n misspelled
         # still shows), plus what we resolved it into for the dashboard's tiles.
         request=received if received is not None else body.model_dump(),
@@ -398,6 +491,16 @@ async def _accept(body: WebhookBody, received: dict | None = None) -> JSONRespon
             "ref_text_source": ref_source,
             "callback_url": callback_url or None,
             "callback_url_source": callback_source,
+            # Which route took the request, and where its audio goes. Both are
+            # invisible in the take itself: a plain and a default job in the same
+            # voice produce cards that are otherwise identical.
+            "mode": "plain" if plain else "default",
+            "upload_url": upload_url or pipeline.UPLOAD_URL or None,
+            "upload_url_source": (
+                "SIANGTTS_PLAIN_UPLOAD_URL" if upload_url
+                else ("SIANGTTS_PLAIN_UPLOAD_URL unset — SIANGTTS_UPLOAD_URL" if plain
+                      else "SIANGTTS_UPLOAD_URL")
+            ),
         },
     )
     jobs: dict[str, Job] = _state["jobs"]
@@ -412,7 +515,10 @@ async def _accept(body: WebhookBody, received: dict | None = None) -> JSONRespon
                 del jobs[jid]
 
     await _state["queue"].put(job)
-    print(f"[{queue_id}] queued — {len(chunks)} chunk(s), voice={job.voice_id}")
+    print(
+        f"[{queue_id}] queued — {len(chunks)} chunk(s), voice={job.voice_id}, "
+        f"mode={'plain' if plain else 'default'}"
+    )
     return JSONResponse({"status": "success", "job_id": job.job_id, "chunks": len(chunks)})
 
 
@@ -440,6 +546,23 @@ async def webhook(body: WebhookBody, request: Request) -> JSONResponse:
 @app.post("/live-ai-create-new")
 async def webhook_bare(body: WebhookBody, request: Request) -> JSONResponse:
     return await _accept(body, await _received_body(request))
+
+
+@app.post("/webhook/live-ai-create-plain")
+async def webhook_plain(body: WebhookBody, request: Request) -> JSONResponse:
+    """Same contract, timbre-only clone: no transcript, no emotion off the clip.
+
+    `ref_text` / `voice_text` are accepted and ignored so the existing n8n payload
+    validates unchanged against this path — a caller switches routes by changing the
+    URL alone. Delivery uses SIANGTTS_PLAIN_UPLOAD_URL / _TOKEN / SIANGTTS_PLAIN_CALLBACK.
+    """
+    return await _accept(body, await _received_body(request), plain=True)
+
+
+@app.post("/live-ai-create-plain")
+async def webhook_plain_bare(body: WebhookBody, request: Request) -> JSONResponse:
+    """Bare alias, matching the pair the default route already exposes."""
+    return await _accept(body, await _received_body(request), plain=True)
 
 
 def _positions() -> dict[str, int]:
@@ -512,6 +635,17 @@ async def health() -> JSONResponse:
         "upload_token": bool(
             os.environ.get("SIANGTTS_UPLOAD_TOKEN", "").strip() or pipeline.UPLOAD_TOKEN
         ),
+        # Where the plain route delivers, and whether each leg is its own endpoint or
+        # the default route's. A misconfigured plain route is otherwise only visible
+        # once a take has already been announced to the wrong consumer.
+        "plain_route": {
+            "upload_url": PLAIN_UPLOAD_URL or None,
+            "upload_token": bool(PLAIN_UPLOAD_TOKEN),
+            "callback_url": PLAIN_CALLBACK or None,
+            "falls_back_to_default": not (
+                PLAIN_UPLOAD_URL or PLAIN_UPLOAD_TOKEN or PLAIN_CALLBACK
+            ),
+        },
         "gpu": {
             "url": GPU_URL,
             "reachable": remote is not None,
