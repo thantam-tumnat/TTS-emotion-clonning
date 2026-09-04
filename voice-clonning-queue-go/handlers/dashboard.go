@@ -1183,17 +1183,31 @@ const dashboardHTML = `<!doctype html>
       var out = '<div class="req-section">Request received from the caller</div>';
 
       if (resolved) {
+        // voice_id is the one field every caller has; the rest are rendered only when
+        // the upstream actually reported them, so a plain-TTS webhook (:8010, no
+        // SeedVC) is not saddled with empty sex/donor_set tiles, and a studio take
+        // (:8013, no ref_text) is not saddled with an empty ref_text one.
         var rows = [
-          ['voice_id', resolved.voice_id || '(none)', resolved.voice_id_source],
-          ['sex', resolved.sex || '(none)', resolved.sex_source],
-          ['donor_set', resolved.donor_set || '(auto)', resolved.donor_set_source]
+          ['voice_id', resolved.voice_id || '(none)', resolved.voice_id_source]
         ];
+        if (resolved.sex || resolved.sex_source) {
+          rows.push(['sex', resolved.sex || '(none)', resolved.sex_source]);
+        }
+        if (resolved.donor_set || resolved.donor_set_source) {
+          rows.push(['donor_set', resolved.donor_set || '(auto)', resolved.donor_set_source]);
+        }
+        // The reference script the clone is conditioned on. Optional to the caller and
+        // silently defaulted when omitted, so a take cloned against the house script
+        // otherwise looks exactly like one cloned against the caller's own.
+        if (resolved.ref_text || resolved.ref_text_source) {
+          rows.push(['ref_text', resolved.ref_text || '(none)', resolved.ref_text_source]);
+        }
         // Where the finished take was announced. Worth its own tile rather than
         // leaving it in the raw JSON: the caller's callback_url is optional, so a
         // request that omits it is delivered to whatever the studio's .env names --
         // and an upload that succeeded while the callback went to a dead endpoint
         // reads as a completed job from every other field on this card.
-        // Only rendered when the studio reported it: rows from before it did would
+        // Only rendered when the upstream reported it: rows from before it did would
         // otherwise all claim '(none)'.
         if (resolved.callback_url || resolved.callback_url_source) {
           rows.push(['callback_url', resolved.callback_url || '(none)', resolved.callback_url_source]);
@@ -1202,7 +1216,7 @@ const dashboardHTML = `<!doctype html>
         for (var i = 0; i < rows.length; i++) {
           var src = rows[i][2] || '';
           var isFallback = isSubstituted(src);
-          var wide = rows[i][0] === 'callback_url' ? ' wide' : '';
+          var wide = (rows[i][0] === 'callback_url' || rows[i][0] === 'ref_text') ? ' wide' : '';
           out += '<div class="resolved-item' + (isFallback ? ' fallback' : '') + wide + '">' +
             '<div class="resolved-key">' + rows[i][0] + '</div>' +
             '<div class="resolved-val">' + escapeHtml(String(rows[i][1])) + '</div>' +

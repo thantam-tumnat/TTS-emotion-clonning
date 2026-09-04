@@ -52,7 +52,7 @@ from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.responses import FileResponse, HTMLResponse, JSONResponse
 from pydantic import BaseModel
 
@@ -120,6 +120,12 @@ class Job:
     callback_url: str
     chunks: list[Chunk]
     prompt: str = ""
+    # The caller's JSON body verbatim, and what this service resolved it into. Kept
+    # only for the queue dashboard (:8020), which is the one place a silent default —
+    # an omitted voice_id, callback_url or ref_text — is visible at all. Mirrors the
+    # shape the :8013 studio sends so both services' cards read the same.
+    request: dict = field(default_factory=dict)
+    resolved: dict = field(default_factory=dict)
     status: str = "queued"              # queued | running | completed | failed
     error: str | None = None
     file_url: str | None = None
@@ -240,6 +246,16 @@ async def _run_job(job: Job) -> None:
         # under the same `<queue_id>_NNN.wav` names the in-process version produced —
         # which is what keeps /audio/{queue_id} and the merge unchanged.
         submitted = await gpu.submit_render({
+            # Give this request the same card the :8013 studio's do on the shared Go
+            # queue dashboard (:8020): `job_id` keys the card by queue_id so it is
+            # identifiable, `raw_prompt` fills the prompt peek + panel, and `request`
+            # (the caller's body plus what we resolved it into) drives the "Request
+            # received" tiles and their fallback badges. The Go worker forwards only
+            # raw_prompt (and job_id) to the GPU service, which accepts them; `request`
+            # is display-only and never leaves the queue, so this is purely additive.
+            "job_id": job.queue_id,
+            "raw_prompt": job.prompt,
+            "request": {"received": job.request, "resolved": job.resolved},
             "chunks": [ch.text for ch in job.chunks],
             "voice": {
                 "speaker_id": job.voice_id,
@@ -333,11 +349,26 @@ async def _run_job(job: Job) -> None:
 # Endpoints
 # ---------------------------------------------------------------------------
 
-async def _accept(body: WebhookBody) -> JSONResponse:
+async def _accept(body: WebhookBody, received: dict | None = None) -> JSONResponse:
     """Validate + enqueue. Text prep runs here, not in the worker, so a bad
     script is rejected in the HTTP response instead of only via callback."""
     queue_id = body.queue_id or str(uuid.uuid4())
-    callback_url = body.callback_url or DEFAULT_CALLBACK
+
+    # Each of these can be a default the caller never sent, and the resulting take
+    # sounds like a normal one either way. Record which is which so the queue
+    # dashboard can flag the silent substitution — the same `_source` markers the
+    # :8013 studio ships, so both services' cards badge fallbacks identically.
+    asked_voice = body.voice_id.strip()
+    voice_id = asked_voice or DEFAULT_VOICE
+    voice_source = "request" if asked_voice else f"not sent — default {DEFAULT_VOICE}"
+
+    asked_callback = body.callback_url.strip()
+    callback_url = asked_callback or DEFAULT_CALLBACK
+    callback_source = "request" if asked_callback else "not sent — SIANGTTS_DEFAULT_CALLBACK"
+
+    asked_ref = (body.ref_text or body.voice_text).strip()
+    ref_text = asked_ref or DEFAULT_REF_TEXT
+    ref_source = "request" if asked_ref else "not sent — default reference script"
 
     prompt = await asyncio.to_thread(prepare_prompt, body.prompt, body.country_code)
     if not prompt:
@@ -351,12 +382,23 @@ async def _accept(body: WebhookBody) -> JSONResponse:
     job = Job(
         job_id=body.job_id or queue_id,
         queue_id=queue_id,
-        voice_id=body.voice_id.strip() or DEFAULT_VOICE,
-        ref_text=(body.ref_text or body.voice_text).strip() or DEFAULT_REF_TEXT,
+        voice_id=voice_id,
+        ref_text=ref_text,
         speed=body.audio_speed or 1.0,
         callback_url=callback_url,
         chunks=chunks,
         prompt=body.prompt,
+        # The body exactly as posted (raw when available, so a field n8n misspelled
+        # still shows), plus what we resolved it into for the dashboard's tiles.
+        request=received if received is not None else body.model_dump(),
+        resolved={
+            "voice_id": voice_id or None,
+            "voice_id_source": voice_source,
+            "ref_text": ref_text or None,
+            "ref_text_source": ref_source,
+            "callback_url": callback_url or None,
+            "callback_url_source": callback_source,
+        },
     )
     jobs: dict[str, Job] = _state["jobs"]
     jobs[job.job_id] = job
@@ -374,16 +416,30 @@ async def _accept(body: WebhookBody) -> JSONResponse:
     return JSONResponse({"status": "success", "job_id": job.job_id, "chunks": len(chunks)})
 
 
+async def _received_body(request: Request) -> dict | None:
+    """The caller's JSON exactly as posted, for the dashboard.
+
+    The raw body rather than the parsed model on purpose: a field n8n spelled wrong
+    is dropped by the model and is precisely what an operator staring at a take in
+    the wrong voice needs to see. None when the body is not a JSON object, in which
+    case the parsed model stands in (see _accept)."""
+    try:
+        data = await request.json()
+    except Exception:                                                # noqa: BLE001
+        return None
+    return data if isinstance(data, dict) else None
+
+
 @app.post("/webhook/live-ai-create-new")
-async def webhook(body: WebhookBody) -> JSONResponse:
-    return await _accept(body)
+async def webhook(body: WebhookBody, request: Request) -> JSONResponse:
+    return await _accept(body, await _received_body(request))
 
 
 # The n8n webhook lived at /webhook/<path>; keep the bare path too so callers
 # that were pointed straight at the node still resolve.
 @app.post("/live-ai-create-new")
-async def webhook_bare(body: WebhookBody) -> JSONResponse:
-    return await _accept(body)
+async def webhook_bare(body: WebhookBody, request: Request) -> JSONResponse:
+    return await _accept(body, await _received_body(request))
 
 
 def _positions() -> dict[str, int]:
