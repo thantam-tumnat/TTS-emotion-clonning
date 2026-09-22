@@ -179,8 +179,11 @@ class Job:
         waited = (self.started or now) - self.created
         ran = ((self.finished or now) - self.started) if self.started else None
         local_mp3 = pipeline.WORK_ROOT / self.queue_id / f"{self.queue_id}.mp3"
-        local_wav = pipeline.WORK_ROOT / self.queue_id / f"{self.queue_id}_000.wav"
-        has_audio = local_mp3.exists() or local_wav.exists()
+        # Chunk WAVs are written while the GPU job is still running.  They are
+        # not a playable result: exposing _000.wav here makes the dashboard
+        # offer only the first chunk for a long script.  The only local audio
+        # that is safe to expose is the merged MP3 created after every chunk.
+        has_audio = local_mp3.exists()
         audio_src = self.file_url or (f"/audio/{self.queue_id}" if has_audio else None)
         return {
             "job_id": self.job_id,
@@ -694,10 +697,9 @@ async def get_audio(queue_id: str):
     mp3_path = pipeline.WORK_ROOT / queue_id / f"{queue_id}.mp3"
     if mp3_path.exists():
         return FileResponse(mp3_path, media_type="audio/mpeg", filename=f"{queue_id}.mp3")
-    wav_path = pipeline.WORK_ROOT / queue_id / f"{queue_id}_000.wav"
-    if wav_path.exists():
-        return FileResponse(wav_path, media_type="audio/wav", filename=f"{queue_id}.wav")
-    return JSONResponse({"error": "audio not found in local scratch"}, status_code=404)
+    return JSONResponse(
+        {"error": "merged audio not ready in local scratch"}, status_code=404
+    )
 
 
 # ---------------------------------------------------------------------------

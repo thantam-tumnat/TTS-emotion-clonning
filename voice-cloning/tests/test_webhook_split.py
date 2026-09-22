@@ -151,6 +151,18 @@ def test_a_delivered_job_uploads_and_calls_back(webhook):
     assert webhook.callbacks[-1]["error"] is None
 
 
+def test_audio_endpoint_never_serves_the_first_chunk_as_the_result(webhook):
+    partial = webhook.work / "partial"
+    partial.mkdir(parents=True)
+    tone = 0.2 * np.sin(2 * np.pi * 220 * np.linspace(0, 0.5, 24000))
+    sf.write(str(partial / "partial_000.wav"), tone.astype("float32"), 48000)
+
+    response = webhook.get("/audio/partial")
+
+    assert response.status_code == 404
+    assert response.json()["error"] == "merged audio not ready in local scratch"
+
+
 def test_the_dashboard_still_gets_every_field_it_reads(webhook):
     post(webhook, queue_id="j4")
     job = drain(webhook, "j4")
