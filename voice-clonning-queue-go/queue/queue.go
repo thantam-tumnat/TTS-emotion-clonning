@@ -63,6 +63,15 @@ func (q *PriorityQueue) logEvent(level, event string, job *models.RenderJob, mes
 	_ = q.logger.Write(level, event, job.JobID, message, fields, true)
 }
 
+// LogRuntime mirrors a normal worker/console line into the durable log without
+// attaching it to a job. It is intentionally best-effort for diagnostic output.
+func (q *PriorityQueue) LogRuntime(level, message string, fields map[string]interface{}) {
+	if q.logger == nil {
+		return
+	}
+	_ = q.logger.Write(level, "runtime", "", message, fields, false)
+}
+
 // SetIdleHook registers a callback fired whenever the queue goes idle on a path the
 // worker loop does not observe (a terminal PATCH, a cancel, or the stale-job sweep).
 // The callback runs with q.mu released and must be safe to call spuriously. Set once

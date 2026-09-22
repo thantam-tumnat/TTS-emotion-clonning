@@ -734,11 +734,24 @@ const dashboardHTML = `<!doctype html>
       background:var(--bg-base); color:var(--text-main); border:1px solid var(--border-subtle);
       border-radius:7px; padding:7px 9px; font:12px 'JetBrains Mono', monospace;
     }
-    .log-list { max-height:420px; overflow:auto; padding:0 15px 15px; }
+    .log-list { max-height:620px; overflow:auto; padding:0 15px 15px; }
     .log-row { border-top:1px solid var(--border-subtle); padding:9px 0; font:12px 'JetBrains Mono', monospace; }
     .log-meta { color:var(--text-dim); margin-bottom:3px; }
     .log-msg { white-space:pre-wrap; word-break:break-word; color:var(--text-muted); }
     .log-error { color:#fca5a5; } .log-warn { color:#fcd34d; }
+    .durable-card { background:var(--bg-base); border:1px solid var(--border-subtle); border-radius:10px; margin:10px 0; overflow:hidden; }
+    .durable-card-head { display:flex; justify-content:space-between; gap:12px; align-items:center; padding:11px 13px; border-bottom:1px solid var(--border-subtle); }
+    .durable-job { font:600 12px 'JetBrains Mono', monospace; color:var(--text-main); word-break:break-all; }
+    .durable-summary { color:var(--text-dim); font-size:11px; white-space:nowrap; }
+    .durable-timeline { padding:0 13px 5px; }
+    .durable-event { display:grid; grid-template-columns:145px 92px 1fr; gap:9px; border-bottom:1px solid rgba(31,41,61,.7); padding:8px 0; font:11px 'JetBrains Mono', monospace; }
+    .durable-event:last-child { border-bottom:0; }
+    .durable-time { color:var(--text-dim); }
+    .durable-kind { color:var(--accent-cyan); font-weight:700; }
+    .durable-message { color:var(--text-muted); white-space:pre-wrap; word-break:break-word; }
+    .durable-event.error .durable-kind, .durable-event.error .durable-message { color:#fca5a5; }
+    .durable-event.warn .durable-kind, .durable-event.warn .durable-message { color:#fcd34d; }
+    .durable-empty { text-align:center; color:var(--text-dim); padding:20px; }
   </style>
 </head>
 <body>
@@ -822,16 +835,21 @@ const dashboardHTML = `<!doctype html>
   <div class="table-container" style="margin-top:24px;">
     <div class="table-header">
       <div class="table-title">📜 Durable Logs
-        <span style="color:var(--text-dim);font-weight:500;font-size:12px;">— JSONL on disk</span>
+        <span style="color:var(--text-dim);font-weight:500;font-size:12px;">— job timeline จาก JSONL บน disk</span>
       </div>
       <div class="log-toolbar">
-        <input type="date" id="log-date">
-        <input type="text" id="log-search" placeholder="ค้นหา job /ข้อความ">
-        <select id="log-level"><option value="">ทุกระดับ</option><option>ERROR</option><option>WARN</option><option>INFO</option></select>
-        <button class="btn btn-detail" onclick="updateLogs()">↻ Refresh</button>
+        <input type="date" id="log-date" onchange="resetLogPage(); updateLogs()">
+        <input type="text" id="log-search" placeholder="ค้นหา job /ข้อความ" onkeydown="if(event.key==='Enter'){resetLogPage();updateLogs()}">
+        <select id="log-level" onchange="resetLogPage(); updateLogs()"><option value="">ทุกระดับ</option><option>ERROR</option><option>WARN</option><option>INFO</option></select>
+        <button class="btn btn-detail" onclick="resetLogPage(); updateLogs()">↻ Refresh</button>
       </div>
     </div>
     <div class="log-list" id="log-list"><div style="text-align:center;color:var(--text-dim);padding:20px;">กำลังโหลด log...</div></div>
+    <div style="display:flex;align-items:center;justify-content:center;gap:10px;padding:0 15px 15px;">
+      <button class="btn btn-detail" id="log-newer" onclick="moveLogPage('newer')">← ใหม่กว่า</button>
+      <span id="log-page-status" style="font-size:12px;color:var(--text-dim);">หน้าล่าสุด</span>
+      <button class="btn btn-detail" id="log-older" onclick="moveLogPage('older')">โหลดเก่าเพิ่ม 10 รายการ</button>
+    </div>
   </div>
 
   <!-- Details Modal -->
@@ -869,6 +887,21 @@ const dashboardHTML = `<!doctype html>
     var currentJobsData = [];
     var currentRunningJob = null;
     var activeAudioJobId = null;
+    var logPage = { request: 'latest', cursor: '', oldest: '', newest: '', records: [], hasOlder: false, hasNewer: false };
+
+    function resetLogPage() {
+      logPage = { request: 'latest', cursor: '', oldest: '', newest: '', records: [], hasOlder: false, hasNewer: false };
+    }
+
+    function moveLogPage(direction) {
+      if (direction === 'older' && !logPage.hasOlder) return;
+      if (direction === 'newer' && !logPage.hasNewer) return;
+      var host = document.getElementById('log-list');
+      if (host) host.style.opacity = '0.55';
+      logPage.request = direction;
+      logPage.cursor = direction === 'older' ? logPage.oldest : logPage.newest;
+      updateLogs();
+    }
 
     function localDateValue() {
       var d = new Date();
@@ -954,26 +987,81 @@ const dashboardHTML = `<!doctype html>
       var search = document.getElementById('log-search');
       var level = document.getElementById('log-level');
       if (!date.value) date.value = localDateValue();
-      var params = new URLSearchParams({date: date.value, limit: '150'});
+      var params = new URLSearchParams({date: date.value, limit: '10', exclude_http: '1'});
       if (search.value.trim()) params.set('q', search.value.trim());
       if (level.value) params.set('level', level.value);
+      if (logPage.request === 'older') params.set('before', logPage.cursor);
+      if (logPage.request === 'newer') params.set('after', logPage.cursor);
       var host = document.getElementById('log-list');
       try {
         var res = await fetch('/api/logs?' + params.toString());
         var data = await res.json();
         if (!res.ok) throw new Error(data.error || 'load failed');
-        if (!data.logs || data.logs.length === 0) {
-          host.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:20px;">ยังไม่มี log ในวันที่เลือก</div>';
+        var pageLogs = data.logs || [];
+        if (logPage.request === 'older') {
+          logPage.records = logPage.records.concat(pageLogs);
+        } else if (logPage.request === 'newer') {
+          logPage.records = pageLogs.concat(logPage.records);
+        } else {
+          logPage.records = pageLogs;
+        }
+        logPage.hasOlder = !!data.has_older;
+        logPage.hasNewer = !!data.has_newer;
+        logPage.request = 'pinned';
+        if (logPage.records.length) {
+          logPage.newest = logPage.records[0].time || '';
+          logPage.oldest = logPage.records[logPage.records.length - 1].time || '';
+        }
+        var newerButton = document.getElementById('log-newer');
+        var olderButton = document.getElementById('log-older');
+        var pageStatus = document.getElementById('log-page-status');
+        if (newerButton) newerButton.disabled = !logPage.hasNewer;
+        if (olderButton) olderButton.disabled = !logPage.hasOlder;
+        if (pageStatus) pageStatus.innerText = 'แสดง log 1-' + logPage.records.length + (logPage.hasOlder ? ' · ยังมีต่อ' : ' · ครบแล้ว');
+        if (host) host.style.opacity = '1';
+        if (logPage.records.length === 0) {
+          host.innerHTML = '<div class="durable-empty">ยังไม่มี log ในวันที่เลือก</div>';
           return;
         }
-        host.innerHTML = data.logs.map(function (x) {
-          var klass = x.level === 'ERROR' ? 'log-error' : (x.level === 'WARN' ? 'log-warn' : '');
-          var meta = escapeHtml(x.time || '') + ' · ' + escapeHtml(x.service || '') + ' · ' + escapeHtml(x.level || '') + ' · ' + escapeHtml(x.event || '');
-          if (x.job_id) meta += ' · job=' + escapeHtml(x.job_id);
-          var detail = x.message || (x.fields ? JSON.stringify(x.fields) : '');
-          return '<div class="log-row ' + klass + '"><div class="log-meta">' + meta + '</div><div class="log-msg">' + escapeHtml(detail) + '</div></div>';
-        }).join('');
+        var groups = {};
+        var httpCount = 0;
+        logPage.records.forEach(function (x) {
+          if (x.event === 'http_request') { httpCount++; return; }
+          var fieldJob = x.fields && x.fields.job_id;
+          var key = x.job_id || fieldJob || '__system__';
+          if (!groups[key]) groups[key] = [];
+          groups[key].push(x);
+        });
+        function durableStatus(items) {
+          var priority = {failed: 0, expired: 0, cancelled: 1, completed: 2, running: 3, started: 3, progress: 4, queued: 5, queued_external: 5, runtime: 6};
+          var best = 'runtime';
+          items.forEach(function (x) {
+            var event = String(x.event || 'runtime').toLowerCase();
+            if (priority[event] !== undefined && priority[event] < priority[best]) best = event;
+          });
+          return best;
+        }
+        host.innerHTML = Object.keys(groups).map(function (key) {
+          var items = groups[key];
+          var status = durableStatus(items);
+          var title = key === '__system__' ? 'Gateway / System' : key;
+          var shown = key === '__system__' ? items.slice(0, 25) : items.slice(0, 50);
+          var rows = shown.map(function (x) {
+            var level = String(x.level || '').toLowerCase();
+            var detail = x.message || '';
+            var fields = Object.assign({}, x.fields || {});
+            delete fields.job_id;
+            if (Object.keys(fields).length) detail += (detail ? ' ' : '') + JSON.stringify(fields);
+            return '<div class="durable-event ' + level + '">' +
+              '<span class="durable-time">' + escapeHtml((x.time || '').replace('T',' ').replace(/\.\d+/,'')) + '</span>' +
+              '<span class="durable-kind">' + escapeHtml((x.event || 'runtime').toUpperCase()) + '</span>' +
+              '<span class="durable-message">' + escapeHtml(detail) + '</span></div>';
+          }).join('');
+          return '<div class="durable-card"><div class="durable-card-head"><span class="durable-job">' + escapeHtml(title) +
+            '</span><span class="durable-summary">สถานะ: ' + escapeHtml(status) + ' · ' + items.length + ' events</span></div><div class="durable-timeline">' + rows + '</div></div>';
+        }).join('') + (httpCount ? '<div class="durable-empty" style="padding:8px;">ซ่อน HTTP polling ' + httpCount + ' รายการจากมุมมองการ์ด — ยังเก็บไว้ในไฟล์ log และ API</div>' : '');
       } catch (e) {
+        if (host) host.style.opacity = '1';
         host.innerHTML = '<div style="color:#fca5a5;padding:20px;">โหลด log ไม่สำเร็จ: ' + escapeHtml(e.message) + '</div>';
       }
     }
@@ -1667,7 +1755,10 @@ const dashboardHTML = `<!doctype html>
 
     setInterval(updateDashboard, 1000);
     setInterval(checkGPUHealth, 3000);
-    setInterval(updateLogs, 5000);
+    setInterval(function() {
+      // Keep browsing history stable; only live-refresh the newest page.
+      if (logPage.request === 'latest') updateLogs();
+    }, 5000);
     updateDashboard();
     checkGPUHealth();
     updateLogs();

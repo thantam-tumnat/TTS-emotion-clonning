@@ -97,8 +97,10 @@ func (w *Worker) expireStaleLoop() {
 			return
 		case <-ticker.C:
 			if expired := w.q.ExpireStaleExternal(ttl); len(expired) > 0 {
-				fmt.Printf("[worker] expired %d stale external job(s) — no terminal update within %s: %s\n",
+				message := fmt.Sprintf("[worker] expired %d stale external job(s) — no terminal update within %s: %s",
 					len(expired), ttl, strings.Join(expired, ", "))
+				fmt.Println(message)
+				w.q.LogRuntime("warn", message, map[string]interface{}{"expired_jobs": expired})
 			}
 		}
 	}
@@ -110,7 +112,9 @@ func (w *Worker) Stop() {
 }
 
 func (w *Worker) run() {
-	fmt.Printf("[worker] Go Queue Worker started — forwarding to Python GPU at %s\n", w.pythonGPUURL)
+	message := fmt.Sprintf("[worker] Go Queue Worker started — forwarding to Python GPU at %s", w.pythonGPUURL)
+	fmt.Println(message)
+	w.q.LogRuntime("info", message, nil)
 
 	for {
 		select {
@@ -136,11 +140,15 @@ func (w *Worker) run() {
 }
 
 func (w *Worker) processJob(job *models.RenderJob) {
-	fmt.Printf("[worker] >>> Executing Job: %s (lane=%s, client=%s, chunks=%d, raw_prompt=%q)\n",
+	message := fmt.Sprintf("[worker] >>> Executing Job: %s (lane=%s, client=%s, chunks=%d, raw_prompt=%q)",
 		job.JobID, job.Lane, job.Client, len(job.Chunks), job.RawPrompt)
+	fmt.Println(message)
+	w.q.LogRuntime("info", message, map[string]interface{}{"job_id": job.JobID, "lane": job.Lane, "client": job.Client, "chunks": len(job.Chunks)})
 
 	for i, chunk := range job.Chunks {
-		fmt.Printf("   [chunk %d/%d]: %s\n", i+1, len(job.Chunks), chunk)
+		message := fmt.Sprintf("   [chunk %d/%d]: %s", i+1, len(job.Chunks), chunk)
+		fmt.Println(message)
+		w.q.LogRuntime("info", message, map[string]interface{}{"job_id": job.JobID, "chunk": i + 1, "total_chunks": len(job.Chunks)})
 	}
 
 	start := time.Now()
@@ -196,7 +204,9 @@ func (w *Worker) processJob(job *models.RenderJob) {
 
 	if err != nil {
 		errMsg := fmt.Sprintf("GPU service unreachable: %v", err)
-		fmt.Printf("[worker] <<< Job Failed %s: %s\n", job.JobID, errMsg)
+		message := fmt.Sprintf("[worker] <<< Job Failed %s: %s", job.JobID, errMsg)
+		fmt.Println(message)
+		w.q.LogRuntime("error", message, map[string]interface{}{"job_id": job.JobID})
 		w.q.MarkFailed(job.JobID, errMsg, "")
 		return
 	}
@@ -219,11 +229,15 @@ func (w *Worker) processJob(job *models.RenderJob) {
 			}
 		}
 		kind := classifyFailure(errObj, errMsg)
-		fmt.Printf("[worker] <<< Job Failed %s (status %d, kind=%q): %s\n", job.JobID, resp.StatusCode, kind, errMsg)
+		message := fmt.Sprintf("[worker] <<< Job Failed %s (status %d, kind=%q): %s", job.JobID, resp.StatusCode, kind, errMsg)
+		fmt.Println(message)
+		w.q.LogRuntime("error", message, map[string]interface{}{"job_id": job.JobID, "status": resp.StatusCode, "error_kind": kind})
 		collateral := w.q.MarkFailed(job.JobID, errMsg, kind)
 		if len(collateral) > 0 {
-			fmt.Printf("[worker]     VRAM OOM — cancelled %d sibling job(s) of the same request: %s\n",
+			message := fmt.Sprintf("[worker]     VRAM OOM — cancelled %d sibling job(s) of the same request: %s",
 				len(collateral), strings.Join(collateral, ", "))
+			fmt.Println(message)
+			w.q.LogRuntime("warn", message, map[string]interface{}{"job_id": job.JobID, "cancelled_jobs": collateral})
 		}
 		return
 	}
@@ -266,6 +280,8 @@ func (w *Worker) processJob(job *models.RenderJob) {
 	}
 
 	elapsed := time.Since(start).Seconds()
-	fmt.Printf("[worker] <<< Job Completed: %s (took %.2fs)\n", job.JobID, elapsed)
+	message = fmt.Sprintf("[worker] <<< Job Completed: %s (took %.2fs)", job.JobID, elapsed)
+	fmt.Println(message)
+	w.q.LogRuntime("info", message, map[string]interface{}{"job_id": job.JobID, "duration_s": elapsed})
 	w.q.MarkCompleted(job.JobID, result, payload, audioWAV)
 }

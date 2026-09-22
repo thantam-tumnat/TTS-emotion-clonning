@@ -32,6 +32,7 @@ type Logger struct {
 	service string
 	date    string
 	file    *os.File
+	text    *os.File
 }
 
 func New(dir, service string) (*Logger, error) {
@@ -62,12 +63,23 @@ func (l *Logger) Write(level, event, jobID, message string, fields map[string]in
 		if l.file != nil {
 			_ = l.file.Close()
 		}
+		if l.text != nil {
+			_ = l.text.Close()
+		}
 		name := filepath.Join(l.dir, fmt.Sprintf("%s-%s.jsonl", safePart(l.service), date))
 		f, err := os.OpenFile(name, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 		if err != nil {
 			return err
 		}
 		l.file = f
+		textName := filepath.Join(l.dir, fmt.Sprintf("%s-%s.log", safePart(l.service), date))
+		textFile, err := os.OpenFile(textName, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
+		if err != nil {
+			_ = f.Close()
+			l.file = nil
+			return err
+		}
+		l.text = textFile
 		l.date = date
 	}
 
@@ -84,8 +96,25 @@ func (l *Logger) Write(level, event, jobID, message string, fields map[string]in
 	if _, err = l.file.Write(b); err != nil {
 		return err
 	}
+	plain := fmt.Sprintf("[%s] %-5s %-18s", record.Time, record.Level, record.Event)
+	if jobID != "" {
+		plain += " job=" + jobID
+	}
+	if message != "" {
+		plain += " " + strings.ReplaceAll(strings.ReplaceAll(message, "\r", " "), "\n", "\\n")
+	}
+	if len(fields) > 0 {
+		fieldBytes, _ := json.Marshal(fields)
+		plain += " " + string(fieldBytes)
+	}
+	if _, err = l.text.WriteString(plain + "\n"); err != nil {
+		return err
+	}
 	if syncDisk {
-		return l.file.Sync()
+		if err := l.file.Sync(); err != nil {
+			return err
+		}
+		return l.text.Sync()
 	}
 	return nil
 }
@@ -101,8 +130,11 @@ func (l *Logger) Close() error {
 	}
 	err := l.file.Sync()
 	closeErr := l.file.Close()
+	textErr := l.text.Sync()
+	textCloseErr := l.text.Close()
 	l.file = nil
-	return errors.Join(err, closeErr)
+	l.text = nil
+	return errors.Join(err, closeErr, textErr, textCloseErr)
 }
 
 func safePart(value string) string {
@@ -114,16 +146,30 @@ func safePart(value string) string {
 }
 
 type QueryOptions struct {
-	Date    string
-	Service string
-	Level   string
-	JobID   string
-	Event   string
-	Query   string
-	Limit   int
+	Date        string
+	Service     string
+	Level       string
+	JobID       string
+	Event       string
+	Query       string
+	Limit       int
+	Before      string // return records older than this RFC3339 timestamp
+	After       string // return records newer than this RFC3339 timestamp
+	ExcludeHTTP bool
 }
 
 func Query(dir string, opts QueryOptions) ([]Record, error) {
+	page, err := QueryPage(dir, opts)
+	return page.Records, err
+}
+
+type QueryResult struct {
+	Records  []Record
+	HasOlder bool
+	HasNewer bool
+}
+
+func QueryPage(dir string, opts QueryOptions) (QueryResult, error) {
 	if dir == "" {
 		dir = "logs"
 	}
@@ -131,10 +177,21 @@ func Query(dir string, opts QueryOptions) ([]Record, error) {
 		opts.Date = time.Now().Format("2006-01-02")
 	}
 	if !regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`).MatchString(opts.Date) {
-		return nil, fmt.Errorf("invalid date")
+		return QueryResult{}, fmt.Errorf("invalid date")
 	}
 	if opts.Limit <= 0 || opts.Limit > 1000 {
 		opts.Limit = 200
+	}
+	before, err := parseCursor(opts.Before)
+	if err != nil {
+		return QueryResult{}, err
+	}
+	after, err := parseCursor(opts.After)
+	if err != nil {
+		return QueryResult{}, err
+	}
+	if before != nil && after != nil {
+		return QueryResult{}, fmt.Errorf("before and after cannot be used together")
 	}
 	pattern := "*-" + opts.Date + ".jsonl"
 	if opts.Service != "" {
@@ -142,7 +199,7 @@ func Query(dir string, opts QueryOptions) ([]Record, error) {
 	}
 	files, err := filepath.Glob(filepath.Join(dir, pattern))
 	if err != nil {
-		return nil, err
+		return QueryResult{}, err
 	}
 	sort.Strings(files)
 	var matches []Record
@@ -152,7 +209,7 @@ func Query(dir string, opts QueryOptions) ([]Record, error) {
 			continue
 		}
 		if err != nil {
-			return nil, err
+			return QueryResult{}, err
 		}
 		scanner := bufio.NewScanner(f)
 		scanner.Buffer(make([]byte, 64*1024), 2*1024*1024)
@@ -165,25 +222,71 @@ func Query(dir string, opts QueryOptions) ([]Record, error) {
 				continue
 			}
 			matches = append(matches, record)
-			if len(matches) > opts.Limit {
-				matches = matches[1:]
-			}
 		}
 		closeErr := f.Close()
 		if err := scanner.Err(); err != nil {
-			return nil, err
+			return QueryResult{}, err
 		}
 		if closeErr != nil {
-			return nil, closeErr
+			return QueryResult{}, closeErr
 		}
 	}
-	for i, j := 0, len(matches)-1; i < j; i, j = i+1, j-1 {
-		matches[i], matches[j] = matches[j], matches[i]
+	sort.SliceStable(matches, func(i, j int) bool {
+		return matches[i].Time < matches[j].Time
+	})
+	filtered := matches
+	if before != nil || after != nil {
+		filtered = make([]Record, 0, len(matches))
+		for _, record := range matches {
+			timestamp, parseErr := time.Parse(time.RFC3339Nano, record.Time)
+			if parseErr != nil {
+				continue
+			}
+			if before != nil && timestamp.Before(*before) {
+				filtered = append(filtered, record)
+			}
+			if after != nil && timestamp.After(*after) {
+				filtered = append(filtered, record)
+			}
+		}
 	}
-	return matches, nil
+	if len(filtered) > opts.Limit {
+		if after != nil {
+			filtered = filtered[:opts.Limit]
+		} else {
+			filtered = filtered[len(filtered)-opts.Limit:]
+		}
+	}
+	for i, j := 0, len(filtered)-1; i < j; i, j = i+1, j-1 {
+		filtered[i], filtered[j] = filtered[j], filtered[i]
+	}
+	page := QueryResult{Records: filtered}
+	if len(filtered) > 0 {
+		newest := filtered[0].Time
+		oldest := filtered[len(filtered)-1].Time
+		for _, record := range matches {
+			page.HasNewer = page.HasNewer || record.Time > newest
+			page.HasOlder = page.HasOlder || record.Time < oldest
+		}
+	}
+	return page, nil
+}
+
+func parseCursor(value string) (*time.Time, error) {
+	if value == "" {
+		return nil, nil
+	}
+	timestamp, err := time.Parse(time.RFC3339Nano, value)
+	if err != nil {
+		return nil, fmt.Errorf("invalid cursor: %w", err)
+	}
+	return &timestamp, nil
 }
 
 func matchesRecord(r Record, opts QueryOptions) bool {
+	if opts.ExcludeHTTP && strings.EqualFold(r.Event, "http_request") {
+		return false
+	}
 	if opts.Level != "" && !strings.EqualFold(r.Level, opts.Level) {
 		return false
 	}

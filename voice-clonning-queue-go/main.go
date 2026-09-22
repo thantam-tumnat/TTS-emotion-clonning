@@ -72,17 +72,10 @@ func main() {
 		started := time.Now()
 		err := c.Next()
 		status := c.Response().StatusCode()
-		// The dashboard polls these endpoints every second. Do not let healthy
-		// polling drown out the useful job timeline; errors and all mutating
-		// requests are still recorded.
-		quietPoll := c.Method() == fiber.MethodGet && status < 400 &&
-			(c.Path() == "/" || c.Path() == "/v2/jobs" || c.Path() == "/health" || c.Path() == "/api/logs")
-		if !quietPoll {
-			_ = eventLogger.Write("info", "http_request", "", c.Method()+" "+c.Path(), map[string]interface{}{
-				"method": c.Method(), "path": c.Path(), "status": status,
-				"duration_ms": time.Since(started).Milliseconds(),
-			}, false)
-		}
+		_ = eventLogger.Write("info", "http_request", "", c.Method()+" "+c.Path(), map[string]interface{}{
+			"method": c.Method(), "path": c.Path(), "status": status,
+			"duration_ms": time.Since(started).Milliseconds(),
+		}, false)
 		return err
 	})
 	app.Use(cors.New(cors.Config{

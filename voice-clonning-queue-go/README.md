@@ -78,15 +78,21 @@ Or run `start_queue.bat` on Windows.
 
 ### Durable JSONL logs
 
-The gateway writes append-only JSONL logs to `logs/gateway-YYYY-MM-DD.jsonl` by
-default. Job lifecycle events (`queued`, `started`, `progress`, `completed`,
-`failed`, `cancelled`) and non-polling HTTP requests are written with timestamps,
-job ids and structured fields. The directory can be changed with `LOG_DIR`.
+The gateway writes append-only JSONL logs plus a normal text tail log to
+`logs/gateway-YYYY-MM-DD.jsonl` and `logs/gateway-YYYY-MM-DD.log` by default.
+Job lifecycle events (`queued`, `started`, `progress`, `completed`, `failed`,
+`cancelled`), worker console lines and all HTTP requests are written with
+timestamps, job ids and structured fields. The directory can be changed with
+`LOG_DIR`.
 
 The dashboard reads the log through:
 
 ```text
-GET /api/logs?date=YYYY-MM-DD&level=ERROR&job_id=...&q=...
+GET /api/logs?date=YYYY-MM-DD&level=ERROR&job_id=...&q=...&before=RFC3339&after=RFC3339
+
+The response includes `has_older` and `has_newer` for paging through durable
+records. Use `before` with the oldest visible record to load older entries, or
+`after` with the newest visible record to move forward again.
 ```
 
 The final line is allowed to be incomplete after a hard power loss; the reader
