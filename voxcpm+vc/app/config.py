@@ -162,7 +162,9 @@ class Settings(BaseSettings):
     # conversion artefacts. When on, neutral chunks clone the target ref directly
     # (VoxCPM2 zero-shot, no donor, no SeedVC) instead of going through the normal
     # donor -> VoxCPM2 -> SeedVC path. Other emotions are untouched.
-    voxcpm_vc_skip_neutral: bool = os.getenv("VOXCPM_VC_SKIP_NEUTRAL", "1") not in ("0", "false", "False", "")
+    # Route neutral chunks through SeedVC by default so every chunk preserves
+    # the requested target voice. Set VOXCPM_VC_SKIP_NEUTRAL=1 to opt out.
+    voxcpm_vc_skip_neutral: bool = os.getenv("VOXCPM_VC_SKIP_NEUTRAL", "0") not in ("0", "false", "False", "")
 
     # SiangTTS / VoxCPM2 Voice Cloning
     siangtts_base_model: str = "openbmb/VoxCPM2"
