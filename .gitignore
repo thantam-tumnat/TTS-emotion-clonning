@@ -2,6 +2,7 @@
 __pycache__/
 .pytest_cache/
 tmp/
+**/logs/
 
 # Local Go toolchain copy (not source)
 .tools/

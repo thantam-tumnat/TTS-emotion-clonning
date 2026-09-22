@@ -7,6 +7,7 @@ import (
 	"sync"
 	"time"
 
+	"voice-cloning-queue/eventlog"
 	"voice-cloning-queue/models"
 )
 
@@ -39,16 +40,27 @@ type PriorityQueue struct {
 	// worker registers releaser.Trigger; nil in tests. Always invoked with q.mu
 	// released, because Trigger re-enters the queue.
 	idleHook func()
+	logger   *eventlog.Logger
 }
 
 // NewPriorityQueue creates an initialized PriorityQueue.
-func NewPriorityQueue() *PriorityQueue {
+func NewPriorityQueue(loggers ...*eventlog.Logger) *PriorityQueue {
 	q := &PriorityQueue{
 		jobs:    make(map[string]*models.RenderJob),
 		waiting: make([]*models.RenderJob, 0),
 	}
+	if len(loggers) > 0 {
+		q.logger = loggers[0]
+	}
 	q.cond = sync.NewCond(&q.mu)
 	return q
+}
+
+func (q *PriorityQueue) logEvent(level, event string, job *models.RenderJob, message string, fields map[string]interface{}) {
+	if q.logger == nil || job == nil {
+		return
+	}
+	_ = q.logger.Write(level, event, job.JobID, message, fields, true)
 }
 
 // SetIdleHook registers a callback fired whenever the queue goes idle on a path the
@@ -76,6 +88,9 @@ func (q *PriorityQueue) Submit(job *models.RenderJob) {
 
 	q.jobs[job.JobID] = job
 	q.waiting = append(q.waiting, job)
+	q.logEvent("info", "queued", job, "job added to queue", map[string]interface{}{
+		"lane": job.Lane, "client": job.Client, "chunks": len(job.Chunks),
+	})
 
 	// Evict oldest finished jobs if over capacity
 	if len(q.jobs) > MaxHistory {
@@ -97,6 +112,9 @@ func (q *PriorityQueue) SubmitExternal(job *models.RenderJob) {
 		job.Status = models.StatusQueued
 	}
 	q.jobs[job.JobID] = job
+	q.logEvent("info", "queued_external", job, "external job registered", map[string]interface{}{
+		"client": job.Client,
+	})
 
 	if len(q.jobs) > MaxHistory {
 		q.pruneOldJobs()
@@ -159,12 +177,16 @@ func (q *PriorityQueue) UpdateJob(jobID string, upd models.JobUpdate) bool {
 				job.Started = &now
 			}
 			job.Status = st
+			q.logEvent("info", "running", job, "external job started", nil)
 		case models.StatusCompleted, models.StatusFailed, models.StatusCancelled:
 			job.Status = st
 			job.Finished = &now
 			if st == models.StatusCompleted {
 				job.ChunksDone = job.TotalChunks
 			}
+			q.logEvent(statusLevel(st), string(st), job, "external job reached terminal state", map[string]interface{}{
+				"chunks_done": job.ChunksDone, "total_chunks": job.TotalChunks,
+			})
 			// Release waiters exactly once, even on a repeated terminal PATCH.
 			select {
 			case <-job.DoneChan:
@@ -176,10 +198,25 @@ func (q *PriorityQueue) UpdateJob(jobID string, upd models.JobUpdate) bool {
 			fireIdle = q.idleLocked()
 		default:
 			job.Status = st
+			q.logEvent("info", string(st), job, "external job status updated", nil)
 		}
+	} else if upd.ChunksDone != nil {
+		q.logEvent("info", "progress", job, "job progress updated", map[string]interface{}{
+			"chunks_done": job.ChunksDone, "total_chunks": job.TotalChunks,
+		})
 	}
 
 	return true
+}
+
+func statusLevel(status models.JobStatus) string {
+	if status == models.StatusFailed {
+		return "error"
+	}
+	if status == models.StatusCancelled {
+		return "warn"
+	}
+	return "info"
 }
 
 // NextJob blocks until a job is available, then returns the one that has waited
@@ -200,6 +237,9 @@ func (q *PriorityQueue) NextJob() *models.RenderJob {
 			job.Status = models.StatusRunning
 			job.Started = &now
 			q.running = job
+			q.logEvent("info", "started", job, "job execution started", map[string]interface{}{
+				"lane": job.Lane, "client": job.Client, "chunks": len(job.Chunks),
+			})
 			return job
 		}
 
@@ -232,6 +272,9 @@ func (q *PriorityQueue) MarkCompleted(jobID string, result map[string]interface{
 	job.Payload = payload
 	job.AudioWAV = audioWAV
 	job.ChunksDone = job.TotalChunks
+	q.logEvent("info", "completed", job, "job completed", map[string]interface{}{
+		"chunks_done": job.ChunksDone, "total_chunks": job.TotalChunks,
+	})
 
 	if q.running != nil && q.running.JobID == jobID {
 		q.running = nil
@@ -269,6 +312,9 @@ func (q *PriorityQueue) MarkFailed(jobID string, errMsg string, kind string) []s
 	job.Finished = &now
 	job.Error = &errMsg
 	job.ErrorKind = kind
+	q.logEvent("error", "failed", job, errMsg, map[string]interface{}{
+		"error_kind": kind, "chunks_done": job.ChunksDone, "total_chunks": job.TotalChunks,
+	})
 
 	if q.running != nil && q.running.JobID == jobID {
 		q.running = nil
@@ -312,6 +358,7 @@ func (q *PriorityQueue) cancelGroupLocked(origin *models.RenderJob, kind string,
 		msg := reason
 		sib.Error = &msg
 		sib.ErrorKind = kind
+		q.logEvent("warn", "cancelled", sib, reason, map[string]interface{}{"error_kind": kind})
 		if q.running != nil && q.running.JobID == sib.JobID {
 			q.running = nil
 		}
@@ -362,6 +409,7 @@ func (q *PriorityQueue) Cancel(jobID string) (bool, []string) {
 	job.Finished = &now
 	errStr := "cancelled by user"
 	job.Error = &errStr
+	q.logEvent("warn", "cancelled", job, errStr, nil)
 
 	if q.running != nil && q.running.JobID == jobID {
 		q.running = nil
@@ -522,6 +570,7 @@ func (q *PriorityQueue) ExpireStaleExternal(maxAge time.Duration) []string {
 		j.Finished = &fin
 		msg := fmt.Sprintf("expired: no terminal update received within %.0fs", cutoff)
 		j.Error = &msg
+		q.logEvent("error", "expired", j, msg, nil)
 		select {
 		case <-j.DoneChan:
 		default:

@@ -729,6 +729,16 @@ const dashboardHTML = `<!doctype html>
       background: rgba(100, 116, 139, 0.10); border-color: rgba(100, 116, 139, 0.3);
       color: var(--text-muted);
     }
+    .log-toolbar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+    .log-toolbar input, .log-toolbar select {
+      background:var(--bg-base); color:var(--text-main); border:1px solid var(--border-subtle);
+      border-radius:7px; padding:7px 9px; font:12px 'JetBrains Mono', monospace;
+    }
+    .log-list { max-height:420px; overflow:auto; padding:0 15px 15px; }
+    .log-row { border-top:1px solid var(--border-subtle); padding:9px 0; font:12px 'JetBrains Mono', monospace; }
+    .log-meta { color:var(--text-dim); margin-bottom:3px; }
+    .log-msg { white-space:pre-wrap; word-break:break-word; color:var(--text-muted); }
+    .log-error { color:#fca5a5; } .log-warn { color:#fcd34d; }
   </style>
 </head>
 <body>
@@ -808,6 +818,22 @@ const dashboardHTML = `<!doctype html>
     </div>
   </div>
 
+  <!-- Durable JSONL Runtime / Job Event Logs -->
+  <div class="table-container" style="margin-top:24px;">
+    <div class="table-header">
+      <div class="table-title">📜 Durable Logs
+        <span style="color:var(--text-dim);font-weight:500;font-size:12px;">— JSONL on disk</span>
+      </div>
+      <div class="log-toolbar">
+        <input type="date" id="log-date">
+        <input type="text" id="log-search" placeholder="ค้นหา job /ข้อความ">
+        <select id="log-level"><option value="">ทุกระดับ</option><option>ERROR</option><option>WARN</option><option>INFO</option></select>
+        <button class="btn btn-detail" onclick="updateLogs()">↻ Refresh</button>
+      </div>
+    </div>
+    <div class="log-list" id="log-list"><div style="text-align:center;color:var(--text-dim);padding:20px;">กำลังโหลด log...</div></div>
+  </div>
+
   <!-- Details Modal -->
   <div class="modal-backdrop" id="job-modal" onclick="if(event.target===this) closeDetailModal()">
     <div class="modal-box">
@@ -843,6 +869,11 @@ const dashboardHTML = `<!doctype html>
     var currentJobsData = [];
     var currentRunningJob = null;
     var activeAudioJobId = null;
+
+    function localDateValue() {
+      var d = new Date();
+      return d.getFullYear() + '-' + String(d.getMonth()+1).padStart(2,'0') + '-' + String(d.getDate()).padStart(2,'0');
+    }
 
     function voiceIdOf(job) {
 
@@ -915,6 +946,35 @@ const dashboardHTML = `<!doctype html>
         document.getElementById('last-sync').innerText = 'Live Auto-Sync: ' + new Date().toLocaleTimeString();
       } catch (err) {
         console.error('Failed to sync queue dashboard:', err);
+      }
+    }
+
+    async function updateLogs() {
+      var date = document.getElementById('log-date');
+      var search = document.getElementById('log-search');
+      var level = document.getElementById('log-level');
+      if (!date.value) date.value = localDateValue();
+      var params = new URLSearchParams({date: date.value, limit: '150'});
+      if (search.value.trim()) params.set('q', search.value.trim());
+      if (level.value) params.set('level', level.value);
+      var host = document.getElementById('log-list');
+      try {
+        var res = await fetch('/api/logs?' + params.toString());
+        var data = await res.json();
+        if (!res.ok) throw new Error(data.error || 'load failed');
+        if (!data.logs || data.logs.length === 0) {
+          host.innerHTML = '<div style="text-align:center;color:var(--text-dim);padding:20px;">ยังไม่มี log ในวันที่เลือก</div>';
+          return;
+        }
+        host.innerHTML = data.logs.map(function (x) {
+          var klass = x.level === 'ERROR' ? 'log-error' : (x.level === 'WARN' ? 'log-warn' : '');
+          var meta = escapeHtml(x.time || '') + ' · ' + escapeHtml(x.service || '') + ' · ' + escapeHtml(x.level || '') + ' · ' + escapeHtml(x.event || '');
+          if (x.job_id) meta += ' · job=' + escapeHtml(x.job_id);
+          var detail = x.message || (x.fields ? JSON.stringify(x.fields) : '');
+          return '<div class="log-row ' + klass + '"><div class="log-meta">' + meta + '</div><div class="log-msg">' + escapeHtml(detail) + '</div></div>';
+        }).join('');
+      } catch (e) {
+        host.innerHTML = '<div style="color:#fca5a5;padding:20px;">โหลด log ไม่สำเร็จ: ' + escapeHtml(e.message) + '</div>';
       }
     }
 
@@ -1607,8 +1667,10 @@ const dashboardHTML = `<!doctype html>
 
     setInterval(updateDashboard, 1000);
     setInterval(checkGPUHealth, 3000);
+    setInterval(updateLogs, 5000);
     updateDashboard();
     checkGPUHealth();
+    updateLogs();
   </script>
 </body>
 </html>`

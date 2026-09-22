@@ -76,8 +76,27 @@ go run main.go
 ```
 Or run `start_queue.bat` on Windows.
 
+### Durable JSONL logs
+
+The gateway writes append-only JSONL logs to `logs/gateway-YYYY-MM-DD.jsonl` by
+default. Job lifecycle events (`queued`, `started`, `progress`, `completed`,
+`failed`, `cancelled`) and non-polling HTTP requests are written with timestamps,
+job ids and structured fields. The directory can be changed with `LOG_DIR`.
+
+The dashboard reads the log through:
+
+```text
+GET /api/logs?date=YYYY-MM-DD&level=ERROR&job_id=...&q=...
+```
+
+The final line is allowed to be incomplete after a hard power loss; the reader
+skips that line and keeps all preceding records. Terminal job events call `fsync`
+before returning, so the on-disk timeline is the durable record rather than the
+in-memory queue history.
+
 ### 2. Environment Variables
 | Variable | Default | Description |
 | :--- | :--- | :--- |
 | `PORT` | `8020` | Port for the Go Fiber Queue Gateway |
 | `PYTHON_GPU_URL` | `http://127.0.0.1:8021` | Target URL for the Python PyTorch GPU Worker |
+| `LOG_DIR` | `logs` | Directory for daily JSONL runtime and job-event logs |

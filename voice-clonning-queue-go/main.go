@@ -6,12 +6,14 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/gofiber/fiber/v2"
 	"github.com/gofiber/fiber/v2/middleware/cors"
 	"github.com/gofiber/fiber/v2/middleware/logger"
 	"github.com/gofiber/fiber/v2/middleware/recover"
 
+	"voice-cloning-queue/eventlog"
 	"voice-cloning-queue/handlers"
 	"voice-cloning-queue/queue"
 	"voice-cloning-queue/worker"
@@ -38,7 +40,17 @@ func main() {
 	fmt.Println("================================================================")
 
 	// 1. Initialize Priority Queue & Worker
-	pq := queue.NewPriorityQueue()
+	logDir := getEnv("LOG_DIR", "logs")
+	eventLogger, err := eventlog.New(logDir, "gateway")
+	if err != nil {
+		log.Fatalf("failed to initialize JSONL log directory %q: %v", logDir, err)
+	}
+	defer eventLogger.Close()
+	_ = eventLogger.Write("info", "service_started", "", "Go Queue Gateway started", map[string]interface{}{
+		"port": port, "python_gpu_url": pythonGPUURL,
+	}, true)
+
+	pq := queue.NewPriorityQueue(eventLogger)
 	w := worker.NewWorker(pq, pythonGPUURL, seedvcURL)
 	w.Start()
 	defer w.Stop()
@@ -56,6 +68,23 @@ func main() {
 	app.Use(logger.New(logger.Config{
 		Format: "[${time}] ${status} - ${latency} ${method} ${path}\n",
 	}))
+	app.Use(func(c *fiber.Ctx) error {
+		started := time.Now()
+		err := c.Next()
+		status := c.Response().StatusCode()
+		// The dashboard polls these endpoints every second. Do not let healthy
+		// polling drown out the useful job timeline; errors and all mutating
+		// requests are still recorded.
+		quietPoll := c.Method() == fiber.MethodGet && status < 400 &&
+			(c.Path() == "/" || c.Path() == "/v2/jobs" || c.Path() == "/health" || c.Path() == "/api/logs")
+		if !quietPoll {
+			_ = eventLogger.Write("info", "http_request", "", c.Method()+" "+c.Path(), map[string]interface{}{
+				"method": c.Method(), "path": c.Path(), "status": status,
+				"duration_ms": time.Since(started).Milliseconds(),
+			}, false)
+		}
+		return err
+	})
 	app.Use(cors.New(cors.Config{
 		AllowOrigins: "*",
 		AllowHeaders: "*",
@@ -64,6 +93,7 @@ func main() {
 
 	// 4. Handlers
 	jobsH := handlers.NewJobsHandler(pq)
+	logsH := handlers.NewLogsHandler(eventLogger)
 	proxyH := handlers.NewProxyHandler(pythonGPUURL)
 	dashH := handlers.NewDashboardHandler(pq, pythonGPUURL)
 
@@ -76,6 +106,7 @@ func main() {
 	app.Get("/v2/jobs/:job_id/audio", jobsH.GetAudio)
 	app.Patch("/v2/jobs/:job_id", jobsH.UpdateJob)
 	app.Delete("/v2/jobs/:job_id", jobsH.Cancel)
+	app.Get("/api/logs", logsH.List)
 
 	// 6. Voice, Speaker & Health Routes (Proxied to Python GPU :8021)
 	app.Post("/v2/voices/resolve", proxyH.Forward)
