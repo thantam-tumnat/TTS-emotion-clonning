@@ -269,12 +269,11 @@ func (w *Worker) processJob(job *models.RenderJob) {
 		if innerRes, ok := result["result"].(map[string]interface{}); ok {
 			result = innerRes
 		}
-		// If mode is files, read the WAV file into audioWAV
+		// If mode is files, keep every chunk as one playable WAV. Read it now: the
+		// webhook deletes its scratch directory once it has merged and uploaded.
 		if files, ok := result["files"].([]interface{}); ok && len(files) > 0 {
-			if firstFile, ok := files[0].(string); ok && firstFile != "" {
-				if wavBytes, err := audio.ReadWAVFile(firstFile); err == nil {
-					audioWAV = wavBytes
-				}
+			if wavBytes, err := audio.PlayableWAV(files); err == nil {
+				audioWAV = wavBytes
 			}
 		}
 	}

@@ -74,6 +74,102 @@ func ReadWAVFile(path string) ([]byte, error) {
 	return os.ReadFile(path)
 }
 
+// ConcatWAVFiles joins PCM WAV files end to end into one WAV, in the order given.
+//
+// A "files"-mode job writes one WAV per chunk, and a caller that previews only the
+// first one plays a fraction of the take while looking complete -- the dashboard did
+// exactly that, offering chunk 1 of a two-chunk script as the whole job. The chunks
+// come from one render, so they share a format; a file that does not is an error
+// rather than something to resample, because splicing mismatched PCM is noise.
+func ConcatWAVFiles(paths []string) ([]byte, error) {
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("no wav files")
+	}
+	var fmtChunk []byte
+	var data bytes.Buffer
+	for _, p := range paths {
+		raw, err := os.ReadFile(p)
+		if err != nil {
+			return nil, err
+		}
+		f, d, err := splitWAV(raw)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", p, err)
+		}
+		if fmtChunk == nil {
+			fmtChunk = f
+		} else if !bytes.Equal(fmtChunk, f) {
+			return nil, fmt.Errorf("%s: format differs from %s", p, paths[0])
+		}
+		data.Write(d)
+	}
+
+	out := new(bytes.Buffer)
+	out.Grow(20 + len(fmtChunk) + data.Len())
+	out.WriteString("RIFF")
+	binary.Write(out, binary.LittleEndian, uint32(4+8+len(fmtChunk)+8+data.Len()))
+	out.WriteString("WAVE")
+	out.WriteString("fmt ")
+	binary.Write(out, binary.LittleEndian, uint32(len(fmtChunk)))
+	out.Write(fmtChunk)
+	out.WriteString("data")
+	binary.Write(out, binary.LittleEndian, uint32(data.Len()))
+	out.Write(data.Bytes())
+	return out.Bytes(), nil
+}
+
+// PlayableWAV turns a files-mode result's "files" list into one WAV: every chunk
+// joined in order, or -- if they cannot be joined -- the first chunk alone, which is
+// all that was served before, so a join failure never costs the preview entirely.
+func PlayableWAV(files []interface{}) ([]byte, error) {
+	paths := make([]string, 0, len(files))
+	for _, f := range files {
+		if p, ok := f.(string); ok && p != "" {
+			paths = append(paths, p)
+		}
+	}
+	if len(paths) == 0 {
+		return nil, fmt.Errorf("no wav files")
+	}
+	if len(paths) > 1 {
+		if wav, err := ConcatWAVFiles(paths); err == nil {
+			return wav, nil
+		}
+	}
+	return ReadWAVFile(paths[0])
+}
+
+// splitWAV returns the body of a WAV's "fmt " and "data" chunks, skipping any
+// others (LIST, fact, ...) rather than assuming the canonical 44-byte layout.
+func splitWAV(raw []byte) (fmtBody, dataBody []byte, err error) {
+	if len(raw) < 12 || string(raw[:4]) != "RIFF" || string(raw[8:12]) != "WAVE" {
+		return nil, nil, fmt.Errorf("not a RIFF/WAVE file")
+	}
+	for pos := 12; pos+8 <= len(raw); {
+		id := string(raw[pos : pos+4])
+		size := int(binary.LittleEndian.Uint32(raw[pos+4 : pos+8]))
+		body := pos + 8
+		end := body + size
+		if end > len(raw) {
+			if id != "data" {
+				return nil, nil, fmt.Errorf("truncated %q chunk", id)
+			}
+			end = len(raw) // a writer killed mid-file leaves a short data chunk
+		}
+		switch id {
+		case "fmt ":
+			fmtBody = raw[body:end]
+		case "data":
+			dataBody = raw[body:end]
+		}
+		pos = end + size%2 // chunks are word-aligned
+	}
+	if fmtBody == nil || dataBody == nil {
+		return nil, nil, fmt.Errorf("missing fmt or data chunk")
+	}
+	return fmtBody, dataBody, nil
+}
+
 func parseNpyScalarInt(b []byte) int {
 	if len(b) < 10 {
 		return 0

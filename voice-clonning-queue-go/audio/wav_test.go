@@ -4,8 +4,75 @@ import (
 	"archive/zip"
 	"bytes"
 	"encoding/binary"
+	"os"
+	"path/filepath"
 	"testing"
 )
+
+func writeWAV(t *testing.T, dir, name string, samples []int16, rate uint32) string {
+	t.Helper()
+	wav, err := EncodeWAV(samples, rate)
+	if err != nil {
+		t.Fatal(err)
+	}
+	p := filepath.Join(dir, name)
+	if err := os.WriteFile(p, wav, 0o644); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestConcatWAVFilesJoinsEveryChunk(t *testing.T) {
+	dir := t.TempDir()
+	a := writeWAV(t, dir, "job_000.wav", []int16{1, 2, 3}, 48000)
+	b := writeWAV(t, dir, "job_001.wav", []int16{4, 5}, 48000)
+
+	wav, err := ConcatWAVFiles([]string{a, b})
+	if err != nil {
+		t.Fatalf("ConcatWAVFiles: %v", err)
+	}
+	want, _ := EncodeWAV([]int16{1, 2, 3, 4, 5}, 48000)
+	if !bytes.Equal(wav, want) {
+		t.Fatalf("joined wav differs from a single 5-sample wav:\n got %x\nwant %x", wav, want)
+	}
+}
+
+func TestConcatWAVFilesRejectsMismatchedFormat(t *testing.T) {
+	dir := t.TempDir()
+	a := writeWAV(t, dir, "a.wav", []int16{1}, 48000)
+	b := writeWAV(t, dir, "b.wav", []int16{2}, 24000)
+	if _, err := ConcatWAVFiles([]string{a, b}); err == nil {
+		t.Fatal("expected an error joining 48 kHz and 24 kHz audio")
+	}
+}
+
+func TestPlayableWAVFallsBackToFirstChunk(t *testing.T) {
+	dir := t.TempDir()
+	a := writeWAV(t, dir, "a.wav", []int16{1}, 48000)
+	b := writeWAV(t, dir, "b.wav", []int16{2}, 24000)
+	first, _ := os.ReadFile(a)
+
+	got, err := PlayableWAV([]interface{}{a, b})
+	if err != nil {
+		t.Fatalf("PlayableWAV: %v", err)
+	}
+	if !bytes.Equal(got, first) {
+		t.Fatal("unjoinable chunks should fall back to the first chunk, as before")
+	}
+}
+
+func TestPlayableWAVSkipsNonStringEntries(t *testing.T) {
+	dir := t.TempDir()
+	a := writeWAV(t, dir, "a.wav", []int16{7, 8}, 48000)
+	got, err := PlayableWAV([]interface{}{nil, a, ""})
+	if err != nil {
+		t.Fatalf("PlayableWAV: %v", err)
+	}
+	want, _ := os.ReadFile(a)
+	if !bytes.Equal(got, want) {
+		t.Fatal("expected the single real path to be served as-is")
+	}
+}
 
 func TestEncodeWAV(t *testing.T) {
 	samples := []int16{0, 1000, -1000, 2000, -2000}

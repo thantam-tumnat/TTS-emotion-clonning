@@ -2,7 +2,6 @@ package handlers
 
 import (
 	"fmt"
-	"os"
 	"sort"
 	"strconv"
 	"strings"
@@ -10,6 +9,7 @@ import (
 
 	"github.com/gofiber/fiber/v2"
 
+	"voice-cloning-queue/audio"
 	"voice-cloning-queue/models"
 	"voice-cloning-queue/queue"
 )
@@ -316,10 +316,11 @@ func (h *JobsHandler) GetAudio(c *fiber.Ctx) error {
 		// studio wipes its own the moment a take is delivered — so a stale entry
 		// falls through to the uploaded copy rather than answering 404.
 		if files, ok := job.Result["files"].([]interface{}); ok && len(files) > 0 {
-			if firstFile, ok := files[0].(string); ok && firstFile != "" {
-				if _, err := os.Stat(firstFile); err == nil {
-					return c.SendFile(firstFile)
-				}
+			if wav, err := audio.PlayableWAV(files); err == nil {
+				c.Set("Content-Type", "audio/wav")
+				c.Set("Content-Disposition", fmt.Sprintf("inline; filename=\"%s.wav\"", job.JobID))
+				c.Set("X-Job-Id", job.JobID)
+				return c.Send(wav)
 			}
 		}
 		// The delivered artifact for an external row: its owner uploaded the take
