@@ -148,6 +148,60 @@ def test_deleting_a_speaker_removes_clip_and_cache(service):
     assert service.post("/v2/voices/resolve", json={"speaker_id": "bob"}).status_code == 404
 
 
+def _write_cut_off_clip(path, sr=48000):
+    """A phrase, a pause, then 40 ms of the next word: what a fixed-length window
+    cut from a longer recording leaves at the end of a reference clip."""
+    import soundfile as sf
+
+    rng = np.random.default_rng(0)
+
+    def tone(s):
+        return 0.3 * np.sin(2 * np.pi * 180 * np.arange(int(sr * s)) / sr)
+
+    def hiss(s):
+        return 1e-4 * rng.standard_normal(int(sr * s))
+
+    clip = np.concatenate([hiss(0.1), tone(1.2), hiss(0.3), tone(1.5), hiss(0.25), tone(1.0),
+                           hiss(0.28), tone(0.04)])
+    sf.write(str(path), clip.astype("float32"), sr)
+
+
+def test_a_clip_ending_on_a_cut_off_word_is_encoded_trimmed(service):
+    clip = service.ref_dir / "dora.wav"
+    _write_cut_off_clip(clip)
+    before = clip.read_bytes()
+
+    with_text = service.post("/v2/voices/resolve",
+                             json={"speaker_id": "dora", "ref_text": "บทพูดอ้างอิง"}).json()
+    # Its own key, so the untrimmed cache (and turning trimming off) is untouched.
+    assert with_text["voice_handle"].endswith("-tail1")
+    # Only continuation mode carries on from the end of the clip.
+    without = service.post("/v2/voices/resolve", json={"speaker_id": "dora"}).json()
+    assert not without["voice_handle"].endswith("-tail1")
+    assert clip.read_bytes() == before, "the clip on disk is the caller's and must not change"
+
+
+def test_a_clip_that_ends_cleanly_keeps_its_legacy_key(service):
+    import hashlib
+
+    res = service.post("/v2/voices/resolve",
+                       json={"speaker_id": "alice", "ref_text": "สวัสดี"}).json()
+    assert res["voice_handle"] == f"alice-{hashlib.sha1('สวัสดี'.encode()).hexdigest()[:8]}"
+
+
+def test_tail_trimming_can_be_switched_off(service, monkeypatch):
+    _write_cut_off_clip(service.ref_dir / "dora.wav")
+    monkeypatch.setenv("SIANGTTS_REF_TAIL_TRIM", "0")
+
+    import src.gpu_service as gpu_service
+
+    importlib.reload(gpu_service)
+    with TestClient(gpu_service.app) as client:
+        res = client.post("/v2/voices/resolve",
+                          json={"speaker_id": "dora", "ref_text": "บทพูดอ้างอิง"}).json()
+    assert not res["voice_handle"].endswith("-tail1")
+
+
 def test_seed_voice_is_minted_once_and_shared(service):
     first = service.post("/v2/voices/seed").json()["voice_handle"]
     second = service.post("/v2/voices/seed").json()["voice_handle"]

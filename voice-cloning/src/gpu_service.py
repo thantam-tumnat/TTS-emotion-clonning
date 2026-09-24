@@ -30,6 +30,8 @@ Config (env):
     SIANGTTS_IDLE_MODE      "unload" (default) drops the weights when the queue
                             has been quiet; "hot" keeps them resident forever
     SIANGTTS_IDLE_TTL       seconds of quiet before that happens (default 180)
+    SIANGTTS_REF_TAIL_TRIM  "0" stops trimming a cut-off word from the end of a
+                            reference clip before encoding it (see src/ref_audio.py)
 """
 
 from __future__ import annotations
@@ -99,6 +101,10 @@ CACHE_DIR = Path(
 WORK_DIR = Path(os.environ.get("SIANGTTS_WORK_DIR", "work"))
 SEED_TEXT = os.environ.get("SIANGTTS_SEED_TEXT", "วันนี้อากาศปกติ อุณหภูมิยี่สิบห้าองศา")
 DEFAULT_LORA = os.environ.get("SIANGTTS_DEFAULT_LORA", lora_mod.DEFAULT_MODE)
+# On by default: clips are cut to a fixed window upstream and can end on the onset
+# of the next word, which continuation mode then carries into the take. "0" turns
+# it off and puts every voice back on its untrimmed cache (the keys differ).
+REF_TAIL_TRIM = os.environ.get("SIANGTTS_REF_TAIL_TRIM", "1") not in ("0", "false", "False", "")
 
 # The old system kept reference clips here; the webhook checked it as a fallback and
 # voice ids in production still resolve through it.
@@ -242,14 +248,15 @@ async def lifespan(app: FastAPI):
         mode="hot" if STUB else IDLE_MODE,
         is_stub=STUB,
     )
-    voices = VoiceStore(holder, CACHE_DIR, _ref_dirs(), seed_text=SEED_TEXT)
+    voices = VoiceStore(holder, CACHE_DIR, _ref_dirs(), seed_text=SEED_TEXT,
+                        tail_trim=REF_TAIL_TRIM)
     engine = Engine(holder, voices, WORK_DIR, default_lora=DEFAULT_LORA)
     engine.start()
     _state["engine"] = engine
     print(
         f"[gpu] ready — no model loaded (idle_mode={holder.mode}"
         f"{'' if holder.mode == 'hot' else f' ttl={holder.ttl:.0f}s'}) "
-        f"stub={STUB} cache={CACHE_DIR} work={WORK_DIR} "
+        f"stub={STUB} tail_trim={REF_TAIL_TRIM} cache={CACHE_DIR} work={WORK_DIR} "
         f"refs={[str(d) for d in _ref_dirs()]}"
     )
     try:

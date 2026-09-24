@@ -16,12 +16,20 @@ from __future__ import annotations
 
 import hashlib
 import os
+import tempfile
 import time
 import uuid
 from pathlib import Path
 from typing import Any, Optional
 
+from . import ref_audio
+
 AUDIO_EXTS = (".mp3", ".wav", ".m4a", ".ogg", ".flac")
+
+# Appended to the key of a voice whose clip was encoded with its tail trimmed (see
+# src/ref_audio.py). A different key, not a rebuilt one: the untrimmed cache stays
+# on disk, so switching trimming off is a plain cache hit rather than a re-encode.
+TAIL_TRIM_KEY_SUFFIX = "-tail1"
 
 # Handles minted from an uploaded clip are not addressable by name, so nothing
 # would ever evict them. Drop them once they have gone unused for this long.
@@ -56,14 +64,18 @@ class VoiceStore:
         cache_dir: Path,
         ref_dirs: list[Path],
         seed_text: str = "",
+        tail_trim: bool = True,
     ) -> None:
         self.synth = synth
         self.cache_dir = Path(cache_dir)
         self.ref_dirs = [Path(d) for d in ref_dirs]
         self.seed_text = seed_text
+        self.tail_trim = tail_trim
         self.cache_dir.mkdir(parents=True, exist_ok=True)
         self.mem: dict[str, Any] = {}
         self.meta: dict[str, dict] = {}
+        # One look at each clip's tail per file version; every job resolves its voice.
+        self._tails: dict[tuple[str, float, int], Optional[ref_audio.TailCheck]] = {}
         self._seed_failed = False
 
     # ------------------------------------------------------------------ #
@@ -144,6 +156,11 @@ class VoiceStore:
                     pass
 
         key = f"{voice_id}-{_digest(ref_text)}"
+        # Only continuation mode (a transcript) picks up from the end of the clip;
+        # a timbre-only reference is not affected by how it ends.
+        tail = self._tail(voice_id, ref) if (self.tail_trim and ref_text) else None
+        if tail is not None and tail.trimmed:
+            key += TAIL_TRIM_KEY_SUFFIX
         if key in self.mem:
             self.meta.setdefault(key, {})["used"] = time.time()
             return key
@@ -153,9 +170,53 @@ class VoiceStore:
             cache = self.synth.load_voice(path)
         else:
             print(f"[voices] encoding '{voice_id}' from {ref.name} …")
-            cache = self.synth.build_voice(str(ref), prompt_text=ref_text or None)
+            if tail is not None and tail.trimmed:
+                cache = self._build_trimmed(voice_id, ref, ref_text, tail)
+            else:
+                cache = self.synth.build_voice(str(ref), prompt_text=ref_text or None)
             self.synth.save_voice(cache, path)
-        return self._remember(key, cache, speaker_id=voice_id, source="ref")
+        return self._remember(key, cache, speaker_id=voice_id, source="ref",
+                              tail=tail.status if tail else None)
+
+    def _tail(self, voice_id: str, ref: Path) -> Optional[ref_audio.TailCheck]:
+        """How the clip ends, looked at once per file version.
+
+        None when the clip cannot be analysed: the voice is then encoded exactly as it
+        always was, because a trimming problem must never become a failed job.
+        """
+        st = ref.stat()
+        memo = (str(ref), st.st_mtime, st.st_size)
+        if memo in self._tails:
+            return self._tails[memo]
+        try:
+            samples, sr = ref_audio.read_clip(ref)
+            check = ref_audio.check_tail(samples, sr)
+        except Exception as e:                                        # noqa: BLE001
+            print(f"[voices] '{voice_id}': could not check the clip's tail ({e}); using it as is")
+            check = None
+        if check is not None and check.trimmed:
+            print(f"[voices] '{voice_id}': clip ends on a {check.fragment_s:.2f}s cut-off "
+                  f"fragment; encoding it cut at {check.cut_s:.2f}s + "
+                  f"{ref_audio.PAD_S:.1f}s silence")
+        elif check is not None and check.status == "mid_speech":
+            print(f"[voices] '{voice_id}': clip ends mid-speech ({check.fragment_s:.2f}s "
+                  f"after the last pause); too long to trim safely, using it as is")
+        self._tails[memo] = check
+        return check
+
+    def _build_trimmed(self, voice_id: str, ref: Path, ref_text: str,
+                       tail: ref_audio.TailCheck) -> Any:
+        """Encode the clip with its tail cut, from a scratch copy; the clip on disk is
+        the caller's and stays as it arrived."""
+        import soundfile as sf
+
+        samples, sr = ref_audio.read_clip(ref)
+        with tempfile.TemporaryDirectory() as tmp:
+            # Named after the voice: an encoder may take identity from the file name.
+            clip = Path(tmp) / f"{voice_id}.wav"
+            sf.write(str(clip), ref_audio.apply_tail(samples, sr, tail), sr,
+                     format="WAV", subtype="PCM_16")
+            return self.synth.build_voice(str(clip), prompt_text=ref_text or None)
 
     def register_clip(
         self,
